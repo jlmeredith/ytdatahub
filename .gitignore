@@ -1,0 +1,48 @@
+# macOS system files
+.DS_Store
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Data and databases (already in your gitignore)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter notebook
+.ipynb_checkpoints
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Streamlit
+.streamlit/
+
+# Logs
+logs/
+*.log
+
+# Local configuration
+instance/
+config.local.py
