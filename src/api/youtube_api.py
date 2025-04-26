@@ -51,9 +51,20 @@ class YouTubeAPI:
         if not is_valid:
             # Check if we need to resolve a custom URL or handle
             if validated_channel_id.startswith("resolve:"):
-                st.error("Custom channel URLs or handles are not directly supported yet. Please use the channel ID.")
-                debug_log(f"Custom channel URL or handle needs resolution: {validated_channel_id}")
-                return None
+                # Extract the part after "resolve:"
+                to_resolve = validated_channel_id[8:]
+                debug_log(f"Need to resolve custom URL or handle: {to_resolve}")
+                
+                # Use the resolve method to get the actual channel ID
+                resolved_id = self.resolve_custom_channel_url(to_resolve)
+                
+                if resolved_id:
+                    debug_log(f"Successfully resolved to channel ID: {resolved_id}")
+                    validated_channel_id = resolved_id
+                    is_valid = True
+                else:
+                    st.error(f"Could not resolve '{to_resolve}' to a valid channel ID. Please use a direct channel ID or URL.")
+                    return None
             else:
                 st.error("Invalid channel ID format. Please enter a valid YouTube channel ID or URL.")
                 return None
@@ -340,7 +351,23 @@ class YouTubeAPI:
             return []
     
     def get_video_comments(self, channel_info: Dict[str, Any], max_comments_per_video: int = 10) -> Optional[Dict[str, Any]]:
-        """Get comments for each video in the channel"""
+        """
+        Get comments for each video in the channel with optimal quota usage.
+        
+        This method efficiently retrieves comments by:
+        1. Using maxResults=100 to minimize API calls
+        2. Implementing pagination to retrieve more comments per video if needed
+        3. Checking for disabled comments before making API calls
+        4. Using ETag caching for repeat retrievals
+        5. Properly handling and including replies
+        
+        Args:
+            channel_info: Dictionary containing channel information with videos
+            max_comments_per_video: Maximum number of comments to fetch per video (0 to skip)
+            
+        Returns:
+            Updated channel_info dictionary with comment data or None if failed
+        """
         if not self.is_initialized():
             st.error("YouTube API client not initialized. Please check your API key.")
             return None
@@ -361,6 +388,9 @@ class YouTubeAPI:
         # Make sure the API cache is initialized
         if 'api_cache' not in st.session_state:
             st.session_state.api_cache = {}
+        # Initialize ETag cache if not present
+        if 'etag_cache' not in st.session_state:
+            st.session_state.etag_cache = {}
         
         try:
             # Progress tracking
@@ -404,95 +434,129 @@ class YouTubeAPI:
                 video['comments'] = []
                 
                 try:
-                    # Request comments for the video
-                    debug_log(f"COMMENT DEBUG: Building commentThreads request with videoId={video_id}, maxResults={max_comments_per_video}")
-                    
-                    try:
-                        # First verify that comments are enabled for this video by checking video.statistics.commentCount
-                        video_details_request = self.youtube.videos().list(
-                            part="statistics",
-                            id=video_id
-                        )
-                        video_details_response = video_details_request.execute()
-                        
-                        if (not video_details_response.get('items') or 
-                            'statistics' not in video_details_response['items'][0]):
-                            debug_log(f"COMMENT DEBUG: Video '{video_title}' missing statistics")
-                            videos_with_errors += 1
-                            continue
-                            
-                        # First check if comments are disabled via the statistics
-                        # The commentCount field might not exist if comments are disabled
-                        if 'commentCount' not in video_details_response['items'][0]['statistics']:
-                            debug_log(f"COMMENT DEBUG: Video '{video_title}' has comments disabled (no commentCount in statistics)")
-                            video['comments_disabled'] = True
-                            videos_with_disabled_comments += 1
-                            continue
-                            
-                        # If commentCount is 0, don't waste an API call trying to fetch comments
-                        comment_count = int(video_details_response['items'][0]['statistics']['commentCount'])
-                        if comment_count == 0:
-                            debug_log(f"COMMENT DEBUG: Video '{video_title}' has 0 comments according to statistics")
-                            video['comments'] = []
-                            continue
-                            
-                        debug_log(f"COMMENT DEBUG: Video '{video_title}' has {comment_count} comments according to statistics")
-                    except Exception as ve:
-                        debug_log(f"COMMENT DEBUG: Error checking video statistics: {str(ve)}")
-                        # Continue with comment fetching anyway
-                    
-                    # Additional parts needed for comments
-                    comments_request = self.youtube.commentThreads().list(
-                        part="snippet,replies",  # Adding replies to get more complete data
-                        videoId=video_id,
-                        maxResults=max_comments_per_video,
-                        textFormat="plainText",   # Specify text format for better compatibility
-                        order="relevance"         # Get most relevant comments 
+                    # First verify that comments are enabled for this video by checking video.statistics.commentCount
+                    # This saves quota by avoiding unnecessary commentThreads.list calls
+                    video_details_request = self.youtube.videos().list(
+                        part="statistics",
+                        id=video_id
                     )
+                    video_details_response = video_details_request.execute()
                     
-                    debug_log(f"COMMENT DEBUG: Sending API request for comments on video '{video_title}'")
-                    comments_response = comments_request.execute()
-                    debug_log(f"COMMENT DEBUG: Received API response for comments on video '{video_title}'")
+                    if (not video_details_response.get('items') or 
+                        'statistics' not in video_details_response['items'][0]):
+                        debug_log(f"COMMENT DEBUG: Video '{video_title}' missing statistics")
+                        videos_with_errors += 1
+                        continue
+                        
+                    # First check if comments are disabled via the statistics
+                    # The commentCount field might not exist if comments are disabled
+                    if 'commentCount' not in video_details_response['items'][0]['statistics']:
+                        debug_log(f"COMMENT DEBUG: Video '{video_title}' has comments disabled (no commentCount in statistics)")
+                        video['comments_disabled'] = True
+                        videos_with_disabled_comments += 1
+                        continue
+                        
+                    # If commentCount is 0, don't waste an API call trying to fetch comments
+                    comment_count = int(video_details_response['items'][0]['statistics']['commentCount'])
+                    if comment_count == 0:
+                        debug_log(f"COMMENT DEBUG: Video '{video_title}' has 0 comments according to statistics")
+                        video['comments'] = []
+                        continue
+                        
+                    debug_log(f"COMMENT DEBUG: Video '{video_title}' has {comment_count} comments according to statistics")
                     
-                    # Log detailed API response for debugging
-                    debug_log(f"COMMENT DEBUG: Raw API response keys: {list(comments_response.keys())}")
-                    
-                    # Extract comment data
+                    # Now retrieve comments with pagination to get up to max_comments_per_video
                     comments = []
-                    response_items = comments_response.get('items', [])
-                    debug_log(f"COMMENT DEBUG: Response contains {len(response_items)} comments for video '{video_title}'")
+                    next_page_token = None
+                    comments_to_fetch = max_comments_per_video
                     
-                    if not response_items:
-                        debug_log(f"COMMENT DEBUG: No comments found in API response for video '{video_title}'")
+                    # Check if we have an ETag for this video's comments
+                    etag_key = f"etag_comments_{video_id}"
+                    etag = st.session_state.etag_cache.get(etag_key)
                     
-                    for item in response_items:
-                        try:
-                            comment = item['snippet']['topLevelComment']['snippet']
-                            comment_data = {
-                                'comment_id': item['id'],
-                                'comment_text': comment['textDisplay'],
-                                'comment_author': comment['authorDisplayName'],
-                                'comment_published_at': comment['publishedAt'],
-                                'like_count': comment.get('likeCount', 0)
-                            }
-                            comments.append(comment_data)
-                            
-                            # Also check for replies if present
-                            if 'replies' in item and item['replies']['comments']:
-                                for reply in item['replies']['comments']:
-                                    reply_snippet = reply['snippet']
-                                    reply_data = {
-                                        'comment_id': reply['id'],
-                                        'comment_text': f"[REPLY] {reply_snippet['textDisplay']}",
-                                        'comment_author': reply_snippet['authorDisplayName'],
-                                        'comment_published_at': reply_snippet['publishedAt'],
-                                        'like_count': reply_snippet.get('likeCount', 0),
-                                        'parent_id': item['id']
-                                    }
-                                    comments.append(reply_data)
-                        except KeyError as ke:
-                            debug_log(f"COMMENT DEBUG: KeyError accessing comment structure: {ke}. Item structure: {item}")
-                            continue
+                    # Continue fetching until we have enough comments or run out of pages
+                    while comments_to_fetch > 0:
+                        # Request can fetch up to 100 comments at a time
+                        current_fetch_count = min(100, comments_to_fetch)
+                        
+                        # Create base request
+                        comments_request = self.youtube.commentThreads().list(
+                            part="snippet,replies",  # Get both top-level comments and their replies
+                            videoId=video_id,
+                            maxResults=current_fetch_count,
+                            textFormat="plainText",   
+                            order="relevance"         
+                        )
+                        
+                        # Add page token if we're paginating
+                        if next_page_token:
+                            comments_request.uri = comments_request.uri + "&pageToken=" + next_page_token
+                        
+                        # Add ETag for conditional request if available
+                        if etag:
+                            debug_log(f"COMMENT DEBUG: Using ETag for video '{video_title}': {etag}")
+                            comments_request.headers['If-None-Match'] = etag
+                        
+                        debug_log(f"COMMENT DEBUG: Sending API request for comments on video '{video_title}' (max: {current_fetch_count})")
+                        comments_response = comments_request.execute()
+                        
+                        # Store new ETag if present
+                        if 'etag' in comments_response:
+                            st.session_state.etag_cache[etag_key] = comments_response['etag']
+                            debug_log(f"COMMENT DEBUG: Stored new ETag for video '{video_title}': {comments_response['etag']}")
+                        
+                        # Log detailed API response for debugging
+                        debug_log(f"COMMENT DEBUG: Raw API response keys: {list(comments_response.keys())}")
+                        
+                        # Extract comment data
+                        response_items = comments_response.get('items', [])
+                        comments_fetched_this_page = len(response_items)
+                        debug_log(f"COMMENT DEBUG: Response contains {comments_fetched_this_page} comments for video '{video_title}'")
+                        
+                        if not response_items:
+                            debug_log(f"COMMENT DEBUG: No comments found in API response for video '{video_title}'")
+                            break
+                        
+                        # Process comments from this page
+                        for item in response_items:
+                            try:
+                                comment = item['snippet']['topLevelComment']['snippet']
+                                comment_data = {
+                                    'comment_id': item['id'],
+                                    'comment_text': comment['textDisplay'],
+                                    'comment_author': comment['authorDisplayName'],
+                                    'comment_published_at': comment['publishedAt'],
+                                    'like_count': comment.get('likeCount', 0)
+                                }
+                                comments.append(comment_data)
+                                
+                                # Also check for replies if present
+                                if 'replies' in item and item['replies']['comments']:
+                                    for reply in item['replies']['comments']:
+                                        reply_snippet = reply['snippet']
+                                        reply_data = {
+                                            'comment_id': reply['id'],
+                                            'comment_text': f"[REPLY] {reply_snippet['textDisplay']}",
+                                            'comment_author': reply_snippet['authorDisplayName'],
+                                            'comment_published_at': reply_snippet['publishedAt'],
+                                            'like_count': reply_snippet.get('likeCount', 0),
+                                            'parent_id': item['id']
+                                        }
+                                        comments.append(reply_data)
+                            except KeyError as ke:
+                                debug_log(f"COMMENT DEBUG: KeyError accessing comment structure: {ke}. Item structure: {item}")
+                                continue
+                        
+                        # Update remaining comments to fetch
+                        comments_to_fetch -= comments_fetched_this_page
+                        
+                        # Check if there are more pages of comments
+                        if 'nextPageToken' in comments_response and comments_to_fetch > 0:
+                            next_page_token = comments_response['nextPageToken']
+                            debug_log(f"COMMENT DEBUG: More comments available, using pageToken: {next_page_token}")
+                        else:
+                            debug_log(f"COMMENT DEBUG: No more comment pages or reached max limit for video '{video_title}'")
+                            break
                     
                     # Add comments to the video
                     video['comments'] = comments
@@ -583,14 +647,31 @@ class YouTubeAPI:
         
         # Remove 'resolve:' prefix if present (internal format)
         if query.startswith('resolve:'):
-            query = query[8:].trip()
+            query = query[8:].strip()  # Fixed typo: was 'trip()'
+        
+        # Process based on URL format
+        if query.startswith('@'):
+            handle = query
+            debug_log(f"Processing as channel handle: {handle}")
+        elif '/' in query:
+            # Extract the last part of the URL
+            parts = query.strip('/').split('/')
+            handle = parts[-1]
+            if handle.startswith('@'):
+                debug_log(f"Extracted handle from URL: {handle}")
+            else:
+                handle = '@' + handle
+                debug_log(f"Converted URL part to handle format: {handle}")
+        else:
+            # If it doesn't have @ or /, add @ to make it a handle format
+            handle = '@' + query
+            debug_log(f"Added @ prefix to make it a handle: {handle}")
             
         try:
             # Try to resolve handle or custom URL using search endpoint
-            # We search for the exact username/handle in channel results
             search_request = self.youtube.search().list(
                 part="snippet",
-                q=query,
+                q=handle,
                 type="channel",
                 maxResults=5
             )
@@ -598,15 +679,15 @@ class YouTubeAPI:
             
             # Check if we got any results
             if not search_response.get('items'):
-                debug_log(f"No channels found for query: {query}")
+                debug_log(f"No channels found for query: {handle}")
                 return None
                 
             # Find the best match by comparing titles and custom URLs
             best_match = None
             
             for item in search_response['items']:
-                channel_id = item['snippet']['channelId']
-                title = item['snippet']['title']
+                channel_id = item['id']['channelId']
+                channel_title = item['snippet']['title']
                 
                 # Get more details about the channel to check custom URL
                 channel_request = self.youtube.channels().list(
@@ -622,9 +703,9 @@ class YouTubeAPI:
                 
                 # Check if this is an exact match for handle or custom URL
                 # CustomUrl field might not be available in all channel data
-                custom_url = channel_data['snippet'].get('customUrl', '')
+                channel_custom_url = channel_data['snippet'].get('customUrl', '')
                 
-                debug_log(f"Checking channel: ID={channel_id}, title='{title}', customUrl='{custom_url}'")
+                debug_log(f"Checking channel: ID={channel_id}, title='{channel_title}', customUrl='{channel_custom_url}'")
                 
                 # Match priority:
                 # 1. Exact match on customUrl (without @)
@@ -632,28 +713,39 @@ class YouTubeAPI:
                 # 3. Exact match on title
                 # 4. First result if nothing else matches
                 
-                # Clean query for comparison by removing @ if present
-                clean_query = query[1:] if query.startswith('@') else query
+                # Clean handle for comparison by removing @ if present
+                clean_handle = handle[1:] if handle.startswith('@') else handle
                 
-                if custom_url and custom_url.lower() == clean_query.lower():
-                    debug_log(f"Found exact match on customUrl: {custom_url}")
+                if channel_custom_url and (
+                    channel_custom_url.lower() == clean_handle.lower() or 
+                    channel_custom_url.lower() == handle.lower()
+                ):
+                    debug_log(f"Found exact match on customUrl: {channel_custom_url}")
                     best_match = channel_id
                     break
-                elif query.startswith('@') and clean_query.lower() in custom_url.lower():
-                    debug_log(f"Found handle match: @{clean_query} in {custom_url}")
+                elif handle.startswith('@') and clean_handle.lower() in channel_custom_url.lower():
+                    debug_log(f"Found handle match: @{clean_handle} in {channel_custom_url}")
                     best_match = channel_id
                     # Continue looking for exact matches
-                elif not best_match and title.lower() == query.lower():
-                    debug_log(f"Found title match: {title}")
-                    best_match = channel_id
+                elif clean_handle.lower() in channel_title.lower():
+                    debug_log(f"Found channel with matching title for handle {handle}: {channel_id}")
+                    if not best_match:  # Only set if we don't have a better match
+                        best_match = channel_id
                 elif not best_match:
-                    debug_log(f"Setting initial match: {title} ({channel_id})")
+                    debug_log(f"Setting initial match: {channel_title} ({channel_id})")
                     best_match = channel_id
             
             # Return the best match if found
             if best_match:
                 debug_log(f"Resolved {query} to channel ID: {best_match}")
                 return best_match
+            
+            # If we got items but didn't find a good match, use the first result
+            if search_response.get('items'):
+                first_result = search_response.get('items')[0]
+                channel_id = first_result['id']['channelId']
+                debug_log(f"No exact match found, using first search result for {handle}: {channel_id}")
+                return channel_id
                 
             debug_log(f"Failed to find a good match for: {query}")
             return None
@@ -665,104 +757,4 @@ class YouTubeAPI:
         except Exception as e:
             st.error(f"Error resolving custom URL: {str(e)}")
             debug_log(f"Exception in resolve_custom_channel_url: {str(e)}", e)
-            return None
-
-    def resolve_custom_channel_url(self, custom_url: str) -> str:
-        """
-        Resolve a custom channel URL or handle to a channel ID
-        
-        Args:
-            custom_url (str): The custom URL or handle (e.g., '@channelname')
-            
-        Returns:
-            str or None: The resolved channel ID or None if resolution failed
-        """
-        if not self.is_initialized():
-            debug_log("Cannot resolve custom URL: YouTube API client not initialized")
-            return None
-            
-        debug_log(f"Attempting to resolve custom URL or handle: {custom_url}")
-        
-        # Clean up the input URL or handle
-        if custom_url.startswith('@'):
-            handle = custom_url
-            debug_log(f"Processing as channel handle: {handle}")
-        elif '/' in custom_url:
-            # Extract the last part of the URL
-            parts = custom_url.strip('/').split('/')
-            handle = parts[-1]
-            if handle.startswith('@'):
-                debug_log(f"Extracted handle from URL: {handle}")
-            else:
-                handle = '@' + handle
-                debug_log(f"Converted URL part to handle format: {handle}")
-        else:
-            handle = '@' + custom_url
-            debug_log(f"Added @ prefix to make it a handle: {handle}")
-            
-        try:
-            # First attempt: try to search for the channel
-            search_request = self.youtube.search().list(
-                part="snippet",
-                q=handle,
-                type="channel",
-                maxResults=5
-            )
-            
-            search_response = search_request.execute()
-            
-            # Check if we got any results
-            if not search_response.get('items'):
-                debug_log(f"No search results found for handle: {handle}")
-                return None
-                
-            # Look for an exact match in the search results
-            for item in search_response['items']:
-                channel_id = item['id']['channelId']
-                channel_title = item['snippet']['title']
-                
-                # Get more details about this channel to check custom URL
-                channel_request = self.youtube.channels().list(
-                    part="snippet",
-                    id=channel_id
-                )
-                channel_response = channel_request.execute()
-                
-                if not channel_response.get('items'):
-                    continue
-                    
-                channel_data = channel_response['items'][0]
-                
-                # Check if this is the right channel by comparing:
-                # 1. If the channel's custom URL matches our handle
-                # 2. If the channel title contains our handle (without @)
-                channel_custom_url = channel_data['snippet'].get('customUrl', '')
-                
-                debug_log(f"Comparing handle '{handle}' with channel '{channel_title}' (ID: {channel_id}, customUrl: {channel_custom_url})")
-                
-                # If custom URL matches our handle (with or without @)
-                if channel_custom_url and (
-                    channel_custom_url == handle or 
-                    channel_custom_url == handle[1:] or  # without @
-                    '@' + channel_custom_url == handle
-                ):
-                    debug_log(f"Found matching custom URL for handle {handle}: {channel_id}")
-                    return channel_id
-                    
-                # Or if the title is a close match
-                if handle[1:].lower() in channel_title.lower():
-                    debug_log(f"Found channel with matching title for handle {handle}: {channel_id}")
-                    return channel_id
-            
-            # If we get here and haven't returned, just use the first result
-            first_result = search_response['items'][0]
-            channel_id = first_result['id']['channelId']
-            debug_log(f"No exact match found, using first search result for handle {handle}: {channel_id}")
-            return channel_id
-            
-        except googleapiclient.errors.HttpError as e:
-            debug_log(f"YouTube API error when resolving custom URL: {str(e)}", e)
-            return None
-        except Exception as e:
-            debug_log(f"Error resolving custom URL: {str(e)}", e)
             return None

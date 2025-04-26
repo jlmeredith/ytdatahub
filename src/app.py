@@ -15,6 +15,8 @@ from src.ui.data_storage import render_data_storage_tab
 from src.ui.data_analysis import render_data_analysis_tab
 from src.ui.utilities import render_utilities_tab
 
+# Note: st.set_page_config has been moved to youtube.py to ensure it's called first
+
 class YTDataHubApp:
     """
     Main application class for YTDataHub.
@@ -43,15 +45,7 @@ class YTDataHubApp:
         # Load environment variables from .env file
         load_dotenv()
         
-        # Set up Streamlit page configuration
-        st.set_page_config(
-            page_title="YTDataHub",
-            layout="wide",  # Changed from "centered" to "wide"
-            page_icon=":dna:",
-            menu_items={
-                'About': "Created by Jamie Meredith 'https://www.linkedin.com/in/jlmeredith/'"
-            }
-        )
+        # Note: st.set_page_config has been moved to the top of youtube.py
     
     def _initialize_data_directory(self):
         """Create necessary data directories."""
@@ -64,38 +58,135 @@ class YTDataHubApp:
     
     def run(self):
         """Run the YTDataHub application."""
-        st.title('YTDataHub')
+        # Apply custom styling
+        self._apply_custom_styling()
         
-        # Set default tab if not present in session state
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = "Data Collection"
+        # Create a sidebar for navigation
+        self._create_sidebar()
         
-        # Define tab names
-        tabs = ["Data Collection", "Data Storage", "Data Analysis", "Utilities"]
+        # Render main content
+        self._render_main_content()
+    
+    def _apply_custom_styling(self):
+        """Apply custom CSS styling to the application."""
+        # Custom CSS for better UI
+        st.markdown("""
+        <style>
+        /* Improve the sidebar styling */
+        div[data-testid="stSidebarNav"] {
+            background-color: rgba(240, 242, 246, 0.1);
+            border-radius: 10px;
+            padding: 1rem;
+        }
         
-        # Process any tab change from redirects (like the "Go to Data Storage Tab" button)
-        # This needs to happen before rendering the radio buttons
-        active_tab = st.session_state.active_tab
-        tab_index = tabs.index(active_tab) if active_tab in tabs else 0
+        /* Style for cards */
+        div.card {
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            background-color: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
         
-        # Handle tab selection via radio buttons styled as tabs
-        # This is a more reliable approach than using st.tabs() for programmatic switching
-        selected_tab = st.radio(
-            "Select a tab:",
-            tabs,
-            index=tab_index,
-            key="tab_selector",
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+        div.card:hover {
+            transform: translateY(-5px);
+        }
         
-        # Update session state based on selection
-        if selected_tab != st.session_state.active_tab:
-            st.session_state.active_tab = selected_tab
-            st.rerun()
+        /* Dashboard containers */
+        div.dashboard-container {
+            background-color: rgba(240, 242, 246, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        /* Custom metric styles */
+        div.custom-metric {
+            background-color: rgba(240, 242, 246, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        /* Custom header */
+        div.custom-header {
+            margin-bottom: 2rem;
+        }
+        
+        /* Improved section dividers */
+        hr {
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+            border: 0;
+            height: 1px;
+            background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0));
+        }
+        
+        /* Responsive fixes */
+        @media (max-width: 768px) {
+            div.card {
+                padding: 1rem;
+            }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    
+    def _create_sidebar(self):
+        """Create a sidebar for navigation."""
+        with st.sidebar:
+            # App title and logo
+            st.title("YTDataHub")
+            st.markdown("---")
             
-        # Display a visual separator between tabs and content
-        st.markdown("<hr style='margin-top: 0; margin-bottom: 30px'>", unsafe_allow_html=True)
+            # Navigation
+            st.subheader("Navigation")
+            
+            # Define tab names
+            tabs = ["Data Collection", "Data Storage", "Data Analysis", "Utilities"]
+            
+            # Set default tab if not present in session state
+            if 'active_tab' not in st.session_state:
+                st.session_state.active_tab = "Data Collection"
+            
+            # Create basic radio button navigation
+            selected_tab = st.radio(
+                "Select a section:",
+                tabs,
+                index=tabs.index(st.session_state.active_tab),
+                label_visibility="collapsed"
+            )
+            
+            # Update session state based on selection
+            if selected_tab != st.session_state.active_tab:
+                st.session_state.active_tab = selected_tab
+                st.rerun()
+            
+            # Simple theme selector
+            st.markdown("---")
+            st.subheader("Settings")
+            
+            # Initialize theme state if not present
+            if 'theme' not in st.session_state:
+                st.session_state.theme = "Light"
+            
+            # Theme selection with simple radio buttons
+            st.session_state.theme = st.radio(
+                "Theme:",
+                ["Light", "Dark"],
+                index=0 if st.session_state.theme == "Light" else 1
+            )
+            
+            # Add version info
+            st.markdown("---")
+            st.caption("Version 1.0.0")
+            st.caption("© 2025 YTDataHub")
+    
+    def _render_main_content(self):
+        """Render the main content based on the active tab."""
+        # Display a title 
+        st.title(f"{st.session_state.active_tab}")
+        st.markdown("---")
         
         # Render the appropriate tab content based on active_tab
         if st.session_state.active_tab == "Data Collection":
