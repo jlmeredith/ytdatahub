@@ -22,6 +22,43 @@ DATA_DIR.mkdir(exist_ok=True)
 DEFAULT_MAX_VIDEOS = 25
 DEFAULT_DEBUG_MODE = False
 
+class Settings:
+    """
+    Settings class for managing application configuration and environment variables.
+    """
+    def __init__(self):
+        # Database availability flags
+        self.mongodb_available = os.getenv('MONGO_URI') is not None
+        self.postgres_available = all([
+            os.getenv('PG_HOST') is not None,
+            os.getenv('PG_USER') is not None,
+            os.getenv('PG_PASSWORD') is not None,
+            os.getenv('PG_DATABASE') is not None
+        ])
+        
+        # Default storage settings
+        self.default_to_local_storage = not (self.mongodb_available or self.postgres_available)
+        
+        # API settings
+        self.youtube_api_key = os.getenv('YOUTUBE_API_KEY', '')
+        
+        # Application paths
+        self.data_dir = DATA_DIR
+        self.sqlite_db_path = SQLITE_DB_PATH
+        self.channels_file = CHANNELS_FILE
+    
+    def get_available_storage_options(self):
+        """Returns a list of available storage options based on environment"""
+        options = ["SQLite Database", "Local Storage (JSON)"]
+        
+        if self.mongodb_available:
+            options.append("MongoDB")
+            
+        if self.postgres_available:
+            options.append("PostgreSQL")
+            
+        return options
+
 # Initialize session state variables if they don't exist
 def init_session_state():
     """Initialize Streamlit session state variables"""

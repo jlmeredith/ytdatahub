@@ -5,15 +5,21 @@ import re
 import os
 import json
 import shutil
+import logging
 import streamlit as st
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+
 def debug_log(message: str, data: Any = None):
-    """Log debug messages to Streamlit if debug mode is enabled"""
+    """Log debug messages to server console if debug mode is enabled"""
     if st.session_state.debug_mode:
-        current_time = datetime.now().strftime("%H:%M:%S")
-        
         if data is not None:
             # Format data for display
             if isinstance(data, dict) or isinstance(data, list):
@@ -28,51 +34,71 @@ def debug_log(message: str, data: Any = None):
             if len(data_str) > 1000:
                 data_str = data_str[:1000] + "... [truncated]"
             
-            st.text(f"[DEBUG {current_time}] {message}:\n{data_str}")
+            logging.debug(f"{message}:\n{data_str}")
         else:
-            st.text(f"[DEBUG {current_time}] {message}")
+            logging.debug(message)
 
-def estimate_quota_usage():
-    """Estimates YouTube API quota points that will be used with current settings"""
+def estimate_quota_usage(fetch_channel=None, fetch_videos=None, fetch_comments=None, 
+                         video_count=None, comments_count=None):
+    """
+    Estimates YouTube API quota points that will be used with current settings
+    
+    Args:
+        fetch_channel: Whether to fetch channel data (defaults to session state if None)
+        fetch_videos: Whether to fetch videos (defaults to session state if None)
+        fetch_comments: Whether to fetch comments (defaults to session state if None)
+        video_count: Number of videos to fetch (defaults to session state if None)
+        comments_count: Number of comments per video (default 10 if None)
+    
+    Returns:
+        int: Estimated quota usage
+    """
+    # Use parameters if provided, otherwise fall back to session state
+    fetch_channel = fetch_channel if fetch_channel is not None else st.session_state.fetch_channel_data
+    fetch_videos = fetch_videos if fetch_videos is not None else st.session_state.fetch_videos
+    fetch_comments = fetch_comments if fetch_comments is not None else st.session_state.fetch_comments
+    video_count = video_count if video_count is not None else st.session_state.max_videos
+    comments_count = comments_count if comments_count is not None else 10
+    
     # Base quota for channel info
-    quota = 1 if st.session_state.fetch_channel_data else 0
+    quota = 1 if fetch_channel else 0
     
     # Quota for video list
     # Each page of playlist items costs 1 unit, each page has 50 videos
-    if st.session_state.fetch_videos:
-        video_pages = (st.session_state.max_videos + 49) // 50  # Ceiling division
+    if fetch_videos:
+        video_pages = (video_count + 49) // 50  # Ceiling division
         quota += video_pages
         
         # Each batch of 50 videos costs 1 unit for details
-        video_batches = (st.session_state.max_videos + 49) // 50
+        video_batches = (video_count + 49) // 50
         quota += video_batches
         
         # Comments cost 1 unit per video
-        if st.session_state.fetch_comments:
-            quota += st.session_state.max_videos
+        if fetch_comments:
+            quota += video_count
     
     return quota
 
 def duration_to_seconds(duration):
     """Convert YouTube duration format (PT1H2M3S) to seconds"""
-    duration = duration[2:]  # Remove the 'PT' prefix
-    seconds = 0
-
-    # Check for hours
-    if 'H' in duration:
-        hours, duration = duration.split('H')
-        seconds += int(hours) * 3600
-
-    # Check for minutes
-    if 'M' in duration:
-        minutes, duration = duration.split('M')
-        seconds += int(minutes) * 60
-
-    # Check for seconds
-    if 'S' in duration:
-        seconds = duration.split('S')[0]
-
-    return int(seconds)
+    if not duration or not isinstance(duration, str):
+        return 0
+        
+    # Use regex to properly extract all components
+    hours = re.search(r'(\d+)H', duration)
+    minutes = re.search(r'(\d+)M', duration)
+    seconds = re.search(r'(\d+)S', duration)
+    
+    # Convert to seconds
+    total_seconds = 0
+    if hours:
+        total_seconds += int(hours.group(1)) * 3600
+    if minutes:
+        total_seconds += int(minutes.group(1)) * 60
+    if seconds:
+        total_seconds += int(seconds.group(1))
+    
+    return total_seconds
 
 def parse_duration_with_regex(duration_str: str) -> int:
     """
@@ -99,12 +125,60 @@ def parse_duration_with_regex(duration_str: str) -> int:
     return total_seconds
 
 def format_duration(seconds):
-    """Format seconds as HH:MM:SS"""
+    """Format seconds as HH:MM:SS or MM:SS depending on length"""
+    if seconds is None or seconds <= 0:
+        return "00:00"
+    
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
-    seconds = int(seconds % 60)
+    secs = int(seconds % 60)
     
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    # For videos under an hour, use MM:SS format
+    if hours == 0:
+        return f"{minutes:02d}:{secs:02d}"
+    
+    # For longer videos, use HH:MM:SS format
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+def format_duration_human_friendly(seconds):
+    """
+    Format seconds into a human-friendly duration string.
+    Examples: "3 hours 42 minutes", "5 minutes 17 seconds", "2 hours 1 minute", etc.
+    
+    Args:
+        seconds: Duration in seconds
+        
+    Returns:
+        str: Formatted duration string
+    """
+    if seconds is None or seconds <= 0:
+        return "0 seconds"
+    
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    
+    parts = []
+    
+    # Add hours if present
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    
+    # Add minutes if present
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    
+    # Add seconds if present, or if it's the only component
+    if secs > 0 or (hours == 0 and minutes == 0):
+        parts.append(f"{secs} second{'s' if secs != 1 else ''}")
+    
+    # Join the parts based on how many we have
+    if len(parts) == 1:
+        return parts[0]
+    elif len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    else:  # len(parts) == 3
+        return f"{parts[0]}, {parts[1]}, and {parts[2]}"
 
 def format_number(num: int) -> str:
     """Format large numbers in human-readable form"""
@@ -127,8 +201,58 @@ def validate_api_key(api_key: str) -> bool:
     
     return True
 
-def validate_channel_id(channel_id: str) -> bool:
-    """Basic validation for YouTube channel ID format"""
+def validate_channel_id(input_string: str) -> tuple[bool, str]:
+    """
+    Validate and extract YouTube channel ID from either a direct ID or channel URL.
+    
+    Args:
+        input_string: Either a channel ID or a channel URL
+        
+    Returns:
+        Tuple of (is_valid, channel_id)
+    """
+    # Clean the input string
+    cleaned_input = input_string.strip()
+    
+    # Case 1: Direct channel ID (e.g., 'UCxxx...')
+    if cleaned_input.startswith('UC') and len(cleaned_input) >= 20:
+        # Check if it only contains valid characters
+        if re.match(r'^[A-Za-z0-9_-]+$', cleaned_input):
+            return True, cleaned_input
+    
+    # Case 2: Channel URL formats
+    # Handle common YouTube channel URL formats:
+    
+    # Format: https://www.youtube.com/channel/UCxxx...
+    channel_pattern = r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/channel\/([a-zA-Z0-9_-]+)'
+    channel_match = re.match(channel_pattern, cleaned_input)
+    if channel_match:
+        channel_id = channel_match.group(1)
+        if channel_id.startswith('UC') and len(channel_id) >= 20:
+            return True, channel_id
+    
+    # Format: https://www.youtube.com/c/ChannelName or /user/UserName
+    # These require an API call to resolve, which we'll handle in the YouTube service
+    custom_pattern = r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:c|user)\/([a-zA-Z0-9_-]+)'
+    custom_match = re.match(custom_pattern, cleaned_input)
+    if custom_match:
+        # We'll return a special signal that this needs to be resolved
+        # The YouTube service will need to look up the actual channel ID
+        return False, f"resolve:{custom_match.group(1)}"
+    
+    # Format: https://www.youtube.com/@username
+    handle_pattern = r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/@([a-zA-Z0-9_-]+)'
+    handle_match = re.match(handle_pattern, cleaned_input)
+    if handle_match:
+        # Also needs API resolution
+        return False, f"resolve:@{handle_match.group(1)}"
+    
+    # Not a valid channel ID or URL format
+    return False, ""
+
+# Keep the old function for backward compatibility
+def validate_channel_id_old(channel_id: str) -> bool:
+    """Basic validation for YouTube channel ID format (legacy function)"""
     # Channel IDs typically start with 'UC' and are about 24 chars long
     if not channel_id or len(channel_id) < 20:
         return False

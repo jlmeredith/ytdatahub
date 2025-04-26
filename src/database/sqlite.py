@@ -203,15 +203,18 @@ class SQLiteDatabase:
                 return None
             
             # Create channel data dictionary
+            channel_info = {
+                'title': channel_row[1],
+                'statistics': {
+                    'subscriberCount': channel_row[2],
+                    'viewCount': channel_row[3]
+                },
+                'description': channel_row[5]
+            }
+            
             channel_data = {
-                'channel_id': channel_row[0],
-                'channel_name': channel_row[1],
-                'subscribers': channel_row[2],
-                'views': channel_row[3],  # Changed from total_views to views
-                'total_videos': channel_row[4],
-                'channel_description': channel_row[5],
-                'playlist_id': channel_row[6],
-                'video_id': []
+                'channel_info': channel_info,
+                'videos': []  # Changed from 'video_id' to 'videos'
             }
             
             # Get videos for this channel
@@ -220,23 +223,27 @@ class SQLiteDatabase:
                        likes, duration, thumbnails, caption_status
                 FROM videos 
                 WHERE channel_id = ?
-            """, (channel_data['channel_id'],))
+            """, (channel_row[0],))
             
             videos = cursor.fetchall()
             
             # Add each video to the channel data
             for video_row in videos:
                 video_data = {
-                    'video_id': video_row[0],
-                    'title': video_row[1],
-                    'video_description': video_row[2],
-                    'published_at': video_row[3],
-                    'views': video_row[4],
-                    'likes': video_row[5],
-                    'duration': video_row[6],
-                    'thumbnails': video_row[7],
-                    'caption_status': video_row[8],
-                    'comments': []
+                    'id': video_row[0],  # Changed from 'video_id' to 'id'
+                    'snippet': {
+                        'title': video_row[1],
+                        'description': video_row[2],
+                        'publishedAt': video_row[3]
+                    },
+                    'statistics': {
+                        'viewCount': video_row[4],
+                        'likeCount': video_row[5],
+                        'commentCount': 0  # Default value
+                    },
+                    'contentDetails': {
+                        'duration': video_row[6]
+                    }
                 }
                 
                 # Get comments for this video
@@ -244,21 +251,69 @@ class SQLiteDatabase:
                     SELECT comment_id, comment_text, comment_author, comment_published_at
                     FROM comments 
                     WHERE video_id = ?
-                """, (video_data['video_id'],))
+                """, (video_row[0],))
                 
                 comments = cursor.fetchall()
+                
+                # Count comments and add them to statistics
+                video_data['statistics']['commentCount'] = len(comments)
+                
+                # Create a dictionary to store comments for this video
+                video_comments = []
                 
                 # Add each comment to the video data
                 for comment_row in comments:
                     comment_data = {
-                        'comment_id': comment_row[0],
-                        'comment_text': comment_row[1],
-                        'comment_authorc': comment_row[2],
-                        'comment_published_at': comment_row[3]
+                        'id': comment_row[0],
+                        'snippet': {
+                            'topLevelComment': {
+                                'snippet': {
+                                    'textDisplay': comment_row[1],
+                                    'authorDisplayName': comment_row[2],
+                                    'publishedAt': comment_row[3],
+                                    'likeCount': 0
+                                }
+                            }
+                        }
                     }
-                    video_data['comments'].append(comment_data)
+                    video_comments.append(comment_data)
                 
-                channel_data['video_id'].append(video_data)
+                # Add the video to channel data
+                channel_data['videos'].append(video_data)
+            
+            # If we have comments, add them to the channel data
+            if any(len(cursor.execute("""SELECT 1 FROM comments WHERE video_id = ?""",
+                                   (v['id'],)).fetchall()) > 0 
+                  for v in channel_data['videos']):
+                channel_data['comments'] = {}
+                
+                # Add comments organized by video
+                for video in channel_data['videos']:
+                    cursor.execute("""
+                        SELECT comment_id, comment_text, comment_author, comment_published_at
+                        FROM comments 
+                        WHERE video_id = ?
+                    """, (video['id'],))
+                    
+                    comments = cursor.fetchall()
+                    if comments:
+                        channel_data['comments'][video['id']] = []
+                        
+                        for comment_row in comments:
+                            comment_data = {
+                                'id': comment_row[0],
+                                'snippet': {
+                                    'topLevelComment': {
+                                        'snippet': {
+                                            'textDisplay': comment_row[1],
+                                            'authorDisplayName': comment_row[2],
+                                            'publishedAt': comment_row[3],
+                                            'likeCount': 0
+                                        }
+                                    }
+                                }
+                            }
+                            channel_data['comments'][video['id']].append(comment_data)
             
             # Close the connection
             conn.close()
