@@ -1,0 +1,42 @@
+<!-- Storage Options Template -->
+<div class="storage-options">
+  <h3>Available Storage Options</h3>
+  <div class="storage-options-list">{{ available_options_html }}</div>
+
+  <h3>Configure New Storage Options</h3>
+
+  <div class="storage-option sqlite">
+    <h4>SQLite Configuration</h4>
+    <p>
+      SQLite is a lightweight, file-based database that is always available.
+    </p>
+    <p>Current status: <span class="status-active">Active</span></p>
+  </div>
+
+  <div class="storage-option json">
+    <h4>JSON Storage Configuration</h4>
+    <p>JSON storage provides simple file-based storage for your data.</p>
+    <p>Current status: <span class="status-active">Active</span></p>
+  </div>
+
+  <div class="storage-option mongodb">
+    <h4>MongoDB Configuration</h4>
+    <p>
+      MongoDB is a NoSQL database that provides scalable, document-based
+      storage.
+    </p>
+    <p>
+      Current status:
+      <span class="{{ mongodb_status_class }}">{{ mongodb_status }}</span>
+    </p>
+  </div>
+
+  <div class="storage-option postgresql">
+    <h4>PostgreSQL Configuration</h4>
+    <p>PostgreSQL is a powerful, open-source relational database system.</p>
+    <p>
+      Current status:
+      <span class="{{ postgres_status_class }}">{{ postgres_status }}</span>
+    </p>
+  </div>
+</div>

@@ -5,6 +5,102 @@ import streamlit as st
 import os
 from src.services.youtube_service import YouTubeService
 from src.utils.helpers import estimate_quota_usage, debug_log, format_number
+from src.ui.components.ui_utils import render_template_as_markdown, render_template
+
+def render_video_item(video, index):
+    """Render a video item using a template instead of embedded HTML.
+    
+    Args:
+        video: Dictionary containing video data
+        index: Index of the video in the list
+    """
+    # Prepare context for the video item template
+    video_url = f"https://www.youtube.com/watch?v={video.get('video_id')}"
+    context = {
+        "index": index + 1,
+        "title": video.get('title', 'Untitled'),
+        "description": video.get('video_description', 'No description')[:100] + "..." if video.get('video_description', '') and len(video.get('video_description', '')) > 100 else video.get('video_description', 'No description'),
+        "video_url": video_url,
+        "views": format_number(int(video.get('views', 0))),
+        "likes": format_number(int(video.get('likes', 0))),
+        "comment_count": video.get('comment_count', len(video.get('comments', []))),
+        "published_date": video.get('published_date', 'Unknown')
+    }
+    
+    # Use columns for a more structured layout
+    cols = st.columns([2, 1, 1, 1])
+    
+    # Display basic info (title and YouTube link)
+    st.markdown(render_template("video_item.html", context), unsafe_allow_html=True)
+    
+    # Column 1: Description/thumbnail
+    with cols[0]:
+        if 'thumbnails' in video:
+            st.image(video.get('thumbnails', ''), width=240)
+    
+    # Column 2: View stats
+    with cols[1]:
+        st.metric("Views", format_number(int(video.get('views', 0))))
+        st.write(f"Published: {video.get('published_date', 'Unknown')}")
+    
+    # Column 3: Like stats
+    with cols[2]:
+        st.metric("Likes", format_number(int(video.get('likes', 0))))
+        if 'duration' in video:
+            duration = video.get('duration', 'Unknown')
+            st.write(f"Duration: {duration}")
+    
+    # Column 4: Comment stats
+    with cols[3]:
+        # Use comment_count from the video metadata if available, otherwise use actual comments
+        if 'comment_count' in video:
+            comment_count = int(video.get('comment_count', 0))
+            actual_comments = len(video.get('comments', []))
+            
+            # Always show the comment count from metadata
+            debug_log(f"Video '{video.get('title', 'Unknown')}' has metadata comment_count: {comment_count}")
+            
+            # Indicate if actual comments are available
+            if comment_count > 0:
+                if actual_comments > 0:
+                    # We have both metadata count and actual comments
+                    st.metric("Comments", f"{actual_comments}/{comment_count}")
+                else:
+                    # We have only metadata count
+                    st.metric("Comments", comment_count)
+                    
+                    # Check if comments are disabled
+                    if video.get('comments_disabled', False):
+                        st.info("Comments disabled by owner")
+            else:
+                st.metric("Comments", "0")
+        else:
+            # Fall back to counting comments array
+            comment_count = len(video.get('comments', []))
+            st.metric("Comments", comment_count)
+            debug_log(f"Video '{video.get('title', 'Unknown')}' has no comment_count field, using array length: {comment_count}")
+        
+        # Show sample comment if available
+        if len(video.get('comments', [])) > 0:
+            # Use a button that toggles the comments display in session state
+            comment_id = f"show_comments_{video.get('video_id')}"
+            if comment_id not in st.session_state:
+                st.session_state[comment_id] = False
+            
+            if st.button(f"{'Hide' if st.session_state[comment_id] else 'Show'} Comments", key=f"btn_{video.get('video_id')}"):
+                st.session_state[comment_id] = not st.session_state[comment_id]
+            
+            # Display comments if the button state is True
+            if st.session_state[comment_id]:
+                for j, comment in enumerate(video.get('comments', [])[:3]):
+                    author = comment.get('comment_author', 'Anonymous')
+                    text = comment.get('comment_text', '')
+                    # Truncate long comments
+                    display_text = text[:100] + '...' if len(text) > 100 else text
+                    st.write(f"**{author}:** {display_text}")
+                
+                # Link to see all comments on YouTube
+                st.markdown(f"[View all comments on YouTube]({video_url})")
 
 def render_data_collection_tab():
     """
@@ -226,88 +322,7 @@ def render_data_collection_tab():
                     
                     # Display videos in a more user-friendly format
                     for i, video in enumerate(videos_to_display):
-                        # Create a card-like layout for each video
-                        st.markdown(f"### {i+1}. {video.get('title', 'Untitled')}")
-                        
-                        # Video URL for linking out
-                        video_url = f"https://www.youtube.com/watch?v={video.get('video_id')}"
-                        st.markdown(f"[Watch on YouTube]({video_url})")
-                        
-                        # Use 4 columns for better layout in wide mode
-                        cols = st.columns([2, 1, 1, 1])
-                        
-                        # Column 1: Description/thumbnail
-                        with cols[0]:
-                            if 'thumbnails' in video:
-                                st.image(video.get('thumbnails', ''), width=240)
-                            else:
-                                st.write("Video description:", video.get('video_description', '')[:100] + "..." if video.get('video_description', '') else "No description")
-                        
-                        # Column 2: View stats
-                        with cols[1]:
-                            st.metric("Views", format_number(int(video.get('views', 0))))
-                            st.write(f"Published: {video.get('published_date', 'Unknown')}")
-                        
-                        # Column 3: Like stats
-                        with cols[2]:
-                            st.metric("Likes", format_number(int(video.get('likes', 0))))
-                            if 'duration' in video:
-                                # Format duration if possible
-                                duration = video.get('duration', 'Unknown')
-                                st.write(f"Duration: {duration}")
-                        
-                        # Column 4: Comment stats
-                        with cols[3]:
-                            # Use comment_count from the video metadata if available, otherwise use actual comments
-                            if 'comment_count' in video:
-                                comment_count = int(video.get('comment_count', 0))
-                                actual_comments = len(video.get('comments', []))
-                                
-                                # Always show the comment count from metadata
-                                debug_log(f"Video '{video.get('title', 'Unknown')}' has metadata comment_count: {comment_count}")
-                                
-                                # Indicate if actual comments are available
-                                if comment_count > 0:
-                                    if actual_comments > 0:
-                                        # We have both metadata count and actual comments
-                                        st.metric("Comments", f"{actual_comments}/{comment_count}")
-                                    else:
-                                        # We have only metadata count
-                                        st.metric("Comments", comment_count)
-                                        
-                                        # Check if comments are disabled
-                                        if video.get('comments_disabled', False):
-                                            st.info("Comments disabled by owner")
-                                else:
-                                    st.metric("Comments", "0")
-                            else:
-                                # Fall back to counting comments array
-                                comment_count = len(video.get('comments', []))
-                                st.metric("Comments", comment_count)
-                                debug_log(f"Video '{video.get('title', 'Unknown')}' has no comment_count field, using array length: {comment_count}")
-                            
-                            # Show sample comment if available
-                            if len(video.get('comments', [])) > 0:
-                                # Use a button that toggles the comments display in session state
-                                comment_id = f"show_comments_{video.get('video_id')}"
-                                if comment_id not in st.session_state:
-                                    st.session_state[comment_id] = False
-                                
-                                if st.button(f"{'Hide' if st.session_state[comment_id] else 'Show'} Comments", key=f"btn_{video.get('video_id')}"):
-                                    st.session_state[comment_id] = not st.session_state[comment_id]
-                                
-                                # Display comments if the button state is True
-                                if st.session_state[comment_id]:
-                                    for j, comment in enumerate(video.get('comments', [])[:3]):
-                                        author = comment.get('comment_author', 'Anonymous')
-                                        text = comment.get('comment_text', '')
-                                        # Truncate long comments
-                                        display_text = text[:100] + '...' if len(text) > 100 else text
-                                        st.write(f"**{author}:** {display_text}")
-                                    
-                                    # Link to see all comments on YouTube
-                                    st.markdown(f"[View all comments on YouTube]({video_url})")
-                        
+                        render_video_item(video, i)
                         # Add a separator between videos
                         st.divider()
                     
@@ -338,9 +353,30 @@ def render_data_collection_tab():
                     total_comments = comment_stats.get('total_comments', 0)
                     videos_with_comments = comment_stats.get('videos_with_comments', 0)
                     
-                    # Display detailed summary
-                    st.markdown("### Data Collection Summary")
+                    # Create context for the data collection summary template
+                    channel_info_html = f"""
+                    <p><strong>Channel Name:</strong> {channel_info.get('channel_name', 'Unknown')}</p>
+                    <p><strong>Subscribers:</strong> {format_number(int(channel_info.get('subscribers', 0)))}</p>
+                    <p><strong>Total Channel Videos:</strong> {format_number(int(channel_info.get('total_videos', 0)))}</p>
+                    """
                     
+                    collected_data_html = f"""
+                    <p><strong>Videos Downloaded:</strong> {videos_fetched} of {channel_info.get('total_videos', 0)}</p>
+                    """
+                    
+                    if 'videos_unavailable' in channel_info:
+                        collected_data_html += f"<p><strong>Unavailable Videos:</strong> {channel_info.get('videos_unavailable', 0)}</p>"
+                    
+                    if 'videos_with_comments_disabled' in channel_info:
+                        collected_data_html += f"<p><strong>Videos with Comments Disabled:</strong> {channel_info.get('videos_with_comments_disabled', 0)}</p>"
+                    
+                    # If we have actual comment stats from the API, show them
+                    if 'comment_stats' in channel_info:
+                        stats = channel_info['comment_stats']
+                        if 'videos_with_errors' in stats and stats['videos_with_errors'] > 0:
+                            collected_data_html += f"<p><strong>Videos with Errors:</strong> {stats['videos_with_errors']}</p>"
+                    
+                    # Display metrics
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("Total Videos", videos_fetched)
@@ -351,33 +387,85 @@ def render_data_collection_tab():
                     
                     # Add more detailed summary in an expander
                     with st.expander("View Collection Details"):
-                        st.markdown("#### Channel Information")
-                        st.write(f"**Channel Name:** {channel_info.get('channel_name', 'Unknown')}")
-                        st.write(f"**Subscribers:** {format_number(int(channel_info.get('subscribers', 0)))}")
-                        st.write(f"**Total Channel Videos:** {format_number(int(channel_info.get('total_videos', 0)))}")
-                        
-                        st.markdown("#### Collected Data")
-                        st.write(f"**Videos Downloaded:** {videos_fetched} of {channel_info.get('total_videos', 0)}")
-                        if 'videos_unavailable' in channel_info:
-                            st.write(f"**Unavailable Videos:** {channel_info.get('videos_unavailable', 0)}")
-                        if 'videos_with_comments_disabled' in channel_info:
-                            st.write(f"**Videos with Comments Disabled:** {channel_info.get('videos_with_comments_disabled', 0)}")
-                        
-                        # If we have actual comment stats from the API, show them
-                        if 'comment_stats' in channel_info:
-                            stats = channel_info['comment_stats']
-                            if 'videos_with_errors' in stats and stats['videos_with_errors'] > 0:
-                                st.write(f"**Videos with Errors:** {stats['videos_with_errors']}")
+                        # Use the template to render the collection summary
+                        render_template_as_markdown("data_collection_summary.html", {
+                            "channel_info_html": channel_info_html,
+                            "collected_data_html": collected_data_html
+                        })
                     
                     # Next steps guidance with a clear button
                     st.markdown("### Next Steps")
                     st.info("You've successfully collected data from YouTube. Now you can save this data for analysis.")
                     
-                    # Add a prominent "Go to Data Storage" button
-                    if st.button("Go to Data Storage Tab", type="primary"):
-                        # Set the Streamlit session state to switch to the Storage tab
-                        st.session_state.active_tab = "Data Storage"
-                        st.rerun()
+                    # Storage options section (replacing the Go to Data Storage button)
+                    st.markdown("### Storage Options")
+                    
+                    # Initialize application settings to get available storage options
+                    from src.config import Settings
+                    app_settings = Settings()
+                    
+                    if 'current_channel_data' in st.session_state and st.session_state.current_channel_data:
+                        channel_data = st.session_state.current_channel_data
+                        
+                        # Display available storage options as a radio selection
+                        storage_option = st.radio(
+                            "Select Storage Option:", 
+                            app_settings.get_available_storage_options()
+                        )
+                        
+                        st.info(f"Selected storage type: **{storage_option}**. Data will be saved for later analysis.")
+                        
+                        if st.button("Save Channel Data", type="primary"):
+                            with st.spinner("Saving data..."):
+                                try:
+                                    # Use the YouTubeService to save the data
+                                    success = youtube_service.save_channel_data(channel_data, storage_option, app_settings)
+                                    
+                                    if success:
+                                        st.success(f"Data saved to {storage_option} successfully!")
+                                        
+                                        # Optional: Offer to view the data or continue to analysis
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            if st.button("Continue to Data Analysis", key="goto_analysis"):
+                                                st.session_state.active_tab = "Data Analysis"
+                                                st.rerun()
+                                        with col2:
+                                            if st.button("Collect Data for Another Channel", key="restart_collection"):
+                                                # Reset collection state variables to start fresh
+                                                st.session_state.channel_data_fetched = False
+                                                st.session_state.videos_fetched = False
+                                                st.session_state.comments_fetched = False
+                                                st.session_state.show_all_videos = False
+                                                if 'channel_info_temp' in st.session_state:
+                                                    del st.session_state.channel_info_temp
+                                                if 'current_channel_data' in st.session_state:
+                                                    del st.session_state.current_channel_data
+                                                st.rerun()
+                                    else:
+                                        st.error(f"Failed to save data to {storage_option}")
+                                except Exception as e:
+                                    st.error(f"Error saving data: {str(e)}")
+                        
+                        # Add information about storage configuration
+                        with st.expander("About Data Storage Options"):
+                            st.write("""
+                            You can configure additional storage options in the **Utilities** tab.
+                            
+                            Available storage types:
+                            - **SQLite Database**: Local database storage (default)
+                            - **Local Storage (JSON)**: Simple file-based storage
+                            """)
+                            
+                            # If we have MongoDB or PostgreSQL configured, mention them
+                            if app_settings.mongodb_available:
+                                st.write("- **MongoDB**: Document-based NoSQL database")
+                            if app_settings.postgres_available:
+                                st.write("- **PostgreSQL**: Relational database")
+                            
+                            st.info("💡 Tip: You can add and configure additional storage options in the Utilities section.")
+                    else:
+                        st.warning("No data available to save. Please complete the data collection steps first.")
                 else:
                     # Option to download comments
                     st.write("Now you can fetch comments for the downloaded videos.")

@@ -1,0 +1,38 @@
+<!-- Analytics Dashboard Template -->
+<div class="analytics-dashboard">
+  <!-- Dashboard Heading -->
+  <h2>Channel Analytics</h2>
+
+  <!-- No Data Message (conditionally rendered) -->
+  {% if no_data %}
+  <div class="info-message">
+    <p>No video data available for this channel.</p>
+  </div>
+  {% else %}
+
+  <!-- Views and Engagement Section -->
+  <div class="dashboard-section">
+    <h3>Views and Engagement Over Time</h3>
+    <div class="chart-container">
+      <!-- Plotly chart will be inserted here by Python code -->
+      {{ engagement_timeline_chart }}
+    </div>
+
+    <!-- Engagement Metrics will be included here -->
+    {{ engagement_metrics_html }}
+  </div>
+
+  <!-- Video Duration Analysis Section (conditionally rendered) -->
+  {% if show_duration_chart %}
+  <div class="dashboard-section">
+    <h3>Video Duration Analysis</h3>
+    <div class="chart-container">
+      <!-- Plotly chart will be inserted here by Python code -->
+      {{ duration_chart }}
+    </div>
+
+    <!-- Duration Metrics will be included here -->
+    {{ duration_metrics_html }}
+  </div>
+  {% endif %} {% endif %}
+</div>

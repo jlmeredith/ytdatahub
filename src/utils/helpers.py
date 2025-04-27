@@ -348,3 +348,105 @@ def clear_cache(clear_api_cache: bool = True, clear_python_cache: bool = True,
         debug_log(f"Cache clearing complete. Total items cleared: {results['total_items_cleared']}")
     
     return results
+
+"""
+Utility functions for pagination and UI helpers
+"""
+import streamlit as st
+import pandas as pd
+import math
+
+def paginate_dataframe(df, page_size, page_num):
+    """
+    Paginate a DataFrame.
+    
+    Args:
+        df: pandas DataFrame to paginate
+        page_size: Number of rows per page
+        page_num: Current page number (1-based)
+        
+    Returns:
+        Paginated DataFrame
+    """
+    if df is None or df.empty:
+        return df
+        
+    total_pages = math.ceil(len(df) / page_size)
+    
+    # Ensure page_num is within bounds
+    page_num = max(1, min(page_num, total_pages))
+    
+    # Calculate start and end row indices
+    start_idx = (page_num - 1) * page_size
+    end_idx = min(start_idx + page_size, len(df))
+    
+    return df.iloc[start_idx:end_idx].copy()
+
+def render_pagination_controls(total_items, page_size, current_page, key_prefix):
+    """
+    Render pagination controls with improved layout and styling.
+    
+    Args:
+        total_items: Total number of items in the dataset
+        page_size: Number of items per page
+        current_page: Current page number (1-based)
+        key_prefix: Prefix for Streamlit widget keys to avoid conflicts
+        
+    Returns:
+        New page number based on user interaction
+    """
+    total_pages = math.ceil(total_items / page_size)
+    
+    if total_pages <= 1:
+        return 1
+    
+    # Create a container for the pagination controls
+    with st.container():
+        # Create a more compact and better organized layout
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 2])
+        
+        with col1:
+            # Previous page button
+            prev_disabled = current_page <= 1
+            if st.button("← Prev", key=f"{key_prefix}_prev", disabled=prev_disabled, use_container_width=True):
+                return max(1, current_page - 1)
+        
+        with col2:
+            # Next page button
+            next_disabled = current_page >= total_pages
+            if st.button("Next →", key=f"{key_prefix}_next", disabled=next_disabled, use_container_width=True):
+                return min(total_pages, current_page + 1)
+        
+        with col3:
+            # Direct page input with cleaner layout
+            page_options = list(range(1, total_pages + 1))
+            new_page = st.selectbox(
+                f"Page ({current_page} of {total_pages})",
+                page_options,
+                index=page_options.index(current_page),
+                key=f"{key_prefix}_page_select",
+                label_visibility="collapsed"
+            )
+            
+            if new_page != current_page:
+                return new_page
+        
+        with col4:
+            # Page size selector
+            page_size_options = [10, 25, 50, 100]
+            new_page_size = st.selectbox(
+                "Items per page",
+                page_size_options,
+                index=page_size_options.index(page_size) if page_size in page_size_options else 0,
+                key=f"{key_prefix}_page_size",
+                label_visibility="collapsed"
+            )
+            
+            # If page size changed, adjust current page to keep approximately the same starting item visible
+            if new_page_size != page_size:
+                st.session_state[f"{key_prefix}_page_size"] = new_page_size
+                first_item_idx = (current_page - 1) * page_size
+                new_page = (first_item_idx // new_page_size) + 1
+                return new_page
+    
+    return current_page

@@ -1,0 +1,45 @@
+<!-- Video Item Template -->
+<div class="video-item">
+  <div class="video-header">
+    <div class="video-thumbnail">
+      {% if thumbnail_url %}
+      <img src="{{ thumbnail_url }}" alt="Video thumbnail" />
+      {% else %}
+      <div class="placeholder-thumbnail"></div>
+      {% endif %}
+    </div>
+    <div class="video-title">
+      <h3>{{ title }}</h3>
+      <div class="video-date">{{ published_date }}</div>
+    </div>
+  </div>
+
+  <div class="video-stats">
+    <div class="stat-item">
+      <span class="stat-label">Views:</span>
+      <span class="stat-value">{{ views_formatted }}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Likes:</span>
+      <span class="stat-value">{{ likes_formatted }}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Comments:</span>
+      <span class="stat-value">{{ comments_formatted }}</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Duration:</span>
+      <span class="stat-value">{{ duration }}</span>
+    </div>
+  </div>
+
+  {% if description %}
+  <div class="video-description">{{ description }}</div>
+  {% endif %} {% if video_url %}
+  <div class="video-links">
+    <a href="{{ video_url }}" target="_blank" class="video-link"
+      >Watch on YouTube</a
+    >
+  </div>
+  {% endif %}
+</div>

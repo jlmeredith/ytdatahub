@@ -1,0 +1,24 @@
+<!-- Channel Information Template -->
+<div class="channel-info">
+  <div class="channel-header">
+    <h3>{{ channel_name }}</h3>
+    <a href="{{ channel_url }}" target="_blank">View Channel on YouTube</a>
+  </div>
+
+  <div class="channel-metrics">
+    <div class="metric">
+      <span class="metric-label">Subscribers</span>
+      <span class="metric-value">{{ subscribers }}</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Total Videos</span>
+      <span class="metric-value">{{ total_videos }}</span>
+    </div>
+  </div>
+
+  <div class="channel-details">
+    <p><strong>Description:</strong> {{ channel_description }}</p>
+    <p><strong>Total Views:</strong> {{ views }}</p>
+    <p><strong>Channel ID:</strong> {{ channel_id }}</p>
+  </div>
+</div>

@@ -1,0 +1,119 @@
+/* 
+ * YTDataHub - Main stylesheet
+ * Contains all custom styles for the application
+ */
+
+/* Remove any residual empty resize handles */
+div[style*="cursor: col-resize"],
+div:has(> div[style*="cursor: col-resize"]) {
+  display: none !important;
+}
+
+/* Navigation buttons styling */
+section[data-testid="stSidebar"] button[kind="secondary"] {
+  width: 100%;
+  margin-bottom: 8px;
+  border-radius: 5px;
+  text-align: center;
+  border: none;
+  padding: 0.5rem 0.8rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+section[data-testid="stSidebar"] button[kind="secondary"]:hover {
+  transform: translateX(3px);
+}
+
+section[data-testid="stSidebar"] button[kind="primary"] {
+  width: 100%;
+  margin-bottom: 8px;
+  border-radius: 5px;
+  text-align: center;
+  border: none;
+  padding: 0.5rem 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+section[data-testid="stSidebar"] button[kind="primary"]:hover {
+  transform: translateX(3px);
+}
+
+/* Card styling */
+div.card {
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s;
+}
+
+div.card:hover {
+  transform: translateY(-5px);
+}
+
+/* Dashboard containers */
+div.dashboard-container {
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Custom metric styles */
+div.custom-metric {
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+/* Custom header */
+div.custom-header {
+  margin-bottom: 2rem;
+}
+
+/* Improved section dividers */
+hr {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  border: 0;
+  height: 1px;
+}
+
+/* Pagination container */
+.pagination-container {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.pagination-info {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Responsive fixes */
+@media (max-width: 768px) {
+  div.card {
+    padding: 1rem;
+  }
+}
+
+/* Form elements */
+input[type="password"] {
+  margin: 5px 0;
+  width: 100%;
+}
+
+/* Password fields in forms */
+.stPasswordInput {
+  display: inline-block;
+  width: 100%;
+}
+
+/* Fix for non-passive event listeners */
+* {
+  touch-action: pan-y;
+}

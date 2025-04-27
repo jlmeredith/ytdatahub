@@ -59,29 +59,67 @@ class Settings:
             
         return options
 
-# Initialize session state variables if they don't exist
+# Session state variables by category
+SESSION_STATE_VARS = {
+    # API related
+    'api': {
+        'api_key': '',
+        'api_cache': {}
+    },
+    
+    # Data collection related
+    'collection': {
+        'channel_id': '',
+        'max_videos': DEFAULT_MAX_VIDEOS,
+        'max_comments_per_video': 10,
+        'fetch_channel_data': True,
+        'fetch_videos': True,
+        'fetch_comments': True,
+        'collection_step': 1,
+        'channel_data_fetched': False,
+        'videos_fetched': False,
+        'comments_fetched': False,
+        'show_all_videos': False,
+        'current_channel_data': None,
+        'channel_info_temp': None
+    },
+    
+    # UI state related
+    'ui': {
+        'active_tab': "Data Collection",
+        'debug_mode': DEFAULT_DEBUG_MODE,
+        'theme': "Light"
+    },
+    
+    # Data analysis related
+    'analysis': {
+        'show_views_chart': True,
+        'show_likes_chart': True,
+        'show_comments_chart': True,
+        'show_duration_chart': True,
+        'selected_channel': None,
+        'video_page': 1,
+        'video_page_size': 25,
+        'sort_by': "recent",
+        'search_term': "",
+        'date_filter': ""
+    },
+    
+    # Statistics
+    'stats': {
+        'app_stats': {
+            'data_collections': 0,
+            'analyses': 0,
+            'api_calls': 0,
+            'channels': 0
+        }
+    }
+}
+
 def init_session_state():
-    """Initialize Streamlit session state variables"""
-    if 'api_key' not in st.session_state:
-        st.session_state.api_key = ''
-    
-    if 'channel_id' not in st.session_state:
-        st.session_state.channel_id = ''
-    
-    if 'max_videos' not in st.session_state:
-        st.session_state.max_videos = DEFAULT_MAX_VIDEOS
-    
-    if 'debug_mode' not in st.session_state:
-        st.session_state.debug_mode = DEFAULT_DEBUG_MODE
-    
-    if 'fetch_channel_data' not in st.session_state:
-        st.session_state.fetch_channel_data = True
-    
-    if 'fetch_videos' not in st.session_state:
-        st.session_state.fetch_videos = True
-    
-    if 'fetch_comments' not in st.session_state:
-        st.session_state.fetch_comments = True
-    
-    if 'api_cache' not in st.session_state:
-        st.session_state.api_cache = {}
+    """Initialize Streamlit session state variables in a centralized way"""
+    # Initialize all session state variables
+    for category, variables in SESSION_STATE_VARS.items():
+        for var_name, default_value in variables.items():
+            if var_name not in st.session_state:
+                st.session_state[var_name] = default_value

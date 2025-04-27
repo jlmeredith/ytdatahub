@@ -49,23 +49,143 @@ YTDataHub offers a range of features to help you extract and analyze data from Y
 - **Channel statistics**: Overall performance metrics and trends
 - **Video analytics**: Identify top-performing content and patterns
 - **Visual reports**: Generate charts and graphs for better insights
+- **Modular architecture**: Clean separation of concerns with domain-specific modules
 
 ### System Features
 
 - **Quota estimation**: Calculate API usage before making requests
 - **Caching system**: Minimize redundant API calls
 - **Debugging tools**: Troubleshooting options for development
-- **Modular architecture**: Easy to extend and maintain
+- **Component-based architecture**: Independently testable, maintainable components
 - **Robust error handling**: Graceful recovery from API timeouts and errors
+
+## Complete Project Structure
+
+YTDataHub follows a modular architecture with clear separation of concerns:
+
+### Entry Points
+
+- `youtube.py` - Main application entry point that initializes Streamlit and configures the application
+- `setup.py` - Package installation script for setting up YTDataHub as a Python package
+
+### Core Application
+
+- `src/app.py` - Main application setup, page routing, and session state management
+- `src/config.py` - Configuration settings, environment variable handling, and application constants
+- `src/__init__.py` - Package initialization and version information
+
+### Analysis Layer
+
+- `src/analysis/` - Data analysis modules
+  - `base_analyzer.py` - Abstract base class with common analysis utilities and helper methods
+  - `channel_analyzer.py` - Processes and analyzes channel-level statistics and growth metrics
+  - `video_analyzer.py` - Handles video data processing, statistical analysis, and content patterns
+  - `comment_analyzer.py` - Processes comment text, sentiment, engagement analysis, and temporal patterns
+  - `youtube_analysis.py` - Facade providing backward compatibility with legacy code
+  - `visualization/` - Chart generation utilities
+    - `__init__.py` - Package initialization for visualization components
+    - `trend_line.py` - Statistical trend line generation and time series analysis tools
+    - `chart_helpers.py` - Reusable chart configuration functions and layout standardization
+
+### Data Access
+
+- `src/api/` - API client implementations
+  - `__init__.py` - Package initialization for API components
+  - `youtube_api.py` - YouTube Data API client with quota management and error handling
+- `src/database/` - Database abstraction and operations
+  - `__init__.py` - Package initialization for database components
+  - `sqlite.py` - SQLite database operations, schema management, and query functions
+- `src/models/` - Data models and object representations
+  - `__init__.py` - Package initialization for data models
+  - `youtube.py` - Data models for YouTube entities (channels, videos, comments)
+- `src/services/` - Service layer coordinating business logic
+  - `youtube_service.py` - Service layer coordinating API and storage operations
+- `src/storage/` - Data persistence implementations
+  - `__init__.py` - Package initialization for storage components
+  - `factory.py` - Factory pattern for storage backend selection and initialization
+  - `local_storage.py` - File-based storage implementation for JSON data
+
+### User Interface
+
+- `src/ui/` - UI components for each application section
+  - `__init__.py` - Package initialization for UI components
+  - `data_collection.py` - Data collection workflow UI with step-by-step guidance
+  - `data_storage.py` - Data persistence interface and storage options configuration
+  - `data_analysis.py` - Analytics dashboard and visualization interface
+  - `utilities.py` - Settings, configuration UI, and debugging tools
+  - `components/` - Reusable UI components and widgets
+    - `channel_card.py` - Displays channel metadata in card format
+    - `video_list.py` - Renders paginated video galleries with filtering options
+    - `comment_display.py` - Renders comment threads with collapsible replies
+    - `metrics_panel.py` - Shows key performance metrics with trend indicators
+    - `navigation.py` - Step navigation and workflow guidance components
+  - `data_analysis/` - Specialized analytics UI components
+    - `main.py` - Entry point for analytics dashboard
+    - `channel_insights.py` - Channel growth and performance visualizations
+    - `video_performance.py` - Video metrics and engagement analytics
+    - `comment_analysis.py` - Comment sentiment and engagement analysis
+    - `trend_visualization.py` - Time-series trend visualization components
+
+### Static Assets
+
+- `src/static/` - Static assets for UI rendering
+  - `css/` - Stylesheets for UI components
+    - `dashboard.css` - Styles for analytics dashboard
+    - `styles.css` - Global application styles
+  - `templates/` - HTML templates for UI components
+    - `analytics_dashboard_styles.html` - Styles for analytics dashboard
+    - `analytics_dashboard.html` - Main dashboard template
+    - `channel_info.html` - Channel information display template
+    - `data_collection_summary.html` - Summary template for collection results
+    - `duration_chart.html` - Video duration chart template
+    - `duration_metrics.html` - Duration metrics display template
+    - `engagement_metrics.html` - Engagement analysis template
+    - `engagement_timeline_chart.html` - Timeline chart for engagement metrics
+    - `security_headers.html` - Security headers template
+    - `storage_options_info.html` - Information about storage options
+    - `storage_options.html` - Storage configuration template
+    - `video_item.html` - Template for individual video display
+
+### Utilities
+
+- `src/utils/` - Common utility functions
+  - `__init__.py` - Package initialization for utilities
+  - `helpers.py` - Common utility functions used across the application
+
+### Data Storage
+
+- `data/` - Default data storage location
+  - `youtube_data.db` - Default SQLite database file for data storage
+
+### Documentation
+
+- `documentation/` - Detailed documentation files
+  - `api-implementation-guide.md` - Guide for implementing a REST API
+  - `architecture.md` - Detailed architecture documentation
+  - `data-analysis-options.png` - Screenshot of analysis options
+  - `data-analysis.png` - Data analysis feature diagram
+  - `data-storage.png` - Data storage options diagram
+  - `homepage.png` - Application homepage screenshot
+  - `utilities.png` - Utilities and settings screenshot
+  - `youtube-api-quota-md.md` - YouTube API quota information
+  - `youtube-channel-api-quota-md.md` - Channel API quota details
+  - `youtube-video-api-quota-md.md` - Video API quota details
+
+### Package Information
+
+- `ytdatahub.egg-info/` - Package installation metadata
+  - `dependency_links.txt` - Package dependency information
+  - `PKG-INFO` - Package metadata
+  - `SOURCES.txt` - Source file listing
+  - `top_level.txt` - Top-level package information
 
 ## Detailed Documentation
 
 For more detailed information about the application, please refer to the documentation folder:
 
-- [API Implementation Guide](documentation/api-implementation-guide.md)
-- [Data Analysis Features](documentation/data-analysis.png)
-- [Data Storage Options](documentation/data-storage.png)
-- [Utilities and Settings](documentation/utilities.png)
+- [Architecture Documentation](documentation/architecture.md) - Detailed explanation of the application architecture
+- [API Implementation Guide](documentation/api-implementation-guide.md) - Guide for implementing a REST API
+- [YouTube API Quota Information](documentation/youtube-api-quota-md.md) - Information about YouTube API quotas
 
 ## Setup and Installation
 
@@ -181,4 +301,4 @@ The YTDataHub is released under the MIT License. Feel free to modify and use the
 
 ---
 
-For more details about the project architecture, technical implementation, and future plans, see [Project Architecture](documentation/api-implementation-guide.md).
+For more details about the project architecture, technical implementation, and future plans, see [Architecture Documentation](documentation/architecture.md).

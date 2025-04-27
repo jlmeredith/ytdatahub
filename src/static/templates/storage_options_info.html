@@ -1,0 +1,26 @@
+<!-- Storage Options Information Template -->
+<div class="storage-options-info">
+  <h3>About Data Storage Options</h3>
+  <p>
+    You can configure additional storage options in the
+    <strong>Utilities</strong> tab.
+  </p>
+
+  <h4>Available storage types:</h4>
+  <ul>
+    <li><strong>SQLite Database</strong>: Local database storage (default)</li>
+    <li><strong>Local Storage (JSON)</strong>: Simple file-based storage</li>
+    {% if mongodb_available %}
+    <li><strong>MongoDB</strong>: Document-based NoSQL database</li>
+    {% endif %} {% if postgres_available %}
+    <li><strong>PostgreSQL</strong>: Relational database</li>
+    {% endif %}
+  </ul>
+
+  <div class="tip">
+    <p>
+      💡 Tip: You can add and configure additional storage options in the
+      Utilities section.
+    </p>
+  </div>
+</div>
