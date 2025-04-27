@@ -101,6 +101,11 @@ The analysis layer is responsible for processing and analyzing data collected fr
   - CRUD operations for all entity types
   - Query optimization
   - Migration handling
+  - Iteration management for data collection:
+    - Tracks channel data collection attempts
+    - Limits excessive API calls through configurable thresholds
+    - Implements a time-based policy for retry attempts
+    - Provides the `continue_iteration` method to determine if data collection should proceed
 
 #### Data Models
 
@@ -285,49 +290,120 @@ YTDataHub uses a relational database schema (primarily SQLite) with the followin
 ### Channels Table
 
 ```sql
-CREATE TABLE IF NOT EXISTS channels (
-    channel_id TEXT PRIMARY KEY,
+CREATE TABLE channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    youtube_id TEXT UNIQUE NOT NULL,
     title TEXT,
-    description TEXT,
-    published_at TEXT,
-    view_count INTEGER,
     subscriber_count INTEGER,
     video_count INTEGER,
-    last_updated TEXT
+    view_count INTEGER,
+    description TEXT,
+    custom_url TEXT,
+    published_at TEXT,
+    country TEXT,
+    default_language TEXT,
+    privacy_status TEXT,
+    is_linked BOOLEAN,
+    long_uploads_status TEXT,
+    made_for_kids BOOLEAN,
+    hidden_subscriber_count BOOLEAN,
+    thumbnail_default TEXT,
+    thumbnail_medium TEXT,
+    thumbnail_high TEXT,
+    keywords TEXT,
+    topic_categories TEXT,
+    fetched_at TEXT,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    uploads_playlist_id TEXT,
+    local_thumbnail_medium TEXT,
+    local_thumbnail_default TEXT,
+    local_thumbnail_high TEXT,
+    updated_at TEXT
 );
 ```
 
 ### Videos Table
 
 ```sql
-CREATE TABLE IF NOT EXISTS videos (
-    video_id TEXT PRIMARY KEY,
-    channel_id TEXT,
+CREATE TABLE videos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    youtube_id TEXT UNIQUE NOT NULL,
+    channel_id INTEGER,
     title TEXT,
     description TEXT,
     published_at TEXT,
     view_count INTEGER,
     like_count INTEGER,
+    dislike_count INTEGER,
+    favorite_count INTEGER,
     comment_count INTEGER,
     duration TEXT,
-    thumbnail_url TEXT,
-    last_updated TEXT,
-    FOREIGN KEY (channel_id) REFERENCES channels (channel_id)
+    dimension TEXT,
+    definition TEXT,
+    caption BOOLEAN,
+    licensed_content BOOLEAN,
+    projection TEXT,
+    privacy_status TEXT,
+    license TEXT,
+    embeddable BOOLEAN,
+    public_stats_viewable BOOLEAN,
+    made_for_kids BOOLEAN,
+    thumbnail_default TEXT,
+    thumbnail_medium TEXT,
+    thumbnail_high TEXT,
+    tags TEXT,
+    category_id INTEGER,
+    live_broadcast_content TEXT,
+    fetched_at TEXT,
+    updated_at TEXT,
+    local_thumbnail_default TEXT,
+    local_thumbnail_medium TEXT,
+    local_thumbnail_high TEXT,
+    FOREIGN KEY (channel_id) REFERENCES channels (id)
 );
 ```
 
-### Comments Table
+### Video Locations Table
 
 ```sql
-CREATE TABLE IF NOT EXISTS comments (
+CREATE TABLE video_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id INTEGER NOT NULL,
+    location_type TEXT NOT NULL,
+    location_name TEXT NOT NULL,
+    confidence REAL DEFAULT 0.0,
+    source TEXT DEFAULT 'auto',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
+);
+```
+
+### Database Indexes
+
+To optimize query performance, the following indexes are implemented:
+
+```sql
+CREATE INDEX idx_videos_channel_id ON videos(channel_id);
+CREATE INDEX idx_channels_youtube_id ON channels(youtube_id);
+CREATE INDEX idx_videos_youtube_id ON videos(youtube_id);
+CREATE INDEX idx_video_locations_video_id ON video_locations(video_id);
+CREATE INDEX idx_video_locations_location ON video_locations(location_type, location_name);
+CREATE INDEX idx_channels_id ON channels(id);
+CREATE INDEX idx_videos_id ON videos(id);
+```
+
+### Comments Table (Legacy)
+
+For backward compatibility, a comments table is maintained but is gradually being phased out in favor of more specialized data structures:
+
+```sql
+CREATE TABLE comments (
     comment_id TEXT PRIMARY KEY,
     video_id TEXT,
-    author TEXT,
-    text TEXT,
-    like_count INTEGER,
-    published_at TEXT,
-    last_updated TEXT,
-    FOREIGN KEY (video_id) REFERENCES videos (video_id)
+    comment_text TEXT,
+    comment_author TEXT,
+    comment_published_at TEXT,
+    FOREIGN KEY (video_id) REFERENCES videos (youtube_id)
 );
 ```
 

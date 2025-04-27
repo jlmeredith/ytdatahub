@@ -46,3 +46,4 @@ logs/
 # Local configuration
 instance/
 config.local.py
+documentation/old-to-new-schema.md

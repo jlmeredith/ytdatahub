@@ -6,6 +6,26 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 @dataclass
+class VideoLocation:
+    """Model representing a location associated with a YouTube video"""
+    location_type: str
+    location_name: str
+    confidence: float = 0.0
+    source: str = 'auto'
+    created_at: str = ''
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'VideoLocation':
+        """Create a VideoLocation object from a dictionary"""
+        return cls(
+            location_type=data.get('location_type', ''),
+            location_name=data.get('location_name', ''),
+            confidence=float(data.get('confidence', 0.0)),
+            source=data.get('source', 'auto'),
+            created_at=data.get('created_at', '')
+        )
+
+@dataclass
 class VideoComment:
     """Model representing a YouTube comment"""
     comment_id: str
@@ -42,6 +62,26 @@ class YouTubeVideo:
     view_count: int = 0
     like_count: int = 0
     comment_count: int = 0
+    # New fields from updated schema
+    dislike_count: int = 0
+    favorite_count: int = 0
+    dimension: str = ''
+    definition: str = ''
+    licensed_content: bool = False
+    projection: str = ''
+    privacy_status: str = ''
+    license: str = ''
+    embeddable: bool = True
+    public_stats_viewable: bool = True
+    made_for_kids: bool = False
+    thumbnail_default: str = '' 
+    thumbnail_medium: str = ''
+    thumbnail_high: str = ''
+    live_broadcast_content: str = ''
+    fetched_at: str = ''
+    updated_at: str = ''
+    # Location data support
+    locations: List[VideoLocation] = field(default_factory=list)
     comments: List[VideoComment] = field(default_factory=list)
     
     @classmethod
@@ -50,6 +90,10 @@ class YouTubeVideo:
         comments_list = []
         for comment_data in data.get('comments', []):
             comments_list.append(VideoComment.from_dict(comment_data))
+            
+        locations_list = []
+        for location_data in data.get('locations', []):
+            locations_list.append(VideoLocation.from_dict(location_data))
             
         return cls(
             video_id=data.get('video_id', ''),
@@ -68,6 +112,25 @@ class YouTubeVideo:
             category_id=data.get('category_id', ''),
             tags=data.get('tags', []),
             comment_count=int(data.get('comment_count', 0)),
+            # New fields from updated schema
+            dislike_count=int(data.get('dislike_count', 0)),
+            favorite_count=int(data.get('favorite_count', 0)),
+            dimension=data.get('dimension', ''),
+            definition=data.get('definition', ''),
+            licensed_content=data.get('licensed_content', False),
+            projection=data.get('projection', ''),
+            privacy_status=data.get('privacy_status', ''),
+            license=data.get('license', ''),
+            embeddable=data.get('embeddable', True),
+            public_stats_viewable=data.get('public_stats_viewable', True),
+            made_for_kids=data.get('made_for_kids', False),
+            thumbnail_default=data.get('thumbnail_default', ''),
+            thumbnail_medium=data.get('thumbnail_medium', ''),
+            thumbnail_high=data.get('thumbnail_high', '') or data.get('thumbnails', ''),
+            live_broadcast_content=data.get('live_broadcast_content', ''),
+            fetched_at=data.get('fetched_at', ''),
+            updated_at=data.get('updated_at', ''),
+            locations=locations_list,
             comments=comments_list
         )
 
@@ -87,6 +150,20 @@ class YouTubeChannel:
     thumbnail_url: str = ''
     published_at: str = ''
     country: str = ''
+    # New fields from updated schema
+    custom_url: str = ''
+    default_language: str = ''
+    privacy_status: str = ''
+    is_linked: bool = False
+    long_uploads_status: str = ''
+    made_for_kids: bool = False
+    hidden_subscriber_count: bool = False
+    thumbnail_default: str = ''
+    thumbnail_medium: str = ''
+    thumbnail_high: str = ''
+    keywords: str = ''
+    topic_categories: str = ''
+    fetched_at: str = ''
     videos: List[YouTubeVideo] = field(default_factory=list)
     
     @classmethod
@@ -110,6 +187,20 @@ class YouTubeChannel:
             thumbnail_url=data.get('thumbnail_url', ''),
             published_at=data.get('published_at', ''),
             country=data.get('country', ''),
+            # New fields
+            custom_url=data.get('custom_url', ''),
+            default_language=data.get('default_language', ''),
+            privacy_status=data.get('privacy_status', ''),
+            is_linked=data.get('is_linked', False),
+            long_uploads_status=data.get('long_uploads_status', ''),
+            made_for_kids=data.get('made_for_kids', False),
+            hidden_subscriber_count=data.get('hidden_subscriber_count', False),
+            thumbnail_default=data.get('thumbnail_default', ''),
+            thumbnail_medium=data.get('thumbnail_medium', ''),
+            thumbnail_high=data.get('thumbnail_high', '') or data.get('thumbnails', ''),
+            keywords=data.get('keywords', ''),
+            topic_categories=data.get('topic_categories', ''),
+            fetched_at=data.get('fetched_at', ''),
             videos=videos_list
         )
     
@@ -126,6 +217,17 @@ class YouTubeChannel:
                     'comment_published_at': comment.published_at
                 })
                 
+            # Process video locations
+            locations_data = []
+            for location in video.locations:
+                locations_data.append({
+                    'location_type': location.location_type,
+                    'location_name': location.location_name,
+                    'confidence': location.confidence,
+                    'source': location.source,
+                    'created_at': location.created_at
+                })
+                
             videos_data.append({
                 'video_id': video.video_id,
                 'title': video.title,
@@ -136,7 +238,8 @@ class YouTubeChannel:
                 'duration': video.duration,
                 'thumbnails': video.thumbnail_url,
                 'caption_status': video.caption_status,
-                'comments': comments_data
+                'comments': comments_data,
+                'locations': locations_data
             })
             
         return {
@@ -147,6 +250,22 @@ class YouTubeChannel:
             'total_videos': str(self.total_videos) if self.total_videos else str(self.video_count),
             'channel_description': self.channel_description,
             'playlist_id': self.playlist_id,
+            # New fields
+            'custom_url': self.custom_url,
+            'published_at': self.published_at,
+            'country': self.country,
+            'default_language': self.default_language,
+            'privacy_status': self.privacy_status,
+            'is_linked': self.is_linked,
+            'long_uploads_status': self.long_uploads_status,
+            'made_for_kids': self.made_for_kids,
+            'hidden_subscriber_count': self.hidden_subscriber_count,
+            'thumbnail_default': self.thumbnail_default,
+            'thumbnail_medium': self.thumbnail_medium,
+            'thumbnail_high': self.thumbnail_high,
+            'keywords': self.keywords,
+            'topic_categories': self.topic_categories,
+            'fetched_at': self.fetched_at,
             'video_id': videos_data
         }
 

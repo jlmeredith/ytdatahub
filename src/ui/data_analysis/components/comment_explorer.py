@@ -3,6 +3,8 @@ Comment explorer component for the data analysis UI.
 """
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import numpy as np
 from src.analysis.youtube_analysis import YouTubeAnalysis
 from src.utils.helpers import paginate_dataframe, render_pagination_controls
 from src.ui.data_analysis.utils.session_state import initialize_pagination, get_pagination_state, update_pagination_state
@@ -17,8 +19,6 @@ def render_comment_explorer(channel_data):
     Args:
         channel_data: Dictionary containing channel data
     """
-    st.subheader("Comment Analysis")
-    
     # Initialize analysis
     analysis = YouTubeAnalysis()
     
@@ -32,8 +32,89 @@ def render_comment_explorer(channel_data):
     total_comments = comment_analysis['total_comments']
     df = comment_analysis['df']
     
-    # Summary of comments
-    st.write(f"Total comments analyzed: {total_comments:,}")
+    # Create a dashboard-style layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Comment Analysis")
+        # Summary of comments with more metrics
+        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+        with metrics_col1:
+            st.metric("Total Comments", f"{total_comments:,}")
+        
+        with metrics_col2:
+            # Calculate average comments per video
+            if 'comments_per_video' in comment_analysis:
+                avg_comments = comment_analysis['comments_per_video']['avg_comments']
+                st.metric("Avg. Comments per Video", f"{avg_comments:.1f}")
+            else:
+                # Fallback calculation
+                video_count = len(channel_data.get('videos', []))
+                avg_comments = total_comments / video_count if video_count > 0 else 0
+                st.metric("Avg. Comments per Video", f"{avg_comments:.1f}")
+        
+        with metrics_col3:
+            # Calculate average engagement rate from comments
+            if 'total_likes' in comment_analysis:
+                avg_likes = comment_analysis['total_likes'] / total_comments if total_comments > 0 else 0
+                st.metric("Avg. Likes per Comment", f"{avg_likes:.1f}")
+            else:
+                # Fallback
+                avg_likes = df['Likes'].mean() if 'Likes' in df.columns else 0
+                st.metric("Avg. Likes per Comment", f"{avg_likes:.1f}")
+    
+    with col2:
+        # Display sentiment analysis if enabled
+        if st.session_state.get("show_comment_sentiment", True) and 'sentiment_analysis' in comment_analysis:
+            sentiment = comment_analysis['sentiment_analysis']
+            if sentiment:
+                st.subheader("Sentiment Overview")
+                
+                # Create a pie chart for sentiment distribution
+                sentiment_data = {
+                    'Sentiment': ['Positive', 'Neutral', 'Negative'],
+                    'Count': [
+                        sentiment.get('positive', 0),
+                        sentiment.get('neutral', 0),
+                        sentiment.get('negative', 0)
+                    ]
+                }
+                sentiment_df = pd.DataFrame(sentiment_data)
+                
+                # Calculate percentages for the pie chart
+                total = sentiment_df['Count'].sum()
+                sentiment_df['Percentage'] = sentiment_df['Count'] / total * 100 if total > 0 else 0
+                
+                # Create a pie chart
+                fig = px.pie(
+                    sentiment_df,
+                    values='Count',
+                    names='Sentiment',
+                    title="Comment Sentiment Distribution",
+                    color='Sentiment',
+                    color_discrete_map={
+                        'Positive': 'green',
+                        'Neutral': 'gray',
+                        'Negative': 'red'
+                    },
+                    hole=0.3
+                )
+                
+                # Improve layout
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                fig.update_layout(
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    height=300,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.15,
+                        xanchor="center",
+                        x=0.5
+                    )
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
     
     # Create tabs for different comment analyses
     comment_tabs = st.tabs([
@@ -67,8 +148,6 @@ def render_comment_explorer_tab(df, comment_analysis):
         df: DataFrame with comment data
         comment_analysis: Dictionary with comment analysis data
     """
-    st.subheader("Comment Explorer")
-    
     # Filter and search for comments
     col1, col2, col3 = st.columns([2, 1, 1])
     
@@ -91,9 +170,17 @@ def render_comment_explorer_tab(df, comment_analysis):
         
         sort_by = st.selectbox("Sort by:", options=list(comment_sorts.keys()), key="comment_sort")
     
-    # Display format
-    display_formats = ["Flat Table", "Threaded View"]
-    display_format = st.radio("Display format:", display_formats, horizontal=True)
+    # Display format selection
+    display_col1, display_col2 = st.columns([3, 1])
+    
+    with display_col1:
+        display_formats = ["Flat Table", "Threaded View"]
+        display_format = st.radio("Display format:", display_formats, horizontal=True)
+    
+    with display_col2:
+        # Use slider for page size from session state
+        page_size = st.session_state.get("comment_page_size", 10)
+        st.caption(f"Comments per page: {page_size}")
     
     # Apply filters
     filtered_df = df.copy()
@@ -130,7 +217,7 @@ def render_flat_table_view(filtered_df):
         filtered_df: Filtered DataFrame with comment data
     """
     # Initialize pagination for flat table view
-    initialize_pagination("comment_explorer", page=1, page_size=10)
+    initialize_pagination("comment_explorer", page=1, page_size=st.session_state.get("comment_page_size", 10))
     
     # Get current pagination values
     current_page, page_size = get_pagination_state("comment_explorer")
@@ -147,17 +234,32 @@ def render_flat_table_view(filtered_df):
     if update_pagination_state("comment_explorer", new_page):
         current_page = new_page
     
-    # Get page size (might have been updated in the controls)
-    _, page_size = get_pagination_state("comment_explorer")
-    
     # Get the paginated dataframe
     paginated_df = paginate_dataframe(filtered_df, page_size, current_page)
     
     # Show results count
     st.write(f"Showing {len(paginated_df)} of {len(filtered_df)} comments")
     
+    # Format display columns
+    display_df = paginated_df.copy()
+    
+    # Make table more readable by formatting columns
+    if 'Published' in display_df.columns and pd.api.types.is_datetime64_dtype(display_df['Published']):
+        display_df['Published'] = display_df['Published'].dt.strftime('%Y-%m-%d %H:%M')
+    
+    if 'Likes' in display_df.columns:
+        display_df['Likes'] = display_df['Likes'].apply(lambda x: f"{x:,}")
+    
+    # Truncate text if too long for display
+    if 'Text' in display_df.columns:
+        display_df['Text'] = display_df['Text'].apply(lambda x: (x[:100] + '...') if len(x) > 100 else x)
+    
+    # Select only the most important columns for display
+    columns_to_display = ['Author', 'Text', 'Published', 'Likes', 'Is Reply']
+    display_columns = [col for col in columns_to_display if col in display_df.columns]
+    
     # Display filtered and sorted data as a flat table
-    st.dataframe(paginated_df, use_container_width=True)
+    st.dataframe(display_df[display_columns], use_container_width=True)
 
 def render_threaded_view(filtered_df, comment_analysis, comment_search, selected_filter, sort_by, comment_sorts):
     """
@@ -171,6 +273,46 @@ def render_threaded_view(filtered_df, comment_analysis, comment_search, selected
         sort_by: Sort option
         comment_sorts: Dictionary with sort options
     """
+    # Initialize custom CSS for better comment display
+    st.markdown("""
+    <style>
+    .comment-box {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .comment-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+    .comment-author {
+        font-weight: bold;
+        color: #1E88E5;
+    }
+    .comment-likes {
+        color: #666;
+    }
+    .comment-text {
+        margin-top: 5px;
+        white-space: pre-wrap;
+    }
+    .comment-date {
+        color: #888;
+        font-size: 0.8em;
+        margin-top: 5px;
+    }
+    .reply-box {
+        margin-left: 20px;
+        background-color: #e6f0ff;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Display in threaded view using thread_structure
     if 'thread_data' in comment_analysis and 'thread_structure' in comment_analysis['thread_data']:
         # Get thread structure
@@ -203,8 +345,8 @@ def render_threaded_view(filtered_df, comment_analysis, comment_search, selected
             if include_thread:
                 filtered_threads[comment_id] = thread
         
-        # Initialize pagination for threaded view
-        initialize_pagination("thread_explorer", page=1, page_size=5)
+        # Initialize pagination for threaded view with the custom page size
+        initialize_pagination("thread_explorer", page=1, page_size=st.session_state.get("comment_page_size", 5))
         
         # Get current pagination values
         current_page, page_size = get_pagination_state("thread_explorer")
@@ -234,9 +376,6 @@ def render_threaded_view(filtered_df, comment_analysis, comment_search, selected
             if update_pagination_state("thread_explorer", new_page):
                 current_page = new_page
             
-            # Get page size (might have been updated in the controls)
-            _, page_size = get_pagination_state("thread_explorer")
-            
             # Get paginated threads
             start_idx = (current_page - 1) * page_size
             end_idx = min(start_idx + page_size, len(root_comments))
@@ -245,73 +384,73 @@ def render_threaded_view(filtered_df, comment_analysis, comment_search, selected
             # Show results count
             st.write(f"Showing {len(paginated_root_comments)} of {len(root_comments)} comment threads")
             
-            # Display each thread as a card with native Streamlit components
+            # Display each thread as a card with enhanced styling
             for root_comment in paginated_root_comments:
                 comment_id = root_comment['Comment ID']
                 thread = filtered_threads.get(comment_id, {'replies': []})
                 
+                # Create clean date format if available
+                published_date = ""
+                if 'Published' in root_comment:
+                    try:
+                        # Format date more nicely
+                        if isinstance(root_comment['Published'], pd.Timestamp):
+                            published_date = root_comment['Published'].strftime('%Y-%m-%d %H:%M')
+                        else:
+                            published_date = str(root_comment['Published'])
+                    except:
+                        published_date = str(root_comment['Published'])
+                
                 # Display root comment in a nicer format
                 with st.container():
-                    # Create a more visually appealing comment box
-                    st.markdown("""
-                    <style>
-                    .comment-box {
-                        background-color: #f0f2f6;
-                        border-radius: 10px;
-                        padding: 10px;
-                        margin-bottom: 10px;
-                    }
-                    .comment-header {
-                        display: flex;
-                        justify-content: space-between;
-                        margin-bottom: 5px;
-                    }
-                    .comment-author {
-                        font-weight: bold;
-                        color: #1E88E5;
-                    }
-                    .comment-likes {
-                        color: #666;
-                    }
-                    .comment-text {
-                        margin-top: 5px;
-                        white-space: pre-wrap;
-                    }
-                    </style>
-                    
+                    # Create a more visually appealing comment box with date
+                    st.markdown(f"""
                     <div class="comment-box">
                         <div class="comment-header">
-                            <span class="comment-author">{author}</span>
-                            <span class="comment-likes">👍 {likes}</span>
+                            <span class="comment-author">{root_comment['Author']}</span>
+                            <span class="comment-likes">👍 {root_comment['Likes']}</span>
                         </div>
-                        <div class="comment-text">{text}</div>
+                        <div class="comment-text">{root_comment['Text']}</div>
+                        <div class="comment-date">{published_date}</div>
                     </div>
-                    """.format(
-                        author=root_comment['Author'],
-                        likes=root_comment['Likes'],
-                        text=root_comment['Text']
-                    ), unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
                     
-                    # Display replies if any
+                    # Show video context if available
+                    if 'Video Title' in root_comment:
+                        st.caption(f"On video: {root_comment['Video Title']}")
+                    
+                    # Display replies if any with enhanced styling
                     if thread['replies']:
                         with st.expander(f"View {len(thread['replies'])} replies"):
                             for reply in thread['replies']:
-                                st.markdown("""
-                                <div class="comment-box" style="margin-left: 20px; background-color: #e6f0ff;">
+                                # Format reply date
+                                reply_date = ""
+                                if 'Published' in reply:
+                                    try:
+                                        if isinstance(reply['Published'], pd.Timestamp):
+                                            reply_date = reply['Published'].strftime('%Y-%m-%d %H:%M')
+                                        else:
+                                            reply_date = str(reply['Published'])
+                                    except:
+                                        reply_date = str(reply['Published'])
+                                
+                                st.markdown(f"""
+                                <div class="reply-box">
                                     <div class="comment-header">
-                                        <span class="comment-author">{author}</span>
-                                        <span class="comment-likes">👍 {likes}</span>
+                                        <span class="comment-author">{reply['Author']}</span>
+                                        <span class="comment-likes">👍 {reply['Likes']}</span>
                                     </div>
-                                    <div class="comment-text">{text}</div>
+                                    <div class="comment-text">{reply['Text']}</div>
+                                    <div class="comment-date">{reply_date}</div>
                                 </div>
-                                """.format(
-                                    author=reply['Author'],
-                                    likes=reply['Likes'],
-                                    text=reply['Text']
-                                ), unsafe_allow_html=True)
+                                """, unsafe_allow_html=True)
                 
+                # Add divider between comment threads for better readability
                 st.divider()
         else:
             st.warning("No comments match your filters.")
     else:
         st.warning("Threaded view not available. Try using Flat Table view instead.")
+        
+        # Provide guidance on how to get threaded view
+        st.info("To enable threaded view, make sure to collect comments with replies when fetching YouTube data.")

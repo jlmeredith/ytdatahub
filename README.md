@@ -31,6 +31,8 @@ YTDataHub offers a range of features to help you extract and analyze data from Y
 - **Flexible sampling**: Adjust how many videos and comments to fetch with options to refetch with different parameters
 - **Unavailable content handling**: Clear reporting on private or deleted videos and videos with disabled comments
 - **Direct YouTube links**: Easy access to channels, videos, and comments on YouTube
+- **Advanced metadata**: Comprehensive data collection including video dimensions, definition, license information, and more
+- **Location data support**: Future-ready structure for analyzing video location information
 
 ### Data Organization & Display
 
@@ -45,6 +47,7 @@ YTDataHub offers a range of features to help you extract and analyze data from Y
 ### Data Storage & Analysis
 
 - **Multiple storage options**: Store data in SQLite, local JSON files, MongoDB, or PostgreSQL
+- **Enhanced schema**: Comprehensive data model with rich metadata for deeper analysis
 - **Flexible retrieval**: Access stored data for further analysis and visualization
 - **Channel statistics**: Overall performance metrics and trends
 - **Video analytics**: Identify top-performing content and patterns
@@ -56,7 +59,7 @@ YTDataHub offers a range of features to help you extract and analyze data from Y
 - **Quota estimation**: Calculate API usage before making requests
 - **Caching system**: Minimize redundant API calls
 - **Debugging tools**: Troubleshooting options for development
-- **Component-based architecture**: Independently testable, maintainable components
+- **Modular API architecture**: Specialized components for channels, videos, and comments
 - **Robust error handling**: Graceful recovery from API timeouts and errors
 
 ## Complete Project Structure
@@ -91,13 +94,21 @@ YTDataHub follows a modular architecture with clear separation of concerns:
 
 - `src/api/` - API client implementations
   - `__init__.py` - Package initialization for API components
-  - `youtube_api.py` - YouTube Data API client with quota management and error handling
+  - `youtube_api.py` - Main YouTube Data API client wrapper for backward compatibility
+  - `youtube/` - Modular YouTube API clients
+    - `__init__.py` - Package initialization exposing the unified API
+    - `base.py` - Base API client with common functionality
+    - `channel.py` - Channel-specific API operations
+    - `video.py` - Video-specific API operations
+    - `comment.py` - Comment-specific API operations
+    - `resolver.py` - Channel URL and handle resolution
 - `src/database/` - Database abstraction and operations
   - `__init__.py` - Package initialization for database components
   - `sqlite.py` - SQLite database operations, schema management, and query functions
+  - `migrate_schema.py` - Schema migration utilities
 - `src/models/` - Data models and object representations
   - `__init__.py` - Package initialization for data models
-  - `youtube.py` - Data models for YouTube entities (channels, videos, comments)
+  - `youtube.py` - Enhanced data models for YouTube entities (channels, videos, comments, locations)
 - `src/services/` - Service layer coordinating business logic
   - `youtube_service.py` - Service layer coordinating API and storage operations
 - `src/storage/` - Data persistence implementations
@@ -156,6 +167,7 @@ YTDataHub follows a modular architecture with clear separation of concerns:
 
 - `data/` - Default data storage location
   - `youtube_data.db` - Default SQLite database file for data storage
+  - `youtube_data.db_*.bak` - Backup files for the database
 
 ### Documentation
 
@@ -165,7 +177,9 @@ YTDataHub follows a modular architecture with clear separation of concerns:
   - `data-analysis-options.png` - Screenshot of analysis options
   - `data-analysis.png` - Data analysis feature diagram
   - `data-storage.png` - Data storage options diagram
+  - `database-operations.md` - Database operations documentation
   - `homepage.png` - Application homepage screenshot
+  - `old-to-new-schema.md` - Documentation of database schema evolution
   - `utilities.png` - Utilities and settings screenshot
   - `youtube-api-quota-md.md` - YouTube API quota information
   - `youtube-channel-api-quota-md.md` - Channel API quota details
@@ -186,6 +200,31 @@ For more detailed information about the application, please refer to the documen
 - [Architecture Documentation](documentation/architecture.md) - Detailed explanation of the application architecture
 - [API Implementation Guide](documentation/api-implementation-guide.md) - Guide for implementing a REST API
 - [YouTube API Quota Information](documentation/youtube-api-quota-md.md) - Information about YouTube API quotas
+- [Database Schema Evolution](documentation/old-to-new-schema.md) - Information about the database schema changes
+- [Database Operations](documentation/database-operations.md) - Documentation on database operations
+
+## Key Technical Improvements
+
+### Enhanced Database Schema
+
+The YTDataHub database schema has been significantly enhanced to store more comprehensive data:
+
+- **Channels**: Additional fields for custom URL, country, language, privacy settings, thumbnail URLs at different resolutions
+- **Videos**: Extended metadata including dislike/favorite counts, dimension (2D/3D), definition (SD/HD), license information, privacy settings
+- **Comments**: Improved structure with parent-child relationships for threaded comments, like counts, and author information
+- **Video Locations**: New table supporting future location-based analysis of video content
+
+### Modular YouTube API Client
+
+The YouTube API client has been refactored into specialized components:
+
+- **Base Client**: Common functionality for initialization, caching, and error handling
+- **Channel Client**: Specialized operations for channel data retrieval
+- **Video Client**: Focused on video listing and metadata fetching
+- **Comment Client**: Optimized for comment retrieval and threading
+- **Channel Resolver**: Specialized component for resolving custom URLs and handles
+
+This architecture improves maintainability, testability, and separation of concerns while maintaining backward compatibility.
 
 ## Setup and Installation
 

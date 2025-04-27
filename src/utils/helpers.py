@@ -349,6 +349,87 @@ def clear_cache(clear_api_cache: bool = True, clear_python_cache: bool = True,
     
     return results
 
+def get_location_display(video_data):
+    """
+    Get a user-friendly display of location information for a video.
+    
+    Args:
+        video_data: Dictionary containing video information with locations field
+        
+    Returns:
+        str: Formatted location string or "No Location Data" if none available
+    """
+    if not video_data or 'locations' not in video_data or not video_data['locations']:
+        return "No Location Data"
+    
+    # Sort locations by confidence score (highest first)
+    sorted_locations = sorted(
+        video_data['locations'], 
+        key=lambda x: float(x.get('confidence', 0)), 
+        reverse=True
+    )
+    
+    # For now, just return the highest confidence location
+    top_location = sorted_locations[0]
+    location_type = top_location.get('location_type', '')
+    location_name = top_location.get('location_name', '')
+    confidence = float(top_location.get('confidence', 0))
+    
+    # Format confidence as percentage
+    confidence_str = f"{confidence * 100:.0f}%" if confidence > 0 else ""
+    
+    # Build the display string
+    if location_type and location_name:
+        if confidence_str:
+            return f"{location_type}: {location_name} ({confidence_str})"
+        else:
+            return f"{location_type}: {location_name}"
+    elif location_name:
+        return location_name
+    else:
+        return "No Location Data"
+
+def log_error(error, component=None, additional_info=None):
+    """
+    Centralized error logging function to ensure UI errors are captured in server logs.
+    
+    Args:
+        error: The exception or error message
+        component: The component where the error occurred (helps with debugging)
+        additional_info: Any additional context about the error
+    """
+    # Format the error message
+    error_type = type(error).__name__ if isinstance(error, Exception) else "Error"
+    component_str = f" in {component}" if component else ""
+    
+    # Basic error message
+    message = f"{error_type}{component_str}: {str(error)}"
+    
+    # Add additional context if provided
+    if additional_info:
+        if isinstance(additional_info, dict):
+            try:
+                context_str = json.dumps(additional_info, indent=2)
+            except:
+                context_str = str(additional_info)
+        else:
+            context_str = str(additional_info)
+        
+        message += f"\nAdditional context: {context_str}"
+    
+    # Log to server logs with ERROR level to ensure it's captured
+    logging.error(message)
+    
+    # If in a Streamlit context and in debug mode, also print the traceback
+    if hasattr(st, 'session_state') and st.session_state.get('debug_mode', False):
+        import traceback
+        stack_trace = traceback.format_exc()
+        if stack_trace != "NoneType: None\n":
+            logging.error(f"Stack trace:\n{stack_trace}")
+    
+    # Return the formatted message (useful for UI display)
+    return message
+
 """
 Utility functions for pagination and UI helpers
 """

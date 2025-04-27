@@ -32,44 +32,122 @@ class SQLiteDatabase:
             # Create the channels table
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS channels (
-                channel_id TEXT PRIMARY KEY,
-                channel_name TEXT,
-                subscribers INTEGER,
-                views INTEGER,
-                total_videos INTEGER,
-                channel_description TEXT,
-                playlist_id TEXT
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                youtube_id TEXT UNIQUE NOT NULL,
+                title TEXT,
+                subscriber_count INTEGER,
+                video_count INTEGER,
+                view_count INTEGER,
+                description TEXT,
+                custom_url TEXT,
+                published_at TEXT,
+                country TEXT,
+                default_language TEXT,
+                privacy_status TEXT,
+                is_linked BOOLEAN,
+                long_uploads_status TEXT,
+                made_for_kids BOOLEAN,
+                hidden_subscriber_count BOOLEAN,
+                thumbnail_default TEXT,
+                thumbnail_medium TEXT,
+                thumbnail_high TEXT,
+                keywords TEXT,
+                topic_categories TEXT,
+                fetched_at TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                uploads_playlist_id TEXT,
+                local_thumbnail_medium TEXT,
+                local_thumbnail_default TEXT,
+                local_thumbnail_high TEXT,
+                updated_at TEXT
             )
             ''')
             
             # Create the videos table
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS videos (
-                video_id TEXT PRIMARY KEY,
-                channel_id TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                youtube_id TEXT UNIQUE NOT NULL,
+                channel_id INTEGER,
                 title TEXT,
-                video_description TEXT,
+                description TEXT,
                 published_at TEXT,
-                views INTEGER,
-                likes INTEGER,
+                view_count INTEGER,
+                like_count INTEGER,
+                dislike_count INTEGER,
+                favorite_count INTEGER,
+                comment_count INTEGER,
                 duration TEXT,
-                thumbnails TEXT,
-                caption_status TEXT,
-                FOREIGN KEY (channel_id) REFERENCES channels (channel_id)
+                dimension TEXT,
+                definition TEXT,
+                caption BOOLEAN,
+                licensed_content BOOLEAN,
+                projection TEXT,
+                privacy_status TEXT,
+                license TEXT,
+                embeddable BOOLEAN,
+                public_stats_viewable BOOLEAN,
+                made_for_kids BOOLEAN,
+                thumbnail_default TEXT,
+                thumbnail_medium TEXT,
+                thumbnail_high TEXT,
+                tags TEXT,
+                category_id INTEGER,
+                live_broadcast_content TEXT,
+                fetched_at TEXT,
+                updated_at TEXT,
+                local_thumbnail_default TEXT,
+                local_thumbnail_medium TEXT,
+                local_thumbnail_high TEXT,
+                FOREIGN KEY (channel_id) REFERENCES channels (id)
+            )
+            ''')
+            
+            # Create the video_locations table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS video_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id INTEGER NOT NULL,
+                location_type TEXT NOT NULL,
+                location_name TEXT NOT NULL,
+                confidence REAL DEFAULT 0.0,
+                source TEXT DEFAULT 'auto',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
             )
             ''')
             
             # Create the comments table
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS comments (
-                comment_id TEXT PRIMARY KEY,
-                video_id TEXT,
-                comment_text TEXT,
-                comment_author TEXT,
-                comment_published_at TEXT,
-                FOREIGN KEY (video_id) REFERENCES videos (video_id)
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id TEXT UNIQUE NOT NULL,
+                video_id INTEGER NOT NULL,
+                text TEXT,
+                author_display_name TEXT,
+                author_profile_image_url TEXT,
+                author_channel_id TEXT,
+                like_count INTEGER,
+                published_at TEXT,
+                updated_at TEXT,
+                parent_id INTEGER,
+                is_reply BOOLEAN DEFAULT FALSE,
+                fetched_at TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES comments (id) ON DELETE CASCADE
             )
             ''')
+            
+            # Create indexes for better performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_channel_id ON videos(channel_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_youtube_id ON channels(youtube_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_youtube_id ON videos(youtube_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_video_locations_video_id ON video_locations(video_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_video_locations_location ON video_locations(location_type, location_name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_comments_video_id ON comments(video_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_id ON channels(id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_id ON videos(id)')
             
             # Commit the changes and close the connection
             conn.commit()
@@ -92,64 +170,161 @@ class SQLiteDatabase:
             cursor = conn.cursor()
             
             # Extract channel data
-            channel_id = data.get('channel_id')
-            channel_name = data.get('channel_name')
-            subscribers = int(data.get('subscribers', 0))
-            views = int(data.get('views', 0))  # Changed from total_views to views
-            total_videos = int(data.get('total_videos', 0))
-            channel_description = data.get('channel_description', '')
-            playlist_id = data.get('playlist_id', '')
+            youtube_id = data.get('channel_id')
+            title = data.get('channel_name')
+            subscriber_count = int(data.get('subscribers', 0))
+            view_count = int(data.get('views', 0))
+            video_count = int(data.get('total_videos', 0))
+            description = data.get('channel_description', '')
+            uploads_playlist_id = data.get('playlist_id', '')
             
-            # Insert or update channel data
+            # Extract new fields from channel data
+            custom_url = data.get('custom_url', '')
+            published_at = data.get('published_at', '')
+            country = data.get('country', '')
+            default_language = data.get('default_language', '')
+            privacy_status = data.get('privacy_status', '')
+            is_linked = data.get('is_linked', False)
+            long_uploads_status = data.get('long_uploads_status', '')
+            made_for_kids = data.get('made_for_kids', False)
+            hidden_subscriber_count = data.get('hidden_subscriber_count', False)
+            thumbnail_default = data.get('thumbnail_default', '')
+            thumbnail_medium = data.get('thumbnail_medium', '')
+            thumbnail_high = data.get('thumbnail_high', '')
+            keywords = data.get('keywords', '')
+            topic_categories = data.get('topic_categories', '')
+            fetched_at = data.get('fetched_at', '')
+            
+            # Insert or update channel data with all fields from the new schema
             cursor.execute('''
             INSERT OR REPLACE INTO channels (
-                channel_id, channel_name, subscribers, views, 
-                total_videos, channel_description, playlist_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                youtube_id, title, subscriber_count, video_count, 
+                view_count, description, custom_url, published_at,
+                country, default_language, privacy_status, is_linked,
+                long_uploads_status, made_for_kids, hidden_subscriber_count,
+                thumbnail_default, thumbnail_medium, thumbnail_high,
+                keywords, topic_categories, fetched_at,
+                uploads_playlist_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                channel_id, channel_name, subscribers, views,
-                total_videos, channel_description, playlist_id
+                youtube_id, title, subscriber_count, video_count, 
+                view_count, description, custom_url, published_at,
+                country, default_language, privacy_status, is_linked,
+                long_uploads_status, made_for_kids, hidden_subscriber_count,
+                thumbnail_default, thumbnail_medium, thumbnail_high,
+                keywords, topic_categories, fetched_at,
+                uploads_playlist_id
             ))
+            
+            # Get the id of the inserted channel
+            cursor.execute("SELECT id FROM channels WHERE youtube_id = ?", (youtube_id,))
+            channel_db_id = cursor.fetchone()[0]
             
             # Extract and insert video data
             videos = data.get('video_id', [])
             for video in videos:
-                video_id = video.get('video_id')
+                youtube_id = video.get('video_id')
                 title = video.get('title')
                 description = video.get('video_description', '')
                 published_at = video.get('published_at')
-                views = int(video.get('views', 0))
-                likes = int(video.get('likes', 0))
+                view_count = int(video.get('views', 0))
+                like_count = int(video.get('likes', 0))
                 duration = video.get('duration')
-                thumbnail_url = video.get('thumbnails', '')
-                caption_status = video.get('caption_status', '')
                 
-                # Insert or update video data
+                # Extract new fields from video data
+                dislike_count = int(video.get('dislike_count', 0))
+                favorite_count = int(video.get('favorite_count', 0))
+                comment_count = int(video.get('comment_count', 0))
+                dimension = video.get('dimension', '')
+                definition = video.get('definition', '')
+                caption = video.get('caption_status', False)
+                licensed_content = video.get('licensed_content', False)
+                projection = video.get('projection', '')
+                privacy_status = video.get('privacy_status', '')
+                license_type = video.get('license', '')
+                embeddable = video.get('embeddable', True)
+                public_stats_viewable = video.get('public_stats_viewable', True)
+                made_for_kids = video.get('made_for_kids', False)
+                
+                # Thumbnail URLs
+                thumbnail_default = video.get('thumbnail_default', '')
+                thumbnail_medium = video.get('thumbnail_medium', '')
+                thumbnail_high = video.get('thumbnails', '') or video.get('thumbnail_high', '')
+                
+                # Additional metadata
+                tags = ','.join(video.get('tags', [])) if isinstance(video.get('tags', []), list) else video.get('tags', '')
+                category_id = video.get('category_id', '')
+                live_broadcast_content = video.get('live_broadcast_content', '')
+                video_fetched_at = video.get('fetched_at', fetched_at)  # Use video's fetched_at or default to channel's
+                updated_at = video.get('updated_at', video_fetched_at)  # Use video's updated_at or default to fetched_at
+                
+                # Insert or update video data with all new fields
                 cursor.execute('''
                 INSERT OR REPLACE INTO videos (
-                    video_id, channel_id, title, video_description, published_at,
-                    views, likes, duration, thumbnails, caption_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    youtube_id, channel_id, title, description, published_at,
+                    view_count, like_count, dislike_count, favorite_count, 
+                    comment_count, duration, dimension, definition,
+                    caption, licensed_content, projection, privacy_status, 
+                    license, embeddable, public_stats_viewable, made_for_kids,
+                    thumbnail_default, thumbnail_medium, thumbnail_high,
+                    tags, category_id, live_broadcast_content, 
+                    fetched_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    video_id, channel_id, title, description, published_at,
-                    views, likes, duration, thumbnail_url, caption_status
+                    youtube_id, channel_db_id, title, description, published_at,
+                    view_count, like_count, dislike_count, favorite_count,
+                    comment_count, duration, dimension, definition,
+                    caption, licensed_content, projection, privacy_status,
+                    license_type, embeddable, public_stats_viewable, made_for_kids,
+                    thumbnail_default, thumbnail_medium, thumbnail_high,
+                    tags, category_id, live_broadcast_content,
+                    video_fetched_at, updated_at
                 ))
+                
+                # Get the id of the inserted video
+                cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
+                video_db_id = cursor.fetchone()[0]
                 
                 # Extract and insert comment data
                 comments = video.get('comments', [])
                 for comment in comments:
                     comment_id = comment.get('comment_id')
-                    comment_text = comment.get('comment_text', '')
-                    author_name = comment.get('comment_authorc', '')
-                    comment_published_at = comment.get('comment_published_at', '')
+                    text = comment.get('comment_text', '')
+                    author_display_name = comment.get('comment_author', '')
+                    published_at = comment.get('comment_published_at', '')
                     
-                    # Insert or update comment data
+                    # Insert or update comment data - fixed column names
                     cursor.execute('''
                     INSERT OR REPLACE INTO comments (
-                        comment_id, video_id, comment_text, comment_author, comment_published_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                        comment_id, video_id, text, author_display_name, published_at,
+                        fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     ''', (
-                        comment_id, video_id, comment_text, author_name, comment_published_at
+                        comment_id, video_db_id, text, author_display_name, published_at,
+                        fetched_at
+                    ))
+                
+                # Extract and insert location data
+                locations = video.get('locations', [])
+                for location in locations:
+                    location_type = location.get('location_type', '')
+                    location_name = location.get('location_name', '')
+                    confidence = float(location.get('confidence', 0.0))
+                    source = location.get('source', 'auto')
+                    created_at = location.get('created_at', '')
+                    
+                    # Use current timestamp if created_at is not provided
+                    if not created_at:
+                        from datetime import datetime
+                        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Insert location data
+                    cursor.execute('''
+                    INSERT INTO video_locations (
+                        video_id, location_type, location_name, confidence, source, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        video_db_id, location_type, location_name, confidence, source, created_at
                     ))
             
             # Commit the changes and close the connection
@@ -170,8 +345,8 @@ class SQLiteDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get all channel names
-            cursor.execute("SELECT channel_name FROM channels")
+            # Get all channel names - updating column name from 'channel_name' to 'title'
+            cursor.execute("SELECT title FROM channels")
             channels = [row[0] for row in cursor.fetchall()]
             
             # Close the connection
@@ -183,18 +358,26 @@ class SQLiteDatabase:
             return []
     
     def get_channel_data(self, channel_name):
-        """Get full data for a specific channel including videos and comments"""
+        """Get full data for a specific channel including videos, comments, and locations"""
         try:
+            # Check if we have this channel data cached in session state
+            cache_key = f"channel_data_{channel_name}"
+            if cache_key in st.session_state and st.session_state.get('use_data_cache', True):
+                debug_log(f"Using cached data for channel: {channel_name}")
+                return st.session_state[cache_key]
+            
+            debug_log(f"Loading data for channel: {channel_name} from database")
+            
             # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get channel info
+            # Get channel info - updating column names to match schema
             cursor.execute("""
-                SELECT channel_id, channel_name, subscribers, views, 
-                       total_videos, channel_description, playlist_id 
+                SELECT id, youtube_id, title, subscriber_count, view_count, 
+                       video_count, description, uploads_playlist_id 
                 FROM channels 
-                WHERE channel_name = ?
+                WHERE title = ?
             """, (channel_name,))
             
             channel_row = cursor.fetchone()
@@ -202,14 +385,16 @@ class SQLiteDatabase:
                 conn.close()
                 return None
             
+            channel_db_id = channel_row[0]
+            
             # Create channel data dictionary
             channel_info = {
-                'title': channel_row[1],
+                'title': channel_row[2],
                 'statistics': {
-                    'subscriberCount': channel_row[2],
-                    'viewCount': channel_row[3]
+                    'subscriberCount': channel_row[3],
+                    'viewCount': channel_row[4]
                 },
-                'description': channel_row[5]
+                'description': channel_row[6]
             }
             
             channel_data = {
@@ -219,39 +404,64 @@ class SQLiteDatabase:
             
             # Get videos for this channel
             cursor.execute("""
-                SELECT video_id, title, video_description, published_at, views, 
-                       likes, duration, thumbnails, caption_status
+                SELECT id, youtube_id, title, description, published_at, view_count, 
+                       like_count, duration, thumbnail_high, caption
                 FROM videos 
                 WHERE channel_id = ?
-            """, (channel_row[0],))
+            """, (channel_db_id,))
             
             videos = cursor.fetchall()
             
             # Add each video to the channel data
             for video_row in videos:
+                video_db_id = video_row[0]
+                video_id = video_row[1]
+                
                 video_data = {
-                    'id': video_row[0],  # Changed from 'video_id' to 'id'
+                    'id': video_id,
+                    'db_id': video_db_id,
                     'snippet': {
-                        'title': video_row[1],
-                        'description': video_row[2],
-                        'publishedAt': video_row[3]
+                        'title': video_row[2],
+                        'description': video_row[3],
+                        'publishedAt': video_row[4]
                     },
                     'statistics': {
-                        'viewCount': video_row[4],
-                        'likeCount': video_row[5],
+                        'viewCount': video_row[5],
+                        'likeCount': video_row[6],
                         'commentCount': 0  # Default value
                     },
                     'contentDetails': {
-                        'duration': video_row[6]
-                    }
+                        'duration': video_row[7]
+                    },
+                    'locations': []  # Add locations array
                 }
+                
+                # Get locations for this video
+                cursor.execute("""
+                    SELECT location_type, location_name, confidence, source, created_at
+                    FROM video_locations
+                    WHERE video_id = ?
+                """, (video_db_id,))
+                
+                locations = cursor.fetchall()
+                
+                # Add locations to the video data
+                for location_row in locations:
+                    location_data = {
+                        'location_type': location_row[0],
+                        'location_name': location_row[1],
+                        'confidence': location_row[2],
+                        'source': location_row[3],
+                        'created_at': location_row[4]
+                    }
+                    video_data['locations'].append(location_data)
                 
                 # Get comments for this video
                 cursor.execute("""
-                    SELECT comment_id, comment_text, comment_author, comment_published_at
+                    SELECT comment_id, text, author_display_name, published_at
                     FROM comments 
                     WHERE video_id = ?
-                """, (video_row[0],))
+                """, (video_db_id,))
                 
                 comments = cursor.fetchall()
                 
@@ -282,38 +492,42 @@ class SQLiteDatabase:
                 channel_data['videos'].append(video_data)
             
             # If we have comments, add them to the channel data
-            if any(len(cursor.execute("""SELECT 1 FROM comments WHERE video_id = ?""",
-                                   (v['id'],)).fetchall()) > 0 
-                  for v in channel_data['videos']):
+            if any(v['statistics']['commentCount'] > 0 for v in channel_data['videos']):
                 channel_data['comments'] = {}
                 
                 # Add comments organized by video
                 for video in channel_data['videos']:
-                    cursor.execute("""
-                        SELECT comment_id, comment_text, comment_author, comment_published_at
-                        FROM comments 
-                        WHERE video_id = ?
-                    """, (video['id'],))
-                    
-                    comments = cursor.fetchall()
-                    if comments:
-                        channel_data['comments'][video['id']] = []
+                    if video['statistics']['commentCount'] > 0:
+                        cursor.execute("""
+                            SELECT comment_id, text, author_display_name, published_at
+                            FROM comments 
+                            WHERE video_id = ?
+                        """, (video['db_id'],))
                         
-                        for comment_row in comments:
-                            comment_data = {
-                                'id': comment_row[0],
-                                'snippet': {
-                                    'topLevelComment': {
-                                        'snippet': {
-                                            'textDisplay': comment_row[1],
-                                            'authorDisplayName': comment_row[2],
-                                            'publishedAt': comment_row[3],
-                                            'likeCount': 0
+                        comments = cursor.fetchall()
+                        if comments:
+                            channel_data['comments'][video['id']] = []
+                            
+                            for comment_row in comments:
+                                comment_data = {
+                                    'id': comment_row[0],
+                                    'snippet': {
+                                        'topLevelComment': {
+                                            'snippet': {
+                                                'textDisplay': comment_row[1],
+                                                'authorDisplayName': comment_row[2],
+                                                'publishedAt': comment_row[3],
+                                                'likeCount': 0
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            channel_data['comments'][video['id']].append(comment_data)
+                                channel_data['comments'][video['id']].append(comment_data)
+            
+            # Cache the result in session state if caching is enabled
+            if st.session_state.get('use_data_cache', True):
+                st.session_state[cache_key] = channel_data
+                debug_log(f"Cached data for channel: {channel_name}")
             
             # Close the connection
             conn.close()
@@ -458,6 +672,94 @@ class SQLiteDatabase:
             return True
         except Exception as e:
             debug_log(f"Error clearing database caches: {str(e)}", e)
+            return False
+
+    def continue_iteration(self, channel_id, max_iterations=3, time_threshold_days=7):
+        """
+        Determine if data collection should continue for a given channel.
+        
+        Args:
+            channel_id (str): The YouTube channel ID to check
+            max_iterations (int): Maximum number of iterations allowed for a channel
+            time_threshold_days (int): Number of days to consider for recent iterations
+            
+        Returns:
+            bool: True if iteration should continue, False otherwise
+        """
+        debug_log(f"Checking if data collection should continue for channel: {channel_id}")
+        
+        try:
+            # Connect to the database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if the iteration_history table exists
+            cursor.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='iteration_history'
+            ''')
+            
+            if not cursor.fetchone():
+                # Create the iteration_history table if it doesn't exist
+                cursor.execute('''
+                CREATE TABLE iteration_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id TEXT NOT NULL,
+                    iteration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'completed',
+                    metrics_changed BOOLEAN DEFAULT FALSE
+                )
+                ''')
+                conn.commit()
+                debug_log("Created iteration_history table")
+            
+            # Get current timestamp in SQLite format
+            import datetime
+            current_time = datetime.datetime.now()
+            time_threshold = current_time - datetime.timedelta(days=time_threshold_days)
+            threshold_timestamp = time_threshold.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Count recent iterations for this channel
+            cursor.execute('''
+            SELECT COUNT(*) FROM iteration_history
+            WHERE channel_id = ? AND iteration_date > ?
+            ''', (channel_id, threshold_timestamp))
+            
+            recent_iterations = cursor.fetchone()[0]
+            
+            # Record this iteration attempt
+            cursor.execute('''
+            INSERT INTO iteration_history (channel_id)
+            VALUES (?)
+            ''', (channel_id,))
+            
+            # Get the ID of the newly inserted record
+            iteration_id = cursor.lastrowid
+            
+            # Commit the changes
+            conn.commit()
+            
+            # Check if we should continue
+            should_continue = recent_iterations < max_iterations
+            
+            # Update the status if we're not continuing
+            if not should_continue:
+                cursor.execute('''
+                UPDATE iteration_history
+                SET status = 'skipped - max iterations reached'
+                WHERE id = ?
+                ''', (iteration_id,))
+                conn.commit()
+                debug_log(f"Skipping iteration for channel {channel_id} - maximum iterations reached")
+            
+            # Close the connection
+            conn.close()
+            
+            return should_continue
+            
+        except Exception as e:
+            debug_log(f"Exception in continue_iteration: {str(e)}", e)
+            # Default to False on error to be safe
             return False
 
 # Keep the original functions for backward compatibility, but delegate to the class
