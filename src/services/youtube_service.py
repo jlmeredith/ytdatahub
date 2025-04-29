@@ -57,11 +57,37 @@ class YouTubeService:
         if options.get('fetch_channel_data', True) and not channel_info:
             channel_info = self.api.get_channel_info(channel_id)
         
+        # Critical check: Ensure we have the uploads playlist ID before fetching videos
+        if channel_info and options.get('fetch_videos', False):
+            # Debug log the state of playlist_id in existing channel_info
+            debug_log(f"SERVICE: Before fetching videos, channel_info has playlist_id: {'playlist_id' in channel_info}")
+            if 'playlist_id' in channel_info:
+                debug_log(f"SERVICE: playlist_id value is: {channel_info['playlist_id']}")
+            
+            # If we're missing the playlist ID but have channel info with contentDetails, extract it
+            if ('playlist_id' not in channel_info or not channel_info['playlist_id']) and 'channel_info' in channel_info:
+                if 'contentDetails' in channel_info['channel_info'] and 'relatedPlaylists' in channel_info['channel_info']['contentDetails']:
+                    uploads_id = channel_info['channel_info']['contentDetails']['relatedPlaylists'].get('uploads', '')
+                    if uploads_id:
+                        channel_info['playlist_id'] = uploads_id
+                        debug_log(f"SERVICE: Found uploads playlist ID in channel_info.contentDetails: {uploads_id}")
+            
+            # If we still don't have a playlist ID, try to get it from the API
+            if 'playlist_id' not in channel_info or not channel_info['playlist_id']:
+                debug_log("SERVICE: No uploads playlist ID found in existing data. Fetching fresh channel info to get playlist ID.")
+                # Get fresh channel info to get the uploads playlist ID
+                fresh_channel_info = self.api.get_channel_info(channel_id)
+                if fresh_channel_info and 'playlist_id' in fresh_channel_info:
+                    channel_info['playlist_id'] = fresh_channel_info['playlist_id']
+                    debug_log(f"SERVICE: Obtained uploads playlist ID from fresh channel info: {fresh_channel_info['playlist_id']}")
+        
         # Only proceed if we have channel info (either from existing data or just fetched)
         if channel_info:
             # Fetch videos if requested
             if options.get('fetch_videos', False):
                 debug_log(f"Fetching videos for channel: {channel_info.get('channel_name')}")
+                debug_log(f"SERVICE: Playlist ID being used for video fetch: {channel_info.get('playlist_id', 'MISSING')}")
+                
                 channel_info = self.api.get_channel_videos(
                     channel_info, 
                     max_videos=options.get('max_videos', 25)

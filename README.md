@@ -232,3 +232,241 @@ Once you've collected and stored your YouTube data, the analysis tab offers powe
 - Discover your most engaged viewers and their feedback patterns
 
 ## Complete Project Structure
+
+YTDataHub follows a modular architecture with clear separation of concerns:
+
+### Entry Points
+
+- `youtube.py` - Main application entry point that initializes Streamlit and configures the application
+- `setup.py` - Package installation script for setting up YTDataHub as a Python package
+
+### Core Application
+
+- `src/app.py` - Main application setup, page routing, and session state management
+- `src/config.py` - Configuration settings, environment variable handling, and application constants
+- `src/__init__.py` - Package initialization and version information
+
+### Analysis Layer
+
+- `src/analysis/` - Data analysis modules
+  - `base_analyzer.py` - Abstract base class with common analysis utilities and helper methods
+  - `channel_analyzer.py` - Processes and analyzes channel-level statistics and growth metrics
+  - `video_analyzer.py` - Handles video data processing, statistical analysis, and content patterns
+  - `comment_analyzer.py` - Processes comment text, sentiment, engagement analysis, and temporal patterns
+  - `youtube_analysis.py` - Facade providing backward compatibility with legacy code
+  - `visualization/` - Chart generation utilities
+    - `__init__.py` - Package initialization for visualization components
+    - `trend_line.py` - Statistical trend line generation and time series analysis tools
+    - `chart_helpers.py` - Reusable chart configuration functions and layout standardization
+
+### Data Access
+
+- `src/api/` - API client implementations
+  - `__init__.py` - Package initialization for API components
+  - `youtube_api.py` - Main YouTube Data API client wrapper for backward compatibility
+  - `youtube/` - Modular YouTube API clients
+    - `__init__.py` - Package initialization exposing the unified API
+    - `base.py` - Base API client with common functionality
+    - `channel.py` - Channel-specific API operations
+    - `video.py` - Video-specific API operations
+    - `comment.py` - Comment-specific API operations
+    - `resolver.py` - Channel URL and handle resolution
+- `src/database/` - Database abstraction and operations
+  - `__init__.py` - Package initialization for database components
+  - `sqlite.py` - SQLite database operations, schema management, and query functions
+  - `migrate_schema.py` - Schema migration utilities
+- `src/models/` - Data models and object representations
+  - `__init__.py` - Package initialization for data models
+  - `youtube.py` - Enhanced data models for YouTube entities (channels, videos, comments, locations)
+- `src/services/` - Service layer coordinating business logic
+  - `youtube_service.py` - Service layer coordinating API and storage operations
+- `src/storage/` - Data persistence implementations
+  - `__init__.py` - Package initialization for storage components
+  - `factory.py` - Factory pattern for storage backend selection and initialization
+  - `local_storage.py` - File-based storage implementation for JSON data
+
+### User Interface
+
+- `src/ui/` - UI components for each application section
+  - `__init__.py` - Package initialization for UI components
+  - `data_collection.py` - Data collection workflow UI with step-by-step guidance
+  - `data_storage.py` - Data persistence interface and storage options configuration
+  - `data_analysis.py` - Analytics dashboard and visualization interface
+  - `utilities.py` - Settings, configuration UI, and debugging tools
+  - `components/` - Reusable UI components and widgets
+    - `channel_card.py` - Displays channel metadata in card format
+    - `video_list.py` - Renders paginated video galleries with filtering options
+    - `comment_display.py` - Renders comment threads with collapsible replies
+    - `metrics_panel.py` - Shows key performance metrics with trend indicators
+    - `navigation.py` - Step navigation and workflow guidance components
+  - `data_analysis/` - Specialized analytics UI components
+    - `main.py` - Entry point for analytics dashboard
+    - `channel_insights.py` - Channel growth and performance visualizations
+    - `video_performance.py` - Video metrics and engagement analytics
+    - `comment_analysis.py` - Comment sentiment and engagement analysis
+    - `trend_visualization.py` - Time-series trend visualization components
+
+### Static Assets
+
+- `src/static/` - Static assets for UI rendering
+  - `css/` - Stylesheets for UI components
+    - `dashboard.css` - Styles for analytics dashboard
+    - `styles.css` - Global application styles
+  - `templates/` - HTML templates for UI components
+    - `analytics_dashboard_styles.html` - Styles for analytics dashboard
+    - `analytics_dashboard.html` - Main dashboard template
+    - `channel_info.html` - Channel information display template
+    - `data_collection_summary.html` - Summary template for collection results
+    - `duration_chart.html` - Video duration chart template
+    - `duration_metrics.html` - Duration metrics display template
+    - `engagement_metrics.html` - Engagement analysis template
+    - `engagement_timeline_chart.html` - Timeline chart for engagement metrics
+    - `security_headers.html` - Security headers template
+    - `storage_options_info.html` - Information about storage options
+    - `storage_options.html` - Storage configuration template
+    - `video_item.html` - Template for individual video display
+
+### Utilities
+
+- `src/utils/` - Common utility functions
+  - `__init__.py` - Package initialization for utilities
+  - `helpers.py` - Common utility functions used across the application
+  - `background_tasks.py` - Background task management and execution
+
+### Data Storage
+
+- `data/` - Default data storage location
+  - `youtube_data.db` - Default SQLite database file for data storage
+  - `youtube_data.db_*.bak` - Backup files for the database
+
+### Documentation
+
+- `documentation/` - Detailed documentation files
+  - `api-implementation-guide.md` - Guide for implementing a REST API
+  - `architecture.md` - Detailed architecture documentation
+  - `data-analysis-options.png` - Screenshot of analysis options
+  - `data-analysis.png` - Data analysis feature diagram
+  - `data-storage.png` - Data storage options diagram
+  - `database-operations.md` - Database operations documentation
+  - `homepage.png` - Application homepage screenshot
+  - `old-to-new-schema.md` - Documentation of database schema evolution
+  - `utilities.png` - Utilities and settings screenshot
+  - `youtube-api-quota-md.md` - YouTube API quota information
+  - `youtube-channel-api-quota-md.md` - Channel API quota details
+  - `youtube-video-api-quota-md.md` - Video API quota details
+  - `delta-reporting.md` - Documentation on delta reporting functionality
+
+### Package Information
+
+- `ytdatahub.egg-info/` - Package installation metadata
+  - `dependency_links.txt` - Package dependency information
+  - `PKG-INFO` - Package metadata
+  - `SOURCES.txt` - Source file listing
+  - `top_level.txt` - Top-level package information
+
+## Detailed Documentation
+
+For more detailed information about the application, please refer to the documentation folder:
+
+- [Architecture Documentation](documentation/architecture.md) - Detailed explanation of the application architecture
+- [API Implementation Guide](documentation/api-implementation-guide.md) - Guide for implementing a REST API
+- [YouTube API Quota Information](documentation/youtube-api-quota-md.md) - Information about YouTube API quotas
+- [Database Schema Evolution](documentation/old-to-new-schema.md) - Information about the database schema changes
+- [Database Operations](documentation/database-operations.md) - Documentation on database operations
+- [Delta Reporting](documentation/delta-reporting.md) - Information about tracking changes between data collections
+
+## Key Technical Improvements
+
+### Enhanced Database Schema
+
+The YTDataHub database schema has been significantly enhanced to store more comprehensive data:
+
+- **Channels**: Additional fields for custom URL, country, language, privacy settings, thumbnail URLs at different resolutions
+- **Videos**: Extended metadata including dislike/favorite counts, dimension (2D/3D), definition (SD/HD), license information, privacy settings
+- **Comments**: Improved structure with parent-child relationships for threaded comments, like counts, and author information
+- **Video Locations**: New table supporting future location-based analysis of video content
+
+### Modular YouTube API Client
+
+The YouTube API client has been refactored into specialized components:
+
+- **Base Client**: Common functionality for initialization, caching, and error handling
+- **Channel Client**: Specialized operations for channel data retrieval
+- **Video Client**: Focused on video listing and metadata fetching
+- **Comment Client**: Optimized for comment retrieval and threading
+- **Channel Resolver**: Specialized component for resolving custom URLs and handles
+
+This architecture improves maintainability, testability, and separation of concerns while maintaining backward compatibility.
+
+## Setup and Installation
+
+### Prerequisites
+
+1. **Python 3.8+** - Ensure you have Python 3.8 or later installed
+2. **Google Cloud Account** - Required for accessing the YouTube Data API
+3. **YouTube Data API Key** - Needed to retrieve data from YouTube
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/ytdatahub.git
+cd ytdatahub
+```
+
+### Step 2: Create a Virtual Environment (Recommended)
+
+```bash
+# For macOS/Linux
+python3 -m venv venv
+source venv/bin/activate
+
+# For Windows
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Step 3: Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 4: Set Up YouTube API Key
+
+1. Visit the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the "YouTube Data API v3" for your project
+4. Create API credentials:
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "API Key"
+   - Copy your API key
+
+You can set up your API key in one of two ways:
+
+- Create a `.env` file in the project root and add: `YOUTUBE_API_KEY=your_api_key_here`
+- Or enter it directly in the application interface when prompted
+
+### Step 5: Launch the Application
+
+```bash
+streamlit run youtube.py
+```
+
+The application should open in your default web browser at `http://localhost:8501`.
+
+## Troubleshooting
+
+If you encounter any issues:
+
+1. Check that your API key is correct and has the necessary permissions
+2. Ensure you've properly configured any database connections
+3. Look for any error messages in the application interface
+4. Enable "Debug Mode" in the application for more detailed logs
+
+## License
+
+The YTDataHub is released under the MIT License. Feel free to modify and use the code according to the terms of the license.
+
+---
+
+For more details about the project architecture, technical implementation, and future plans, see [Architecture Documentation](documentation/architecture.md).

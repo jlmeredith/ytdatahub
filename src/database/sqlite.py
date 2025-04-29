@@ -386,6 +386,7 @@ class SQLiteDatabase:
                 return None
             
             channel_db_id = channel_row[0]
+            uploads_playlist_id = channel_row[7]  # Get the uploads_playlist_id
             
             # Create channel data dictionary
             channel_info = {
@@ -396,14 +397,25 @@ class SQLiteDatabase:
                     'viewCount': channel_row[4],
                     'videoCount': channel_row[5]  # Explicitly include videoCount here
                 },
-                'description': channel_row[6]
+                'description': channel_row[6],
+                'uploads_playlist_id': uploads_playlist_id  # Add uploads_playlist_id to channel_info
             }
             
-            # Add debug logging for statistics
+            # For backwards compatibility, also add contentDetails structure if we have a playlist ID
+            if uploads_playlist_id:
+                channel_info['contentDetails'] = {
+                    'relatedPlaylists': {
+                        'uploads': uploads_playlist_id
+                    }
+                }
+            
+            # Add debug logging for statistics and uploads playlist ID
             debug_log(f"DEBUG: Channel statistics from database: subscribers={channel_row[3]}, views={channel_row[4]}, videoCount={channel_row[5]}")
+            debug_log(f"DEBUG: Uploads playlist ID from database: {uploads_playlist_id}")
             
             channel_data = {
                 'channel_info': channel_info,
+                'uploads_playlist_id': uploads_playlist_id,  # Also add it at the root level for compatibility
                 'videos': []  # Changed from 'video_id' to 'videos'
             }
             
@@ -544,6 +556,9 @@ class SQLiteDatabase:
                 if 'statistics' in channel_data['channel_info']:
                     stats = channel_data['channel_info']['statistics']
                     debug_log(f"DEBUG: Final statistics: {list(stats.keys())} - videoCount={stats.get('videoCount', 'MISSING')}")
+                debug_log(f"DEBUG: Final uploads_playlist_id: {channel_data.get('uploads_playlist_id', 'MISSING')}")
+                if 'contentDetails' in channel_data['channel_info']:
+                    debug_log(f"DEBUG: Final contentDetails structure: {channel_data['channel_info']['contentDetails']}")
             
             return channel_data
         except Exception as e:

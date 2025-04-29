@@ -13,225 +13,200 @@ from src.api.youtube.base import YouTubeBaseClient
 class VideoClient(YouTubeBaseClient):
     """YouTube Data API client focused on video operations"""
     
-    def get_channel_videos(self, channel_info: Dict[str, Any], max_videos: int = 0) -> Optional[Dict[str, Any]]:
+    def get_channel_videos(self, channel_info, max_videos=25):
         """
-        Get videos from a channel's uploads playlist
+        Get videos for a channel using the uploads playlist ID
         
         Args:
-            channel_info: Dictionary containing channel information
-            max_videos: Maximum number of videos to fetch (0 for all available videos)
-        
+            channel_info: Dictionary with channel information
+            max_videos: Maximum number of videos to fetch
+            
         Returns:
-            Updated channel_info dictionary with video data or None if failed
+            Updated channel_info dictionary with videos
         """
         if not self.is_initialized():
             st.error("YouTube API client not initialized. Please check your API key.")
-            return None
+            return channel_info
         
-        playlist_id = channel_info.get('playlist_id')
+        # Get the uploads playlist ID
+        playlist_id = channel_info.get('playlist_id', '')
         if not playlist_id:
-            st.error("No uploads playlist ID found in channel info.")
-            return None
-        
-        # Determine how many videos to fetch
-        total_channel_videos = int(channel_info.get('total_videos', '0'))
-        if max_videos <= 0 or max_videos > total_channel_videos:
-            max_videos = total_channel_videos
-            target_text = "all available"
-        else:
-            target_text = str(max_videos)
+            debug_log("No uploads playlist ID found in channel info. Attempting to find it...")
             
-        debug_log(f"Fetching {target_text} videos for channel: {channel_info.get('channel_name')}")
+            # Check if it might be in channel_info structure (needed for update scenario)
+            if 'channel_info' in channel_info and isinstance(channel_info['channel_info'], dict):
+                if 'contentDetails' in channel_info['channel_info'] and 'relatedPlaylists' in channel_info['channel_info']['contentDetails']:
+                    playlist_id = channel_info['channel_info']['contentDetails']['relatedPlaylists'].get('uploads', '')
+                    if playlist_id:
+                        debug_log(f"Found uploads playlist ID in channel_info structure: {playlist_id}")
+                        channel_info['playlist_id'] = playlist_id
+            
+            # If still no playlist ID, check for uploads_playlist_id at the root level
+            if not playlist_id and 'uploads_playlist_id' in channel_info:
+                playlist_id = channel_info['uploads_playlist_id']
+                debug_log(f"Found uploads playlist ID as uploads_playlist_id: {playlist_id}")
+                channel_info['playlist_id'] = playlist_id
+        
+        if not playlist_id:
+            debug_log("ERROR: Failed to find uploads playlist ID, cannot fetch videos")
+            st.error("No uploads playlist ID found in channel info. Videos cannot be fetched.")
+            return channel_info
+        
+        debug_log(f"Fetching videos for channel using playlist ID: {playlist_id}")
+        
+        # Initialize variables
+        total_videos_fetched = 0
+        total_videos_unavailable = 0
+        videos_with_comments_disabled = 0
+        next_page_token = None
+        
+        # Initialize video_id list if it doesn't exist
+        if 'video_id' not in channel_info:
+            channel_info['video_id'] = []
+        
+        # Keep track of existing video IDs to avoid duplicates (for update scenario)
+        existing_video_ids = {v['video_id'] for v in channel_info['video_id']} if 'video_id' in channel_info else set()
+        debug_log(f"Found {len(existing_video_ids)} existing videos in channel data")
+        
+        # Save original video count for delta reporting
+        original_video_count = len(channel_info['video_id'])
+        
+        # Additional tracking for delta reporting
+        updated_videos = 0
+        new_videos = 0
+        unchanged_videos = 0
+        
+        # For quota optimization, we'll collect video IDs first, then batch request their details
+        all_video_ids = []
         
         try:
-            # Request videos from the uploads playlist
-            videos = []
-            next_page_token = None
-            videos_processed = 0
-            unavailable_videos = 0
-            videos_with_comments_disabled = 0
-            total_comment_count = 0
-            videos_with_comments = 0
-            
-            # Progress bar for video fetching
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            while videos_processed < max_videos:
-                # Check cache first
-                cache_key = f"playlist_{playlist_id}_{next_page_token}"
-                playlist_response = self.get_from_cache(cache_key)
+            # Start fetching video IDs from the uploads playlist
+            while True:
+                # Configure the request to get videos from the playlist
+                playlist_request = self.youtube.playlistItems().list(
+                    part="snippet,contentDetails",
+                    playlistId=playlist_id,
+                    maxResults=50,  # Maximum allowed by API
+                    pageToken=next_page_token
+                )
                 
-                if not playlist_response:
-                    # Make API request for playlist items
-                    playlist_request = self.youtube.playlistItems().list(
-                        part="snippet,contentDetails",
-                        playlistId=playlist_id,
-                        maxResults=50,  # Maximum allowed by the API per page
-                        pageToken=next_page_token
-                    )
-                    playlist_response = playlist_request.execute()
+                playlist_response = playlist_request.execute()
+                
+                # Extract video IDs from playlist items
+                for item in playlist_response.get('items', []):
+                    # Get the video ID from the playlist item
+                    video_id = item['contentDetails']['videoId']
                     
-                    # Store in cache
-                    self.store_in_cache(cache_key, playlist_response)
-                else:
-                    debug_log(f"Using cached playlist page for token: {next_page_token}")
+                    # Skip if we already have this video (for update scenario)
+                    if video_id in existing_video_ids:
+                        continue
+                    
+                    # Add to our batch processing list
+                    all_video_ids.append(video_id)
                 
-                # Check if we got any items
-                if not playlist_response.get('items'):
-                    debug_log("No videos found in this page of results.")
+                # Get the next page token if available
+                next_page_token = playlist_response.get('nextPageToken')
+                
+                # Check if we've reached our maximum videos or there are no more pages
+                if not next_page_token or (max_videos > 0 and len(all_video_ids) + len(existing_video_ids) >= max_videos):
+                    break
+            
+            debug_log(f"Found {len(all_video_ids)} new video IDs from playlist, processing details...")
+            
+            # Now fetch the actual video details in batches
+            batch_size = 50  # Maximum allowed by API for video.list
+            for i in range(0, len(all_video_ids), batch_size):
+                # Get the current batch of IDs
+                batch_ids = all_video_ids[i:i+batch_size]
+                
+                # Break if we've reached the maximum video count
+                if max_videos > 0 and total_videos_fetched + len(existing_video_ids) >= max_videos:
                     break
                 
-                # Process video items
-                items_to_process = min(len(playlist_response['items']), max_videos - videos_processed)
+                # Request detailed video information
+                video_request = self.youtube.videos().list(
+                    part="snippet,contentDetails,statistics",
+                    id=','.join(batch_ids)
+                )
                 
-                # Collect video IDs for batch processing
-                video_ids = []
-                for i in range(items_to_process):
-                    video_id = playlist_response['items'][i]['contentDetails']['videoId']
-                    video_ids.append(video_id)
+                video_response = video_request.execute()
                 
-                # Fetch video details in batches
-                video_details = self.get_videos_details(video_ids)
+                # Track how many videos we actually get back vs requested
+                videos_expected = len(batch_ids)
+                videos_returned = len(video_response.get('items', []))
+                if videos_expected > videos_returned:
+                    total_videos_unavailable += (videos_expected - videos_returned)
+                    debug_log(f"Warning: {videos_expected - videos_returned} videos were unavailable.")
                 
-                # Count how many videos we actually received details for
-                received_details_count = len(video_details)
-                if received_details_count < len(video_ids):
-                    # Some videos might be private or deleted
-                    unavailable_videos += (len(video_ids) - received_details_count)
-                    debug_log(f"Some videos unavailable: requested {len(video_ids)} details, got {received_details_count}")
-                
-                # Add video details to the list
-                for i in range(items_to_process):
-                    if i >= len(playlist_response['items']):
+                # Process each video
+                for video in video_response.get('items', []):
+                    if max_videos > 0 and total_videos_fetched + len(existing_video_ids) >= max_videos:
                         break
                         
-                    video_item = playlist_response['items'][i]
-                    video_id = video_item['contentDetails']['videoId']
+                    # Get video ID for tracking
+                    video_id = video['id']
                     
-                    # Get the matching video details
-                    video_detail = None
-                    for detail in video_details:
-                        if detail.get('id') == video_id:
-                            video_detail = detail
-                            break
+                    # Build video data 
+                    video_data = {
+                        'video_id': video_id,
+                        'title': video['snippet'].get('title', ''),
+                        'video_description': video['snippet'].get('description', ''),
+                        'published_at': video['snippet'].get('publishedAt', ''),
+                        'published_date': video['snippet'].get('publishedAt', '')[:10] if video['snippet'].get('publishedAt', '') else '',
+                        'views': video['statistics'].get('viewCount', '0'),
+                        'likes': video['statistics'].get('likeCount', '0'),
+                        'comment_count': video['statistics'].get('commentCount', '0'),
+                        'duration': video['contentDetails'].get('duration', ''),
+                        'thumbnails': video['snippet'].get('thumbnails', {}).get('high', {}).get('url', ''),
+                        'comments': []
+                    }
                     
-                    if video_detail:
-                        # Get current timestamp for fetched_at field
-                        current_time = datetime.now().isoformat()
-                        
-                        # Basic video info from playlist item
-                        video_info = {
-                            'video_id': video_id,
-                            'title': video_item['snippet']['title'],
-                            'published_at': video_item['snippet']['publishedAt'],
-                            'published_date': video_item['snippet']['publishedAt'].split('T')[0],
-                            'video_description': video_detail.get('snippet', {}).get('description', ''),
-                            'views': video_detail.get('statistics', {}).get('viewCount', '0'),
-                            'likes': video_detail.get('statistics', {}).get('likeCount', '0'),
-                            'duration': video_detail.get('contentDetails', {}).get('duration', 'PT0S'),
-                            'caption_status': video_detail.get('contentDetails', {}).get('caption', 'none'),
-                            'comments': [],  # Will be populated if fetch_comments is called
-                            
-                            # New fields extracted from video details
-                            'dislike_count': video_detail.get('statistics', {}).get('dislikeCount', '0'),
-                            'favorite_count': video_detail.get('statistics', {}).get('favoriteCount', '0'),
-                            
-                            # Content details fields
-                            'dimension': video_detail.get('contentDetails', {}).get('dimension', '2d'),
-                            'definition': video_detail.get('contentDetails', {}).get('definition', 'sd'),
-                            'licensed_content': video_detail.get('contentDetails', {}).get('licensedContent', False),
-                            'projection': video_detail.get('contentDetails', {}).get('projection', 'rectangular'),
-                            
-                            # Status fields
-                            'privacy_status': video_detail.get('status', {}).get('privacyStatus', 'public'),
-                            'license': video_detail.get('status', {}).get('license', 'youtube'),
-                            'embeddable': video_detail.get('status', {}).get('embeddable', True),
-                            'public_stats_viewable': video_detail.get('status', {}).get('publicStatsViewable', True),
-                            'made_for_kids': video_detail.get('status', {}).get('madeForKids', False),
-                            
-                            # Thumbnail URLs
-                            'thumbnail_default': video_detail.get('snippet', {}).get('thumbnails', {}).get('default', {}).get('url', ''),
-                            'thumbnail_medium': video_detail.get('snippet', {}).get('thumbnails', {}).get('medium', {}).get('url', ''),
-                            'thumbnail_high': video_detail.get('snippet', {}).get('thumbnails', {}).get('high', {}).get('url', video_item['snippet']['thumbnails']['high']['url']),
-                            
-                            # Category and tags
-                            'category_id': video_detail.get('snippet', {}).get('categoryId', ''),
-                            'tags': video_detail.get('snippet', {}).get('tags', []),
-                            
-                            # Other metadata
-                            'live_broadcast_content': video_detail.get('snippet', {}).get('liveBroadcastContent', 'none'),
-                            'fetched_at': current_time,
-                            'updated_at': current_time
-                        }
-                        
-                        # Check if we can get comment count from the statistics
-                        video_statistics = video_detail.get('statistics', {})
-                        if 'commentCount' in video_statistics:
-                            # Store the comment count separately from actual comments
-                            comment_count = int(video_statistics['commentCount'])
-                            video_info['comment_count'] = comment_count
-                            total_comment_count += comment_count
-                            if comment_count > 0:
-                                videos_with_comments += 1
-                            debug_log(f"Video '{video_info['title']}' has {comment_count} comments according to statistics")
-                        else:
-                            # If commentCount isn't in the statistics, comments are disabled
-                            video_info['comments_disabled'] = True
-                            video_info['comment_count'] = 0
-                            videos_with_comments_disabled += 1
-                            debug_log(f"Video '{video_info['title']}' has comments disabled (no commentCount in statistics)")
-                        
-                        videos.append(video_info)
-                    else:
-                        # Video might be private or deleted
-                        debug_log(f"Video details not available for {video_id} (may be private or deleted)")
-                        unavailable_videos += 1
+                    # Track if comments are disabled
+                    if video['contentDetails'].get('commentStatus') == 'disabled':
+                        video_data['comments_disabled'] = True
+                        videos_with_comments_disabled += 1
                     
-                    # Update progress
-                    videos_processed += 1
-                    progress = min(videos_processed / max_videos, 1.0)
-                    progress_bar.progress(progress)
-                    status_text.text(f"Fetched {len(videos)} of {max_videos} videos (processed {videos_processed}, {unavailable_videos} unavailable)...")
+                    # Add the video to the channel data
+                    channel_info['video_id'].append(video_data)
+                    total_videos_fetched += 1
+                    new_videos += 1
                 
-                # Check if there are more videos to fetch
-                if 'nextPageToken' in playlist_response and videos_processed < max_videos:
-                    next_page_token = playlist_response['nextPageToken']
-                else:
-                    break
+                # Add a slight delay to avoid hitting rate limits
+                time.sleep(0.1)
             
-            # Clear progress indicators
-            status_text.empty()
-            progress_bar.empty()
-            
-            # Update channel info with video data and stats
-            channel_info['video_id'] = videos
-            channel_info['videos_fetched'] = len(videos)
-            channel_info['videos_unavailable'] = unavailable_videos
-            channel_info['videos_with_comments_disabled'] = videos_with_comments_disabled
-            
-            # Add comment count statistics from the video fetch
-            channel_info['comment_counts'] = {
-                'total_comment_count': total_comment_count,
-                'videos_with_comments': videos_with_comments,
-                'videos_with_comments_disabled': videos_with_comments_disabled
-            }
-            
-            # If we couldn't fetch as many as expected, add a note
-            if unavailable_videos > 0:
-                st.info(f"Note: {unavailable_videos} videos were unavailable (may be private, deleted, or restricted).")
+            # Update summary statistics for the channel
+            channel_info['videos_fetched'] = total_videos_fetched + len(existing_video_ids)
+            channel_info['videos_unavailable'] = total_videos_unavailable
             
             if videos_with_comments_disabled > 0:
-                st.info(f"Note: {videos_with_comments_disabled} videos have comments disabled.")
-                
-            debug_log(f"Fetched {len(videos)} videos for channel: {channel_info.get('channel_name')} ({unavailable_videos} unavailable)")
-            debug_log(f"Comment counts from video stats: {total_comment_count} total comments across {videos_with_comments} videos")
+                channel_info['videos_with_comments_disabled'] = videos_with_comments_disabled
             
+            # Add delta reporting data
+            channel_info['update_stats'] = {
+                'original_video_count': original_video_count,
+                'new_videos': new_videos,
+                'updated_videos': updated_videos,
+                'unchanged_videos': unchanged_videos
+            }
+            
+            debug_log(f"Delta reporting stats: {channel_info['update_stats']}")
+            
+            debug_log(f"Successfully fetched {total_videos_fetched} videos for the channel. "
+                     f"Total videos in collection: {len(channel_info['video_id'])}")
+            
+            # Add comment counts for later tracking
+            comment_counts = {
+                'total_comment_count': sum(int(v.get('comment_count', 0)) for v in channel_info['video_id']),
+                'videos_with_comments': sum(1 for v in channel_info['video_id'] if int(v.get('comment_count', 0)) > 0)
+            }
+            channel_info['comment_counts'] = comment_counts
+            
+            debug_log(f"Comment counts from metadata: {comment_counts}")
             return channel_info
             
         except Exception as e:
             self._handle_api_error(e, "get_channel_videos")
-            return None
+            return channel_info
     
     def get_videos_details(self, video_ids: List[str]) -> List[Dict[str, Any]]:
         """

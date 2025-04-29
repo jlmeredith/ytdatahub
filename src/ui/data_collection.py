@@ -209,6 +209,7 @@ def convert_db_to_api_format(db_data):
             'views': 0,
             'total_videos': 0,
             'channel_description': '',
+            'playlist_id': '',  # Add explicit initialization for playlist_id
             'video_id': []
         }
         
@@ -224,6 +225,11 @@ def convert_db_to_api_format(db_data):
             
             debug_log(f"Channel info found. ID: {api_data['channel_id']}, Name: {api_data['channel_name']}")
             
+            # Check for uploads playlist ID in channel info
+            if 'contentDetails' in channel_info and 'relatedPlaylists' in channel_info['contentDetails'] and 'uploads' in channel_info['contentDetails']['relatedPlaylists']:
+                api_data['playlist_id'] = channel_info['contentDetails']['relatedPlaylists']['uploads']
+                debug_log(f"Found uploads playlist ID in contentDetails: {api_data['playlist_id']}")
+            
             if 'statistics' in channel_info:
                 stats = channel_info['statistics']
                 api_data['subscribers'] = int(stats.get('subscriberCount', 0))
@@ -235,6 +241,11 @@ def convert_db_to_api_format(db_data):
                 
                 debug_log(f"Channel statistics found. Subscribers: {api_data['subscribers']}, "
                           f"Views: {api_data['views']}, Total videos from stats: {video_count_from_stats}")
+        
+        # Look for uploads_playlist_id in db_data (older databases might store it here)
+        if 'uploads_playlist_id' in db_data:
+            api_data['playlist_id'] = db_data['uploads_playlist_id']
+            debug_log(f"Found uploads playlist ID at root level: {api_data['playlist_id']}")
         
         # Convert videos
         if 'videos' in db_data:
@@ -293,6 +304,17 @@ def convert_db_to_api_format(db_data):
         else:
             debug_log("No videos found in database data")
         
+        # Final check on uploads playlist ID
+        if not api_data['playlist_id']:
+            debug_log("WARNING: No uploads playlist ID found after conversion. Videos cannot be fetched without this.")
+            # Try to extract it from another potential location
+            if 'channel_info' in db_data and isinstance(db_data['channel_info'], dict):
+                uploads_id = db_data['channel_info'].get('uploads_playlist_id', '')
+                if uploads_id:
+                    api_data['playlist_id'] = uploads_id
+                    debug_log(f"Found uploads playlist ID in channel_info.uploads_playlist_id: {uploads_id}")
+        
+        debug_log(f"Final API data structure - has playlist_id: {'playlist_id' in api_data}, value: {api_data.get('playlist_id', 'NOT_FOUND')}")
         return api_data
     except Exception as e:
         debug_log(f"Error converting DB to API format: {str(e)}", e)
