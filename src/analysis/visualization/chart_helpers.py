@@ -4,7 +4,7 @@ Common chart configuration helpers for Plotly visualizations.
 import plotly.graph_objects as go
 import plotly.express as px
 
-def configure_time_series_layout(fig, title, height=500, show_rangeslider=True):
+def configure_time_series_layout(fig, title, height=500, show_rangeslider=True, x_title="Date", y_title="Count"):
     """
     Configure a time series plot layout with common settings.
     
@@ -13,6 +13,8 @@ def configure_time_series_layout(fig, title, height=500, show_rangeslider=True):
         title: Chart title
         height: Chart height in pixels
         show_rangeslider: Whether to show a range slider for the x-axis
+        x_title: X-axis title (default: "Date")
+        y_title: Y-axis title (default: "Count")
         
     Returns:
         The configured figure
@@ -31,8 +33,8 @@ def configure_time_series_layout(fig, title, height=500, show_rangeslider=True):
         margin=dict(l=10, r=10, t=50, b=10),
         selectdirection="h",
         height=height,
-        xaxis_title="Date",
-        yaxis_title="Count",
+        xaxis_title=x_title,
+        yaxis_title=y_title,
         plot_bgcolor="rgba(240,242,246,0.3)",
         autosize=True
     )

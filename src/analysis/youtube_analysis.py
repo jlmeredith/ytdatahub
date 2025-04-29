@@ -237,8 +237,9 @@ class YouTubeAnalysis:
             channel_name = channel_data['channel_info']['title']
             cache_key = f"analysis_data_coverage_{channel_name}"
             
-            # Check if we have cached results
-            if cache_key in st.session_state and st.session_state.get('use_data_cache', True):
+            # Check if we have cached results - but skip cache if explicitly told to
+            skip_cache = st.session_state.get('skip_coverage_cache', False)
+            if not skip_cache and cache_key in st.session_state and st.session_state.get('use_data_cache', True):
                 debug_log(f"Using cached data coverage for: {channel_name}")
                 return st.session_state[cache_key]
             
@@ -250,10 +251,12 @@ class YouTubeAnalysis:
                 'videos_with_comments': 0,    # Videos with comments collected
                 'latest_video_date': None,    # Date of the latest video
                 'oldest_video_date': None,    # Date of the oldest video
+                'last_updated': None,         # When this data was last updated
                 'update_recommendations': [],  # Recommended actions
                 'video_coverage_percent': 0,  # Percentage of videos collected
                 'comment_coverage_percent': 0, # Percentage of videos with comments
                 'historical_completeness': 0,  # How far back in time we've collected
+                'is_complete': False,          # Whether we have all videos
                 'temporal_coverage': {         # Coverage by time period
                     'last_month': 0,
                     'last_6_months': 0,
@@ -267,15 +270,43 @@ class YouTubeAnalysis:
                 if 'channel_info' in channel_data:
                     channel_info = channel_data['channel_info']
                     
-                    # Get total videos reported by YouTube API
+                    # Get total videos reported by YouTube API - with multiple fallback methods
                     if 'statistics' in channel_info and 'videoCount' in channel_info['statistics']:
-                        result['total_videos_reported'] = int(channel_info['statistics']['videoCount'])
+                        # Method 1: Direct statistics field
+                        try:
+                            result['total_videos_reported'] = int(channel_info['statistics']['videoCount'])
+                        except (ValueError, TypeError):
+                            debug_log(f"Error converting videoCount to int: {channel_info['statistics']['videoCount']}")
+                    
+                    # Method 2: Check if there's a total_videos field directly
+                    if result['total_videos_reported'] == 0 and 'total_videos' in channel_info:
+                        try:
+                            result['total_videos_reported'] = int(channel_info['total_videos'])
+                        except (ValueError, TypeError):
+                            debug_log(f"Error converting total_videos to int: {channel_info['total_videos']}")
+                    
+                    # Get last updated timestamp if available
+                    if 'fetched_at' in channel_info:
+                        try:
+                            result['last_updated'] = datetime.fromisoformat(channel_info['fetched_at'].replace('Z', '+00:00'))
+                        except:
+                            try:
+                                # Try an alternative format used in some API responses
+                                result['last_updated'] = datetime.fromisoformat(channel_info['fetched_at'])
+                            except:
+                                pass
                 
                 # Get video data from channel data
                 videos = []
                 if 'videos' in channel_data:
                     videos = channel_data['videos']
                     result['total_videos_collected'] = len(videos)
+                    
+                    # If we still don't have a total videos count from the API, use our collected count
+                    # but mark it as potentially incomplete
+                    if result['total_videos_reported'] == 0:
+                        result['total_videos_reported'] = max(len(videos), 1)  # Ensure at least 1
+                        debug_log(f"Using collected videos count as total: {result['total_videos_reported']}")
                     
                     # Check which videos have details and comments
                     videos_with_details = 0
@@ -314,20 +345,50 @@ class YouTubeAnalysis:
                                 except Exception:
                                     pass
                         
-                        # Check for comments
+                        # Check for comments - enhanced detection logic
+                        comment_found = False
+                        
+                        # Method 1: Direct comments array
                         if 'comments' in video and video['comments']:
+                            comment_found = True
+                        # Method 2: Comment count in statistics
+                        elif 'statistics' in video and 'commentCount' in video['statistics'] and int(video['statistics']['commentCount']) > 0:
+                            comment_found = True
+                        # Method 3: comment_count as a direct attribute
+                        elif 'comment_count' in video and int(video.get('comment_count', 0)) > 0:
+                            comment_found = True
+                        # Method 4: Check video ID in comments dictionary
+                        elif 'comments' in channel_data and video.get('id') in channel_data['comments']:
+                            comment_found = True
+                        
+                        if comment_found:
                             videos_with_comments += 1
-                            comment_counts.append(len(video['comments']))
+                            # Try to get comment count for statistics
+                            if 'comments' in video and isinstance(video['comments'], list):
+                                comment_counts.append(len(video['comments']))
+                            elif 'statistics' in video and 'commentCount' in video['statistics']:
+                                comment_counts.append(int(video['statistics']['commentCount']))
+                            elif 'comment_count' in video:
+                                comment_counts.append(int(video.get('comment_count', 0)))
                     
                     result['videos_with_details'] = videos_with_details
                     result['videos_with_comments'] = videos_with_comments
                     
                     # Calculate coverage percentages
                     if result['total_videos_reported'] > 0:
-                        result['video_coverage_percent'] = (result['total_videos_collected'] / result['total_videos_reported']) * 100
+                        # Calculate percentage with proper handling of full coverage
+                        video_coverage = min(100.0, (result['total_videos_collected'] / result['total_videos_reported']) * 100)
+                        result['video_coverage_percent'] = video_coverage
+                        
+                        # Mark as complete if we have all videos or very close to it (allowing for API count discrepancies)
+                        if (result['total_videos_collected'] >= result['total_videos_reported'] or 
+                            video_coverage >= 99.0):
+                            result['is_complete'] = True
                     
                     if result['total_videos_collected'] > 0:
-                        result['comment_coverage_percent'] = (result['videos_with_comments'] / result['total_videos_collected']) * 100
+                        # Calculate comment coverage with proper handling of full coverage
+                        comment_coverage = min(100.0, (result['videos_with_comments'] / result['total_videos_collected']) * 100)
+                        result['comment_coverage_percent'] = comment_coverage
                     
                     # Set date ranges
                     if publish_dates:
@@ -340,7 +401,7 @@ class YouTubeAnalysis:
                             channel_age_days = (now - result['oldest_video_date']).days
                             
                             if channel_age_days > 0:
-                                result['historical_completeness'] = (days_range / channel_age_days) * 100
+                                result['historical_completeness'] = min(100.0, (days_range / channel_age_days) * 100)
                     
                     # Set temporal coverage
                     total_temporal = last_month + last_6_months + last_year + older
@@ -358,20 +419,38 @@ class YouTubeAnalysis:
                 # Missing videos recommendation
                 if result['total_videos_reported'] > result['total_videos_collected']:
                     missing_count = result['total_videos_reported'] - result['total_videos_collected']
-                    recommendations.append(f"Collect {missing_count} missing videos")
+                    if missing_count > 0:
+                        if missing_count == 1:
+                            recommendations.append(f"Collect 1 missing video")
+                        else:
+                            recommendations.append(f"Collect {missing_count} missing videos")
                 
                 # Missing comments recommendation
                 if result['videos_with_comments'] < result['total_videos_collected']:
                     missing_comments = result['total_videos_collected'] - result['videos_with_comments']
-                    recommendations.append(f"Collect comments for {missing_comments} videos")
+                    if missing_comments > 0:
+                        if missing_comments == 1:
+                            recommendations.append(f"Collect comments for 1 video")
+                        else:
+                            recommendations.append(f"Collect comments for {missing_comments} videos")
+                
+                # Data refresh recommendation if we have all videos but data is old
+                if result['is_complete'] and result['last_updated']:
+                    days_since_update = (datetime.now() - result['last_updated']).days
+                    if days_since_update > 30:  # If data is older than a month
+                        recommendations.append(f"Refresh data (last updated {days_since_update} days ago)")
                 
                 # Historical data recommendation
-                if result['historical_completeness'] < 80:
+                if result['historical_completeness'] < 80 and not result['is_complete']:
                     recommendations.append("Collect more historical data to improve coverage")
                 
                 # Recent data recommendation
                 if result['temporal_coverage']['last_month'] < 10 and result['temporal_coverage']['last_6_months'] < 20:
                     recommendations.append("Collect more recent videos (last 6 months)")
+                
+                # Set final recommendations (or a "complete" message if everything is there)
+                if not recommendations and result['is_complete'] and result['comment_coverage_percent'] >= 99.0:
+                    recommendations.append("Data collection is complete! ✅")
                 
                 result['update_recommendations'] = recommendations
                 
@@ -396,6 +475,7 @@ class YouTubeAnalysis:
                 'video_coverage_percent': 0,
                 'comment_coverage_percent': 0,
                 'historical_completeness': 0,
+                'is_complete': False,
                 'update_recommendations': ['No channel data available']
             }
 

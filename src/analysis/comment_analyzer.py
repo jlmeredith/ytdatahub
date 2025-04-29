@@ -19,42 +19,48 @@ class CommentAnalyzer(BaseAnalyzer):
         Returns:
             Dictionary with comment analysis
         """
-        if not self.validate_data(channel_data, ['comments']):
-            return {
-                'total_comments': 0,
-                'df': None,
-                'temporal_data': None,
-                'thread_data': None,
-                'engagement_data': None,
-                'author_stats': None,
-                'stats': None
-            }
+        # Create a default return structure for when no comments are found
+        empty_result = {
+            'total_comments': 0,
+            'df': None,
+            'temporal_data': None,
+            'thread_data': None,
+            'engagement_data': None,
+            'author_stats': None,
+            'stats': None
+        }
+        
+        # Different ways comments might be stored in our data structure
+        comments_found = False
+        comments = {}
+        
+        # Method 1: Direct comments dictionary at top level
+        if 'comments' in channel_data and channel_data['comments']:
+            comments = channel_data['comments']
+            comments_found = True
+        
+        # Method 2: Comments embedded in each video
+        elif 'videos' in channel_data and channel_data['videos']:
+            # Collect comments from all videos
+            video_comments = {}
+            for video in channel_data['videos']:
+                if 'comments' in video and video['comments']:
+                    video_id = video.get('id', video.get('video_id', f"unknown_{len(video_comments)}"))
+                    video_comments[video_id] = video['comments']
+                    comments_found = True
             
-        comments = channel_data['comments']
-        if not comments:
-            return {
-                'total_comments': 0,
-                'df': None,
-                'temporal_data': None,
-                'thread_data': None,
-                'engagement_data': None,
-                'author_stats': None,
-                'stats': None
-            }
+            if comments_found:
+                comments = video_comments
+        
+        # Exit if no comments found through any method
+        if not comments_found or not comments:
+            return empty_result
             
         # Process comments data
         comment_df = self._process_comments_data(channel_data, comments)
         
         if comment_df.empty:
-            return {
-                'total_comments': 0,
-                'df': None,
-                'temporal_data': None,
-                'thread_data': None,
-                'engagement_data': None,
-                'author_stats': None,
-                'stats': None
-            }
+            return empty_result
         
         # Get temporal analysis
         temporal_data = self._analyze_temporal_data(comment_df)

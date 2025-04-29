@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from src.analysis.youtube_analysis import YouTubeAnalysis
 from src.utils.helpers import paginate_dataframe, render_pagination_controls
 from src.ui.data_analysis.utils.session_state import initialize_pagination, get_pagination_state, update_pagination_state
+from src.ui.data_analysis.components.data_coverage import render_data_coverage_summary
 
 def render_video_explorer(channel_data):
     """
@@ -20,14 +21,55 @@ def render_video_explorer(channel_data):
     # Initialize analysis
     analysis = YouTubeAnalysis()
     
-    # Get video statistics
-    video_stats = analysis.get_video_statistics(channel_data)
+    # Add data coverage summary at the top to show data completeness
+    render_data_coverage_summary(channel_data, analysis)
     
-    if video_stats['df'] is None or video_stats['df'].empty:
-        st.info("No video data available for this channel.")
-        return
+    # Check if we have valid channel data with videos
+    if not channel_data or 'videos' not in channel_data or not channel_data['videos']:
+        st.warning("No video data available for this channel.")
         
-    df = video_stats['df']
+        # Show guidance on how to collect data
+        st.info("""
+        To collect video data for this channel, go to the Data Coverage Dashboard and update this channel.
+        You'll need to update with the 'Fetch Videos' option enabled.
+        """)
+        
+        # Add a button to go directly to the data coverage dashboard
+        if st.button("Go to Data Coverage Dashboard", key="video_explorer_no_data_btn"):
+            st.session_state.active_analysis_section = "coverage"
+            st.rerun()
+        return
+    
+    # Get video statistics with error handling
+    try:
+        video_stats = analysis.get_video_statistics(channel_data)
+        
+        if video_stats['df'] is None or video_stats['df'].empty:
+            st.info("No detailed video data available for analysis.")
+            
+            # Show more specific guidance
+            st.info("""
+            Your channel data includes videos but is missing detailed metrics needed for analysis.
+            Try updating your data collection with the 'Update Videos' option enabled.
+            """)
+            
+            # Add a button to go to the data coverage dashboard
+            if st.button("Go to Data Coverage Dashboard", key="video_explorer_no_details_btn"):
+                st.session_state.active_analysis_section = "coverage"
+                st.rerun()
+            return
+            
+        df = video_stats['df']
+        
+    except Exception as e:
+        st.error(f"Error loading video data: {str(e)}")
+        st.info("There may be an issue with your video data. Try refreshing or updating your data collection.")
+        
+        # Add a button to go to the data coverage dashboard
+        if st.button("Go to Data Coverage Dashboard", key="video_explorer_error_btn"):
+            st.session_state.active_analysis_section = "coverage" 
+            st.rerun()
+        return
     
     # Create dashboard-style header with metrics
     col1, col2, col3 = st.columns(3)
@@ -50,7 +92,7 @@ def render_video_explorer(channel_data):
     
     with perf_col1:
         # Create a distribution chart of views
-        if 'Views' in df.columns:
+        if 'Views' in df.columns and len(df) > 0:
             try:
                 # Set a reasonable upper limit to prevent skewing by outliers
                 views_upper_limit = np.percentile(df['Views'], 95) * 1.5
@@ -83,10 +125,12 @@ def render_video_explorer(channel_data):
                     st.info("Your views distribution shows a long tail, which is typical for YouTube channels. A few videos drive most of your views.")
             except Exception as e:
                 st.error(f"Error generating views distribution: {str(e)}")
+        else:
+            st.info("Views data is not available for this channel.")
     
     with perf_col2:
         # Create a ratio chart (likes/views)
-        if 'Likes' in df.columns and 'Views' in df.columns:
+        if 'Likes' in df.columns and 'Views' in df.columns and len(df) > 0:
             try:
                 # Calculate like/view ratio and filter out NaN values
                 df['LikeViewRatio'] = df['Likes'] / df['Views'] * 100
@@ -124,8 +168,12 @@ def render_video_explorer(channel_data):
                     )
                     
                     st.plotly_chart(ratio_fig, use_container_width=True)
+                else:
+                    st.info("Not enough like/view data for ratio analysis.")
             except Exception as e:
                 st.error(f"Error generating engagement ratio chart: {str(e)}")
+        else:
+            st.info("Like and view data is needed for engagement ratio analysis.")
     
     # Add filter and sort options
     st.subheader("Video Explorer")
@@ -293,6 +341,15 @@ def render_video_explorer(channel_data):
     else:
         # Enhanced table view
         render_videos_table(paginated_df)
+    
+    # Add link to data coverage dashboard for updating data
+    st.divider()
+    st.markdown("### Need more video data?")
+    st.markdown("If your analysis is missing videos or you'd like to update your data, go to the Data Coverage Dashboard.")
+    
+    if st.button("Go to Data Coverage Dashboard"):
+        st.session_state.active_analysis_section = "coverage"
+        st.rerun()
 
 def render_videos_table(df):
     """
@@ -301,36 +358,98 @@ def render_videos_table(df):
     Args:
         df: DataFrame containing video data
     """
-    # Format columns for better readability
+    # Keep original dataframe for sorting logic
     display_df = df.copy()
     
-    # Make date column human-readable
-    if 'Published' in display_df.columns:
-        if pd.api.types.is_datetime64_dtype(display_df['Published']):
-            display_df['Published'] = display_df['Published'].dt.strftime('%b %d, %Y')
+    # Create display version for column configs
+    formatted_df = df.copy()
     
-    # Format numeric columns
-    if 'Views' in display_df.columns:
-        display_df['Views'] = display_df['Views'].apply(lambda x: f"{x:,}")
-    if 'Likes' in display_df.columns:
-        display_df['Likes'] = display_df['Likes'].apply(lambda x: f"{x:,}")
-    if 'Comments' in display_df.columns:
-        display_df['Comments'] = display_df['Comments'].apply(lambda x: f"{x:,}")
+    # Create properly formatted columns for display that won't interfere with sorting
+    if 'Title' in formatted_df.columns:
+        formatted_df['Title_Display'] = formatted_df['Title'].apply(lambda x: (x[:80] + '...') if len(x) > 80 else x)
     
-    # Truncate title if too long
-    if 'Title' in display_df.columns:
-        display_df['Title'] = display_df['Title'].apply(lambda x: (x[:80] + '...') if len(x) > 80 else x)
+    # For numeric columns, keep the original values for sorting
+    # but add display versions for formatting
+    if 'Views' in formatted_df.columns:
+        formatted_df['Views_Display'] = formatted_df['Views'].apply(lambda x: f"{x:,}")
+    
+    if 'Likes' in formatted_df.columns:
+        formatted_df['Likes_Display'] = formatted_df['Likes'].apply(lambda x: f"{x:,}")
+    
+    if 'Comments' in formatted_df.columns:
+        formatted_df['Comments_Display'] = formatted_df['Comments'].apply(lambda x: f"{x:,}")
+    
+    # Format date column for display
+    if 'Published' in formatted_df.columns:
+        if pd.api.types.is_datetime64_dtype(formatted_df['Published']):
+            formatted_df['Published_Display'] = formatted_df['Published'].dt.strftime('%b %d, %Y')
+    
+    # Create column configuration for the dataframe
+    column_config = {
+        "Title_Display": st.column_config.TextColumn(
+            "Title",
+            help="Video title",
+            width="large"
+        ),
+        "Published": st.column_config.DatetimeColumn(
+            "Published",
+            help="Publication date",
+            format="%b %d, %Y",
+            width="medium"
+        ),
+        "Views": st.column_config.NumberColumn(
+            "Views",
+            help="Total number of views",
+            format="%d",
+            width="small"
+        ),
+        "Likes": st.column_config.NumberColumn(
+            "Likes", 
+            help="Total number of likes",
+            format="%d",
+            width="small"
+        ),
+        "Comments": st.column_config.NumberColumn(
+            "Comments",
+            help="Total number of comments",
+            format="%d",
+            width="small"
+        ),
+        "Duration": st.column_config.TextColumn(
+            "Duration",
+            help="Video duration",
+            width="small"
+        )
+    }
     
     # Select columns to display
-    columns_to_display = ['Title', 'Published', 'Views', 'Likes', 'Comments', 'Duration']
-    columns_to_display = [col for col in columns_to_display if col in display_df.columns]
+    display_columns = []
     
-    # Display as table
-    st.dataframe(display_df[columns_to_display], use_container_width=True)
+    # Add columns in specific order, using display versions where available
+    if 'Title' in formatted_df.columns:
+        display_columns.append('Title_Display' if 'Title_Display' in formatted_df.columns else 'Title')
+    if 'Published' in formatted_df.columns:
+        display_columns.append('Published')
+    if 'Views' in formatted_df.columns:
+        display_columns.append('Views')
+    if 'Likes' in formatted_df.columns:
+        display_columns.append('Likes')
+    if 'Comments' in formatted_df.columns:
+        display_columns.append('Comments')
+    if 'Duration' in formatted_df.columns:
+        display_columns.append('Duration')
+    
+    # Display as table with sorting enabled
+    st.dataframe(
+        formatted_df[display_columns], 
+        use_container_width=True,
+        column_config=column_config,
+        hide_index=True
+    )
     
     # Add export option
     if st.button("Export to CSV"):
-        # Create a CSV download link
+        # Create a CSV download link with the original data
         csv = df.to_csv(index=False)
         st.download_button(
             label="Download CSV",

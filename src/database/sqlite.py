@@ -389,13 +389,18 @@ class SQLiteDatabase:
             
             # Create channel data dictionary
             channel_info = {
+                'id': channel_row[1],  # youtube_id
                 'title': channel_row[2],
                 'statistics': {
                     'subscriberCount': channel_row[3],
-                    'viewCount': channel_row[4]
+                    'viewCount': channel_row[4],
+                    'videoCount': channel_row[5]  # Explicitly include videoCount here
                 },
                 'description': channel_row[6]
             }
+            
+            # Add debug logging for statistics
+            debug_log(f"DEBUG: Channel statistics from database: subscribers={channel_row[3]}, views={channel_row[4]}, videoCount={channel_row[5]}")
             
             channel_data = {
                 'channel_info': channel_info,
@@ -411,6 +416,7 @@ class SQLiteDatabase:
             """, (channel_db_id,))
             
             videos = cursor.fetchall()
+            debug_log(f"DEBUG: Found {len(videos)} videos for channel {channel_name}")
             
             # Add each video to the channel data
             for video_row in videos:
@@ -531,6 +537,13 @@ class SQLiteDatabase:
             
             # Close the connection
             conn.close()
+            
+            # Final debug verification of channel data structure
+            if channel_data and 'channel_info' in channel_data:
+                debug_log(f"DEBUG: Final channel info structure: {list(channel_data['channel_info'].keys())}")
+                if 'statistics' in channel_data['channel_info']:
+                    stats = channel_data['channel_info']['statistics']
+                    debug_log(f"DEBUG: Final statistics: {list(stats.keys())} - videoCount={stats.get('videoCount', 'MISSING')}")
             
             return channel_data
         except Exception as e:
@@ -761,6 +774,116 @@ class SQLiteDatabase:
             debug_log(f"Exception in continue_iteration: {str(e)}", e)
             # Default to False on error to be safe
             return False
+
+    def get_channel_id_by_title(self, channel_title):
+        """Get the YouTube channel ID for a given channel title"""
+        try:
+            # Connect to the database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Query the database for the channel ID by title
+            cursor.execute("SELECT youtube_id FROM channels WHERE title = ?", (channel_title,))
+            result = cursor.fetchone()
+            
+            # Close the connection
+            conn.close()
+            
+            # Return the channel ID if found, otherwise None
+            return result[0] if result else None
+        except Exception as e:
+            debug_log(f"Exception in get_channel_id_by_title: {str(e)}", e)
+            return None
+
+    def clear_all_data(self):
+        """
+        Clear all data from the database by dropping and recreating all tables.
+        
+        This is a destructive operation and should be used with caution,
+        primarily for testing purposes.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        debug_log("WARNING: Clearing all data from the database")
+        
+        try:
+            # Connect to the database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # First, back up the database
+            import shutil
+            from datetime import datetime
+            
+            # Create backup filename with timestamp
+            backup_path = f"{self.db_path}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
+            
+            # Close connection to allow backup
+            conn.close()
+            
+            # Create backup
+            shutil.copy2(self.db_path, backup_path)
+            debug_log(f"Created database backup at: {backup_path}")
+            
+            # Reconnect to database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Drop all tables in the correct order to respect foreign keys
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            
+            # First drop tables with foreign key dependencies
+            tables_to_drop = [
+                "comments", 
+                "video_locations", 
+                "videos", 
+                "channels",
+                "iteration_history"
+            ]
+            
+            for table in tables_to_drop:
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                    debug_log(f"Dropped table: {table}")
+                except Exception as e:
+                    debug_log(f"Error dropping table {table}: {str(e)}")
+            
+            # Commit changes
+            conn.commit()
+            
+            # Re-initialize the database tables
+            cursor.execute("PRAGMA foreign_keys = ON")
+            conn.close()
+            
+            # Recreate all tables
+            success = self.initialize_db()
+            
+            if success:
+                debug_log("All data cleared and tables recreated successfully")
+                return True
+            else:
+                debug_log("Error recreating tables after clearing data")
+                return False
+                
+        except Exception as e:
+            debug_log(f"Error clearing database: {str(e)}", e)
+            return False
+
+    def _get_connection(self):
+        """
+        Get a direct SQLite database connection.
+        This is useful for performing custom queries.
+        
+        Returns:
+            sqlite3.Connection: Database connection object
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            return conn
+        except Exception as e:
+            debug_log(f"Error connecting to database: {str(e)}")
+            return None
 
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():

@@ -26,6 +26,7 @@ from src.storage.factory import StorageFactory
 from src.ui.data_collection import render_data_collection_tab
 from src.ui.data_analysis import render_data_analysis_tab
 from src.ui.utilities import render_utilities_tab
+from src.ui.bulk_import import render_bulk_import_tab
 from src.ui.components.ui_utils import load_css_file, apply_security_headers
 
 def init_application():
@@ -159,7 +160,7 @@ def create_sidebar():
         st.subheader("Navigation")
         
         # Define tab names
-        tabs = ["Data Collection", "Data Analysis", "Utilities"]
+        tabs = ["Data Collection", "Data Analysis", "Utilities", "Bulk Import"]
         
         # Set default tab if not present in session state
         if 'active_tab' not in st.session_state:
@@ -196,6 +197,8 @@ def render_main_content():
         render_data_analysis_tab()
     elif st.session_state.active_tab == "Utilities":
         render_utilities_tab()
+    elif st.session_state.active_tab == "Bulk Import":
+        render_bulk_import_tab()
 
 def render_footer(settings):
     """Render the footer with version information."""

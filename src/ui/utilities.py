@@ -186,3 +186,210 @@ def render_utilities_tab():
             st.info("Note: For the changes to take effect, you may need to restart the application.")
         else:
             st.info("No changes were made to the storage configuration.")
+    
+    # Add a new database management expander
+    with st.expander("Database Management Tools", expanded=True):
+        st.warning("""
+        ⚠️ **Warning**: The following operations can result in data loss. 
+        Use these tools only for testing, development, or when you need to reset your database.
+        """)
+        
+        st.subheader("Clear Database")
+        st.write("""
+        This will completely erase all channel data, videos, comments, and other information 
+        from your database. A backup will be created before deletion.
+        """)
+        
+        # Two-step confirmation to prevent accidental clearing
+        confirm_clear = st.checkbox("I understand this will delete all data", key="confirm_clear_db")
+        
+        clear_col1, clear_col2 = st.columns([3, 1])
+        with clear_col1:
+            confirm_text = st.text_input(
+                "Type 'CLEAR ALL DATA' to confirm", 
+                key="clear_db_text_confirm",
+                help="This confirmation helps prevent accidental data loss"
+            )
+        
+        with clear_col2:
+            if st.button("Clear Database", type="primary", disabled=not (confirm_clear and confirm_text == "CLEAR ALL DATA")):
+                with st.spinner("Clearing database and creating backup..."):
+                    from src.config import SQLITE_DB_PATH
+                    from src.database.sqlite import SQLiteDatabase
+                    
+                    # Create a database instance
+                    db = SQLiteDatabase(SQLITE_DB_PATH)
+                    
+                    # Call the clear_all_data method
+                    success = db.clear_all_data()
+                    
+                    if success:
+                        # Clear session state cache as well
+                        if 'use_data_cache' in st.session_state:
+                            # Keep track of current cache setting
+                            current_cache_setting = st.session_state.use_data_cache
+                            
+                            # Clear all session state keys that start with 'channel_data_'
+                            keys_to_remove = [k for k in st.session_state.keys() if k.startswith('channel_data_')]
+                            for key in keys_to_remove:
+                                del st.session_state[key]
+                            
+                            # Clear the channels table cache if it exists
+                            if 'analysis_channels_table' in st.session_state:
+                                del st.session_state['analysis_channels_table']
+                            
+                            # Restore cache setting
+                            st.session_state.use_data_cache = current_cache_setting
+                        
+                        st.success("✅ Database successfully cleared! A backup was created before deletion.")
+                        st.info("The database has been reset and all tables have been recreated. You can now import new data.")
+                    else:
+                        st.error("❌ There was an error clearing the database. Please check the logs for details.")
+                
+        # Add a divider before the next section
+        st.divider()
+    
+    # Add a new section for API key management
+    st.divider()
+    st.subheader("API Key Management")
+    st.write("""
+    Configure your YouTube Data API key. This key is needed for all operations that 
+    fetch data from the YouTube API, including channel importing and data collection.
+    """)
+    
+    # Get the current API key from environment
+    from dotenv import load_dotenv, find_dotenv, set_key
+    from src.utils.helpers import validate_api_key, debug_log
+    
+    # Reload .env to ensure we have the latest values
+    load_dotenv()
+    
+    # Get current API key from environment or session state
+    current_api_key = os.getenv('YOUTUBE_API_KEY', '')
+    api_key_source = "Environment Variable"
+    
+    if not current_api_key and 'youtube_api_key' in st.session_state:
+        current_api_key = st.session_state.youtube_api_key
+        api_key_source = "Session State"
+    
+    # Display current API key status
+    api_status_col1, api_status_col2 = st.columns([3, 1])
+    
+    with api_status_col1:
+        # Mask most of the API key for security, but show the first and last few characters
+        masked_key = ""
+        if current_api_key:
+            if len(current_api_key) > 10:
+                masked_key = f"{current_api_key[:4]}{'*' * (len(current_api_key) - 8)}{current_api_key[-4:]}"
+            else:
+                masked_key = "***" + current_api_key[-3:] if len(current_api_key) > 3 else current_api_key
+            
+            st.info(f"Current API key: {masked_key} (from {api_key_source})")
+        else:
+            st.warning("No YouTube API key configured. Enter a key below.")
+    
+    with api_status_col2:
+        st.write("Validation:")
+        if current_api_key:
+            # Validate the current API key format (basic validation)
+            is_valid = validate_api_key(current_api_key)
+            if is_valid:
+                st.success("Valid Format")
+            else:
+                st.error("Invalid Format")
+        else:
+            st.error("Missing")
+    
+    # Input for new API key
+    new_api_key = st.text_input(
+        "YouTube Data API Key:",
+        type="password",
+        help="Enter your YouTube Data API key. Get one at https://console.developers.google.com/"
+    )
+    
+    # Option to save to .env file
+    save_to_env = st.checkbox(
+        "Save to .env file (persistent)",
+        value=True,
+        help="If checked, the API key will be saved to the .env file and persist between application restarts."
+    )
+    
+    # Button to save the API key
+    if st.button("Save API Key", key="save_api_key_btn"):
+        if not new_api_key:
+            st.error("Please enter an API key.")
+        else:
+            # Basic validation
+            if not validate_api_key(new_api_key):
+                st.warning("The API key format looks unusual. Please check it's correct.")
+                # Continue anyway since we can't fully validate without a live test
+            
+            # Save to session state (temporary for this session)
+            st.session_state.youtube_api_key = new_api_key
+            
+            # If requested, save to .env file (permanent)
+            if save_to_env:
+                try:
+                    # Find the .env file
+                    dotenv_path = find_dotenv()
+                    
+                    if not dotenv_path:
+                        # If .env doesn't exist, create it in the current directory
+                        dotenv_path = os.path.join(os.getcwd(), '.env')
+                        with open(dotenv_path, 'a') as f:
+                            pass  # Create an empty file
+                    
+                    # Save the API key to the .env file
+                    set_key(dotenv_path, 'YOUTUBE_API_KEY', new_api_key)
+                    debug_log("Saved YouTube API key to .env file")
+                    
+                    st.success("API key saved to .env file. It will persist between application restarts.")
+                except Exception as e:
+                    st.error(f"Error saving to .env file: {str(e)}")
+                    debug_log(f"Error saving API key to .env: {str(e)}")
+                    
+                    # Even if saving to .env fails, we still have it in session state
+                    st.info("API key saved to session state for the current session only.")
+            else:
+                # Only saving to session state
+                st.info("API key saved to session state. It will be available only for the current session.")
+            
+            # Offer to test the API key
+            if st.button("Test API Key Connection"):
+                try:
+                    from src.api.youtube_api import YouTubeAPI
+                    
+                    with st.spinner("Testing API connection..."):
+                        # Try to initialize the API with the new key
+                        api = YouTubeAPI(new_api_key)
+                        
+                        if api.is_initialized():
+                            # Try a simple API call
+                            test_result = api.test_connection()
+                            if test_result:
+                                st.success("✅ API connection successful!")
+                            else:
+                                st.error("❌ API initialization succeeded, but test call failed.")
+                        else:
+                            st.error("❌ Failed to initialize YouTube API. Please check your API key.")
+                except Exception as e:
+                    st.error(f"❌ Error testing API connection: {str(e)}")
+    
+    # Add a utility to clear the API key if needed
+    with st.expander("Advanced API Key Options"):
+        if st.button("Clear API Key"):
+            # Clear from session state
+            if 'youtube_api_key' in st.session_state:
+                del st.session_state.youtube_api_key
+            
+            # Clear from .env if it exists
+            try:
+                dotenv_path = find_dotenv()
+                if dotenv_path:
+                    set_key(dotenv_path, 'YOUTUBE_API_KEY', '')
+                    debug_log("Removed YouTube API key from .env file")
+            except Exception as e:
+                debug_log(f"Error clearing API key from .env: {str(e)}")
+            
+            st.success("API key cleared from session and .env file.")
+            st.rerun()  # Rerun to update the UI

@@ -6,35 +6,35 @@ import streamlit as st
 def initialize_chart_toggles():
     """Initialize session state variables for chart display toggles."""
     if 'show_views_chart' not in st.session_state:
-        st.session_state.show_views_chart = True
+        st.session_state.show_views_chart = False
     if 'show_likes_chart' not in st.session_state:
-        st.session_state.show_likes_chart = True
+        st.session_state.show_likes_chart = False
     if 'show_comments_chart' not in st.session_state:
-        st.session_state.show_comments_chart = True
+        st.session_state.show_comments_chart = False
     if 'show_duration_chart' not in st.session_state:
-        st.session_state.show_duration_chart = True
+        st.session_state.show_duration_chart = False
     # Additional chart toggles
     if 'show_engagement_ratios' not in st.session_state:
-        st.session_state.show_engagement_ratios = True
+        st.session_state.show_engagement_ratios = False
     if 'show_performance_metrics' not in st.session_state:
-        st.session_state.show_performance_metrics = True
+        st.session_state.show_performance_metrics = False
     if 'show_trend_lines' not in st.session_state:
-        st.session_state.show_trend_lines = True
+        st.session_state.show_trend_lines = False
     if 'trend_window' not in st.session_state:
         st.session_state.trend_window = "Medium"
     if 'show_video_thumbnails' not in st.session_state:
-        st.session_state.show_video_thumbnails = True
+        st.session_state.show_video_thumbnails = False
     if 'show_comment_sentiment' not in st.session_state:
-        st.session_state.show_comment_sentiment = True
+        st.session_state.show_comment_sentiment = False
     if 'show_word_clouds' not in st.session_state:
-        st.session_state.show_word_clouds = True
+        st.session_state.show_word_clouds = False
     if 'video_sort_by' not in st.session_state:
         st.session_state.video_sort_by = "Published (Newest)"
 
 def initialize_analysis_section():
     """Initialize the active analysis section in session state."""
     if 'active_analysis_section' not in st.session_state:
-        st.session_state.active_analysis_section = "dashboard"
+        st.session_state.active_analysis_section = None
 
 def initialize_pagination(prefix, page=1, page_size=10):
     """

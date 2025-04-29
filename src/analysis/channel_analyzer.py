@@ -23,17 +23,26 @@ class ChannelAnalyzer(BaseAnalyzer):
                 'subscribers': 0,
                 'views': 0,
                 'total_videos': 0,
+                'total_likes': 0,
                 'description': 'No channel data available'
             }
             
         channel_info = channel_data['channel_info']
         video_list = channel_data.get('videos', [])
         
+        # Calculate total likes from all videos
+        total_likes = 0
+        if video_list:
+            for video in video_list:
+                likes = self.safe_int_value(video.get('statistics', {}).get('likeCount', 0))
+                total_likes += likes
+        
         return {
             'name': channel_info.get('title', 'Unknown'),
             'subscribers': self.safe_int_value(channel_info.get('statistics', {}).get('subscriberCount', 0)),
             'views': self.safe_int_value(channel_info.get('statistics', {}).get('viewCount', 0)),
             'total_videos': len(video_list),
+            'total_likes': total_likes,
             'description': channel_info.get('description', 'No description available')
         }
     

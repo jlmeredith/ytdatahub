@@ -113,6 +113,18 @@ SESSION_STATE_VARS = {
             'api_calls': 0,
             'channels': 0
         }
+    },
+    
+    # Performance tracking
+    'performance': {
+        'performance_timers': {},
+        'performance_metrics': {},
+        'ui_timing_metrics': [],
+        'ui_freeze_thresholds': {
+            'warning': 1.0,
+            'critical': 3.0,
+            'ui_blocking': 0.5
+        }
     }
 }
 
@@ -123,3 +135,21 @@ def init_session_state():
         for var_name, default_value in variables.items():
             if var_name not in st.session_state:
                 st.session_state[var_name] = default_value
+    
+    # Direct initialization of performance variables at root level
+    # This is needed because they're referenced directly in the code
+    if 'performance_timers' not in st.session_state:
+        st.session_state.performance_timers = {}
+    
+    if 'performance_metrics' not in st.session_state:
+        st.session_state.performance_metrics = {}
+    
+    if 'ui_timing_metrics' not in st.session_state:
+        st.session_state.ui_timing_metrics = []
+    
+    if 'ui_freeze_thresholds' not in st.session_state:
+        st.session_state.ui_freeze_thresholds = {
+            'warning': 1.0,
+            'critical': 3.0,
+            'ui_blocking': 0.5
+        }

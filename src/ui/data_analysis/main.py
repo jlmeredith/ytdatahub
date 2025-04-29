@@ -114,13 +114,13 @@ def render_data_analysis_tab():
                     st.rerun()
                 
                 # Add more dashboard options
-                st.checkbox("Show Engagement Ratios", value=st.session_state.get("show_engagement_ratios", True), key="engagement_ratios_checkbox")
-                st.checkbox("Show Performance Metrics", value=st.session_state.get("show_performance_metrics", True), key="performance_metrics_checkbox")
+                st.checkbox("Show Engagement Ratios", value=st.session_state.get("show_engagement_ratios", False), key="engagement_ratios_checkbox")
+                st.checkbox("Show Performance Metrics", value=st.session_state.get("show_performance_metrics", False), key="performance_metrics_checkbox")
                 
                 # Add trendline options
                 st.subheader("Trend Analysis")
-                st.checkbox("Show Trend Lines", value=st.session_state.get("show_trend_lines", True), key="trend_lines_checkbox")
-                if st.session_state.get("show_trend_lines", True):
+                st.checkbox("Show Trend Lines", value=st.session_state.get("show_trend_lines", False), key="trend_lines_checkbox")
+                if st.session_state.get("show_trend_lines", False):
                     st.select_slider("Trend Window", options=["Small", "Medium", "Large"], value=st.session_state.get("trend_window", "Medium"), key="trend_window_slider")
             
             elif st.session_state.active_analysis_section == "coverage":
@@ -138,15 +138,15 @@ def render_data_analysis_tab():
             elif st.session_state.active_analysis_section == "videos":
                 st.subheader("Video Explorer Options")
                 st.slider("Results per page", min_value=5, max_value=50, value=st.session_state.get("video_page_size", 10), step=5, key="video_page_size_slider")
-                st.checkbox("Show Video Thumbnails", value=st.session_state.get("show_video_thumbnails", True), key="video_thumbnails_checkbox")
+                st.checkbox("Show Video Thumbnails", value=st.session_state.get("show_video_thumbnails", False), key="video_thumbnails_checkbox")
                 sort_options = ["Published (Newest)", "Published (Oldest)", "Views (Highest)", "Views (Lowest)", "Likes (Highest)", "Duration (Longest)"]
                 st.selectbox("Sort Videos By", options=sort_options, index=sort_options.index(st.session_state.get("video_sort_by", "Published (Newest)")), key="video_sort_selector")
             
             elif st.session_state.active_analysis_section == "comments":
                 st.subheader("Comment Analysis Options")
                 st.slider("Comments per page", min_value=5, max_value=50, value=st.session_state.get("comment_page_size", 10), step=5, key="comment_page_size_slider")
-                st.checkbox("Show Sentiment Analysis", value=st.session_state.get("show_comment_sentiment", True), key="comment_sentiment_checkbox")
-                st.checkbox("Show Word Clouds", value=st.session_state.get("show_word_clouds", True), key="word_clouds_checkbox")
+                st.checkbox("Show Sentiment Analysis", value=st.session_state.get("show_comment_sentiment", False), key="comment_sentiment_checkbox")
+                st.checkbox("Show Word Clouds", value=st.session_state.get("show_word_clouds", False), key="word_clouds_checkbox")
                 
             # Add a cache control section
             st.subheader("Cache Controls")
@@ -190,6 +190,48 @@ def render_data_analysis_tab():
         
         if not selected_channel or not channel_data:
             st.warning("No channel data found in database. Please collect data first.")
+            return
+        
+        # Handle the case when no analysis section is selected
+        if st.session_state.active_analysis_section is None:
+            st.info("Select an analysis section from the sidebar to begin exploring your YouTube data.")
+            
+            # Display quick selection cards to choose an analysis section
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("""
+                ### 📊 Dashboard
+                Get a comprehensive overview of your channel's performance metrics and trends.
+                """)
+                if st.button("View Dashboard", key="dashboard_card_btn"):
+                    st.session_state.active_analysis_section = "dashboard"
+                    st.rerun()
+                    
+                st.markdown("""
+                ### 🎬 Videos
+                Explore your videos and analyze their individual performance.
+                """)
+                if st.button("Explore Videos", key="videos_card_btn"):
+                    st.session_state.active_analysis_section = "videos"
+                    st.rerun()
+            
+            with col2:
+                st.markdown("""
+                ### 📈 Data Coverage
+                Check the completeness of your data and update it as needed.
+                """)
+                if st.button("Check Data Coverage", key="coverage_card_btn"):
+                    st.session_state.active_analysis_section = "coverage"
+                    st.rerun()
+                    
+                st.markdown("""
+                ### 💬 Comments
+                Analyze comments, sentiment, and audience engagement.
+                """)
+                if st.button("Analyze Comments", key="comments_card_btn"):
+                    st.session_state.active_analysis_section = "comments"
+                    st.rerun()
+            
             return
             
         # Handle channel data display based on active section

@@ -133,18 +133,16 @@ class VideoAnalyzer(BaseAnalyzer):
         # Monthly analysis
         monthly = df.groupby('Month-Year').size().reset_index(name='Count')
         
-        # Make sure we're sorted chronologically
-        try:
-            # Add a hidden datetime column to sort by
-            monthly['__date'] = pd.to_datetime(monthly['Month-Year'], format='%b %Y')
-            monthly = monthly.sort_values('__date').drop('__date', axis=1).reset_index(drop=True)
-        except:
-            # Fallback if the conversion fails
-            pass
-            
+        # Make sure we're sorted chronologically by adding an actual date column
+        # Add a proper datetime column for sorting (1st of each month)
+        monthly['__date'] = pd.to_datetime(monthly['Month-Year'], format='%b %Y')
+        # Sort by this date column to ensure chronological order
+        monthly = monthly.sort_values('__date').reset_index(drop=True)
+        # Keep the __date column to ensure proper order in plotly
+        
         # Yearly analysis
         yearly = df.groupby('Year').size().reset_index(name='Videos')
-        yearly = yearly.sort_values('Year')
+        yearly = yearly.sort_values('Year').reset_index(drop=True)
         
         return {
             'monthly_df': monthly,

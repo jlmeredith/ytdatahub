@@ -22,15 +22,59 @@ def render_comment_explorer(channel_data):
     # Initialize analysis
     analysis = YouTubeAnalysis()
     
-    # Get comment data
-    comment_analysis = analysis.get_comment_analysis(channel_data)
-    
-    if comment_analysis['df'] is None or comment_analysis['df'].empty:
-        st.info("No comment data available for this channel. Try collecting data for more videos.")
-        return
+    # First check if we have videos with data
+    if not channel_data or 'videos' not in channel_data or not channel_data['videos']:
+        st.warning("No video data available for this channel. Please collect video data first.")
         
-    total_comments = comment_analysis['total_comments']
-    df = comment_analysis['df']
+        # Show guidance on how to collect data
+        st.info("To collect video data, go to the Data Coverage Dashboard and update this channel.")
+        if st.button("Go to Data Coverage Dashboard", key="no_videos_goto_coverage"):
+            st.session_state.active_analysis_section = "coverage"
+            st.rerun()
+        return
+    
+    # Get comment data
+    try:
+        comment_analysis = analysis.get_comment_analysis(channel_data)
+        
+        # Check if we have any comments data
+        if not comment_analysis or comment_analysis.get('df') is None or comment_analysis.get('df', pd.DataFrame()).empty:
+            st.warning("No comment data available for this channel.")
+            
+            # Show guidance with more details about the current state
+            video_count = len(channel_data.get('videos', []))
+            videos_with_comments = sum(1 for video in channel_data.get('videos', []) if video.get('comments', []))
+            
+            if videos_with_comments == 0:
+                st.info(f"""
+                None of your {video_count} videos have comments collected. 
+                To analyze comments, you need to collect comment data from the Data Coverage Dashboard.
+                """)
+            else:
+                st.info(f"""
+                Only {videos_with_comments} out of {video_count} videos have comments collected.
+                For better analysis, collect more comments from the Data Coverage Dashboard.
+                """)
+            
+            # Add a button to go to the data coverage dashboard
+            if st.button("Go to Data Coverage Dashboard", key="no_comments_goto_coverage"):
+                st.session_state.active_analysis_section = "coverage"
+                st.rerun()
+                
+            return
+            
+        total_comments = comment_analysis['total_comments']
+        df = comment_analysis['df']
+        
+    except Exception as e:
+        st.error(f"Error loading comment data: {str(e)}")
+        st.info("There may be an issue with your comment data. Try refreshing or updating your data collection.")
+        
+        # Add a button to go to the data coverage dashboard
+        if st.button("Go to Data Coverage Dashboard", key="error_goto_coverage"):
+            st.session_state.active_analysis_section = "coverage"
+            st.rerun()
+        return
     
     # Create a dashboard-style layout
     col1, col2 = st.columns([2, 1])
@@ -240,26 +284,71 @@ def render_flat_table_view(filtered_df):
     # Show results count
     st.write(f"Showing {len(paginated_df)} of {len(filtered_df)} comments")
     
-    # Format display columns
+    # Create a copy for display configuration
     display_df = paginated_df.copy()
     
-    # Make table more readable by formatting columns
+    # Create formatted versions of columns for display purposes
     if 'Published' in display_df.columns and pd.api.types.is_datetime64_dtype(display_df['Published']):
-        display_df['Published'] = display_df['Published'].dt.strftime('%Y-%m-%d %H:%M')
+        display_df['Published_Display'] = display_df['Published'].dt.strftime('%Y-%m-%d %H:%M')
     
     if 'Likes' in display_df.columns:
-        display_df['Likes'] = display_df['Likes'].apply(lambda x: f"{x:,}")
+        display_df['Likes_Display'] = display_df['Likes'].apply(lambda x: f"{x:,}")
     
     # Truncate text if too long for display
     if 'Text' in display_df.columns:
-        display_df['Text'] = display_df['Text'].apply(lambda x: (x[:100] + '...') if len(x) > 100 else x)
+        display_df['Text_Display'] = display_df['Text'].apply(lambda x: (x[:100] + '...') if len(x) > 100 else x)
     
-    # Select only the most important columns for display
-    columns_to_display = ['Author', 'Text', 'Published', 'Likes', 'Is Reply']
-    display_columns = [col for col in columns_to_display if col in display_df.columns]
+    # Configure columns for better display and proper sorting
+    column_config = {
+        "Author": st.column_config.TextColumn(
+            "Author",
+            help="Comment author",
+            width="medium"
+        ),
+        "Text_Display": st.column_config.TextColumn(
+            "Text",
+            help="Comment text",
+            width="large"
+        ),
+        "Published": st.column_config.DatetimeColumn(
+            "Published",
+            help="Publication date",
+            format="%Y-%m-%d %H:%M",
+            width="medium"
+        ),
+        "Likes": st.column_config.NumberColumn(
+            "Likes",
+            help="Number of likes on the comment",
+            format="%d",
+            width="small"
+        ),
+        "Is Reply": st.column_config.CheckboxColumn(
+            "Is Reply",
+            help="Whether this comment is a reply to another comment",
+            width="small"
+        )
+    }
     
-    # Display filtered and sorted data as a flat table
-    st.dataframe(display_df[display_columns], use_container_width=True)
+    # Select columns for display, preferring display versions where available
+    display_columns = []
+    if 'Author' in display_df.columns:
+        display_columns.append('Author')
+    if 'Text' in display_df.columns:
+        display_columns.append('Text_Display' if 'Text_Display' in display_df.columns else 'Text')
+    if 'Published' in display_df.columns:
+        display_columns.append('Published')
+    if 'Likes' in display_df.columns:
+        display_columns.append('Likes')
+    if 'Is Reply' in display_df.columns:
+        display_columns.append('Is Reply')
+    
+    # Display filtered and sorted data as a table with proper column configuration
+    st.dataframe(
+        display_df[display_columns], 
+        use_container_width=True,
+        column_config=column_config,
+        hide_index=True
+    )
 
 def render_threaded_view(filtered_df, comment_analysis, comment_search, selected_filter, sort_by, comment_sorts):
     """

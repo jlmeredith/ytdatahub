@@ -7,36 +7,253 @@ import json
 import shutil
 import logging
 import streamlit as st
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
-# Configure logging
+# Configure logging with more detailed format and set to WARNING level to reduce output
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    level=logging.WARNING,  # Changed from DEBUG to WARNING to reduce log output
+    format='%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%H:%M:%S'
 )
 
-def debug_log(message: str, data: Any = None):
-    """Log debug messages to server console if debug mode is enabled"""
-    if st.session_state.debug_mode:
-        if data is not None:
-            # Format data for display
-            if isinstance(data, dict) or isinstance(data, list):
-                try:
-                    data_str = json.dumps(data, indent=2)
-                except:
-                    data_str = str(data)
+# Performance tracking variables in session state
+if 'performance_timers' not in st.session_state:
+    st.session_state.performance_timers = {}
+
+if 'performance_metrics' not in st.session_state:
+    st.session_state.performance_metrics = {}
+
+# Add UI freeze detection
+if 'ui_freeze_thresholds' not in st.session_state:
+    st.session_state.ui_freeze_thresholds = {
+        'warning': 1.0,  # Operations taking longer than 1 second get a warning
+        'critical': 3.0,  # Operations taking longer than 3 seconds are critical
+        'ui_blocking': 0.5  # Operations that may block UI if longer than this
+    }
+
+def debug_log(message: str, data: Any = None, performance_tag: str = None):
+    """
+    Log debug messages to server console if debug mode is enabled
+    
+    Args:
+        message: The message to log
+        data: Optional data to include with the log
+        performance_tag: Optional tag for performance tracking
+    """
+    if not hasattr(st.session_state, 'debug_mode'):
+        # Set debug_mode to False by default to reduce log output
+        st.session_state.debug_mode = False
+    
+    if not hasattr(st.session_state, 'log_level'):
+        # Initialize with WARNING level to reduce output
+        st.session_state.log_level = logging.WARNING
+    
+    # Start timer if this is a performance log start
+    if performance_tag and performance_tag.startswith('start_'):
+        tag = performance_tag[6:]  # Remove 'start_' prefix
+        st.session_state.performance_timers[tag] = time.time()
+        # Only log if we're in debug mode or log level allows it
+        if st.session_state.debug_mode and st.session_state.log_level <= logging.DEBUG:
+            logging.debug(f"⏱️ START TIMER [{tag}]: {message}")
+        return
+    
+    # End timer if this is a performance log end
+    if performance_tag and performance_tag.startswith('end_'):
+        tag = performance_tag[4:]  # Remove 'end_' prefix
+        if tag in st.session_state.performance_timers:
+            elapsed = time.time() - st.session_state.performance_timers[tag]
+            
+            # Add warning indicators for operations that might cause UI freezes
+            warning_threshold = st.session_state.ui_freeze_thresholds.get('warning', 1.0)
+            critical_threshold = st.session_state.ui_freeze_thresholds.get('critical', 3.0)
+            ui_blocking = st.session_state.ui_freeze_thresholds.get('ui_blocking', 0.5)
+            
+            # Only log critical issues and warnings by default
+            if elapsed >= critical_threshold:
+                indicator = "🔴"  # Red circle for critical
+                logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - CRITICAL PERFORMANCE ISSUE")
+            elif elapsed >= warning_threshold:
+                indicator = "🟠"  # Orange circle for warning
+                logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - PERFORMANCE WARNING")
             else:
-                data_str = str(data)
+                indicator = "🟢"  # Green circle for good
+                # Only log in debug mode and if log level allows it
+                if st.session_state.debug_mode and st.session_state.log_level <= logging.DEBUG:
+                    logging.debug(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s)")
             
-            # Truncate if too long
-            if len(data_str) > 1000:
-                data_str = data_str[:1000] + "... [truncated]"
+            # Add UI blocking analysis
+            ui_impact = ""
+            if elapsed >= ui_blocking:
+                ui_impact = f" [UI FREEZE RISK: {elapsed:.2f}s]"
             
-            logging.debug(f"{message}:\n{data_str}")
+            # Store the performance metric for analysis with enhanced data
+            if 'performance_metrics' not in st.session_state:
+                st.session_state.performance_metrics = {}
+            
+            # Store with timestamp, duration and performance classification
+            st.session_state.performance_metrics[f"{tag}_{time.time()}"] = {
+                'tag': tag,
+                'duration': elapsed,
+                'timestamp': time.time(),
+                'message': message,
+                'indicator': indicator,
+                'ui_impact': ui_impact != "",
+                'severity': 'critical' if elapsed >= critical_threshold else 
+                           'warning' if elapsed >= warning_threshold else 'good'
+            }
+            
+            # Clean up the timer
+            del st.session_state.performance_timers[tag]
+            return
         else:
-            logging.debug(message)
+            # Timer not found, just log as a regular message
+            logging.debug(f"⚠️ TIMER [{tag}] not found: {message}")
+    
+    # Standard debug logging
+    if st.session_state.debug_mode:
+        # Get the caller info for more detailed logs
+        import inspect
+        caller_frame = inspect.currentframe().f_back
+        caller_filename = os.path.basename(caller_frame.f_code.co_filename)
+        caller_lineno = caller_frame.f_lineno
+        
+        log_prefix = f"[{caller_filename}:{caller_lineno}]"
+        
+        # Only log if log level allows it
+        if st.session_state.log_level <= logging.DEBUG:
+            if data is not None:
+                # Format data for display
+                if isinstance(data, dict) or isinstance(data, list):
+                    try:
+                        data_str = json.dumps(data, indent=2)
+                    except:
+                        data_str = str(data)
+                else:
+                    data_str = str(data)
+                
+                # Truncate if too long
+                if len(data_str) > 1000:
+                    data_str = data_str[:1000] + "... [truncated]"
+                
+                logging.debug(f"{log_prefix} {message}:\n{data_str}")
+            else:
+                logging.debug(f"{log_prefix} {message}")
+
+def report_ui_timing(operation_name: str, start_time: float, show_spinner: bool = False):
+    """
+    Report the timing of a UI operation and display a spinner for long-running operations.
+    Use this to track operations that might cause UI freezes.
+    
+    Args:
+        operation_name: Descriptive name of the operation
+        start_time: The starting timestamp (from time.time())
+        show_spinner: Whether to show a spinner for operations that exceed the UI blocking threshold
+        
+    Returns:
+        elapsed_time: Time taken for the operation in seconds
+    """
+    elapsed = time.time() - start_time
+    
+    # Check against thresholds
+    warning_threshold = st.session_state.ui_freeze_thresholds.get('warning', 1.0)
+    critical_threshold = st.session_state.ui_freeze_thresholds.get('critical', 3.0)
+    ui_blocking = st.session_state.ui_freeze_thresholds.get('ui_blocking', 0.5)
+    
+    # Log based on severity
+    if elapsed >= critical_threshold:
+        logging.warning(f"🔴 UI FREEZE DETECTED: {operation_name} took {elapsed:.2f}s")
+    elif elapsed >= warning_threshold:
+        logging.warning(f"🟠 UI SLOWDOWN DETECTED: {operation_name} took {elapsed:.2f}s")
+    elif elapsed >= ui_blocking:
+        logging.info(f"🟡 UI Operation: {operation_name} took {elapsed:.2f}s")
+    else:
+        logging.debug(f"🟢 UI Operation: {operation_name} took {elapsed:.2f}s")
+    
+    # Store the timing data
+    if 'ui_timing_metrics' not in st.session_state:
+        st.session_state.ui_timing_metrics = []
+    
+    st.session_state.ui_timing_metrics.append({
+        'operation': operation_name,
+        'duration': elapsed,
+        'timestamp': time.time(),
+        'severity': 'critical' if elapsed >= critical_threshold else 
+                   'warning' if elapsed >= warning_threshold else 
+                   'moderate' if elapsed >= ui_blocking else 'good'
+    })
+    
+    # Show a spinner if the operation is taking too long
+    if show_spinner and elapsed >= ui_blocking:
+        with st.spinner(f"Loading {operation_name}..."):
+            # This doesn't actually wait, just shows the spinner now that we've measured the time
+            pass
+    
+    return elapsed
+
+def get_performance_summary():
+    """
+    Get a summary of tracked performance metrics.
+    
+    Returns:
+        A DataFrame with performance statistics
+    """
+    if 'performance_metrics' not in st.session_state or not st.session_state.performance_metrics:
+        return None
+    
+    import pandas as pd
+    
+    # Extract data for the dataframe
+    metrics = []
+    for key, data in st.session_state.performance_metrics.items():
+        metrics.append({
+            'Tag': data['tag'],
+            'Duration (s)': data['duration'],
+            'Timestamp': datetime.fromtimestamp(data['timestamp']).strftime('%H:%M:%S'),
+            'Message': data['message'],
+            'UI Impact': "Yes" if data.get('ui_impact', False) else "No",
+            'Severity': data.get('severity', 'unknown')
+        })
+    
+    if not metrics:
+        return None
+    
+    # Create dataframe and sort by duration (longest first)
+    df = pd.DataFrame(metrics)
+    df = df.sort_values('Duration (s)', ascending=False)
+    
+    return df
+
+def get_ui_freeze_report():
+    """
+    Get a report of potential UI freezes detected during the session.
+    
+    Returns:
+        A DataFrame with UI freeze information or None if no UI metrics available
+    """
+    if 'ui_timing_metrics' not in st.session_state or not st.session_state.ui_timing_metrics:
+        return None
+    
+    import pandas as pd
+    
+    # Create dataframe from the UI timing metrics
+    df = pd.DataFrame(st.session_state.ui_timing_metrics)
+    
+    # Add formatted timestamp column
+    df['Time'] = df['timestamp'].apply(lambda x: datetime.fromtimestamp(x).strftime('%H:%M:%S'))
+    
+    # Sort by duration (longest first)
+    df = df.sort_values('duration', ascending=False)
+    
+    # Add a formatted duration column
+    df['Duration'] = df['duration'].apply(lambda x: f"{x:.2f}s")
+    
+    # Keep only the columns we want to display
+    display_df = df[['operation', 'Duration', 'Time', 'severity']].copy()
+    display_df.columns = ['Operation', 'Duration', 'Time', 'Severity']
+    
+    return display_df
 
 def estimate_quota_usage(fetch_channel=None, fetch_videos=None, fetch_comments=None, 
                          video_count=None, comments_count=None):
@@ -124,9 +341,20 @@ def parse_duration_with_regex(duration_str: str) -> int:
     
     return total_seconds
 
-def format_duration(seconds):
+def format_duration(duration):
     """Format seconds as HH:MM:SS or MM:SS depending on length"""
-    if seconds is None or seconds <= 0:
+    # Check if duration is a string (e.g., ISO 8601 format like 'PT1H2M3S')
+    if isinstance(duration, str):
+        # Convert ISO 8601 duration to seconds
+        seconds = parse_duration_with_regex(duration)
+    elif duration is None:
+        return "00:00"
+    else:
+        # Assume it's already in seconds
+        seconds = duration
+        
+    # Now handle formatting with numeric seconds
+    if seconds <= 0:
         return "00:00"
     
     hours = int(seconds // 3600)
@@ -531,3 +759,52 @@ def render_pagination_controls(total_items, page_size, current_page, key_prefix)
                 return new_page
     
     return current_page
+
+def get_thumbnail_url(video_data):
+    """
+    Extract the thumbnail URL from video data with fallbacks to different formats.
+    
+    Args:
+        video_data: Dictionary containing video information
+        
+    Returns:
+        str: Best available thumbnail URL or empty string if none found
+    """
+    # Check different possible thumbnail locations in the data structure
+    if not video_data:
+        return ""
+    
+    # Case 1: If we have a direct thumbnail_url field
+    if 'thumbnail_url' in video_data and video_data['thumbnail_url']:
+        return video_data['thumbnail_url']
+    
+    # Case 2: If we have a thumbnails field with maxres
+    if 'thumbnails' in video_data:
+        thumbnails = video_data['thumbnails']
+        
+        # If thumbnails is a string, return it directly
+        if isinstance(thumbnails, str) and thumbnails.startswith('http'):
+            return thumbnails
+        
+        # If thumbnails is a dictionary with formats
+        if isinstance(thumbnails, dict):
+            # Try to get the highest quality first
+            for quality in ['maxres', 'high', 'medium', 'default', 'standard']:
+                if quality in thumbnails and 'url' in thumbnails[quality]:
+                    return thumbnails[quality]['url']
+            
+            # If none of the specific quality keys exist, look for any URL
+            if 'url' in thumbnails:
+                return thumbnails['url']
+    
+    # Case 3: Check for snippet.thumbnails in API response format
+    if 'snippet' in video_data and 'thumbnails' in video_data['snippet']:
+        thumbnails = video_data['snippet']['thumbnails']
+        
+        # Try to get the highest quality first
+        for quality in ['maxres', 'high', 'medium', 'default', 'standard']:
+            if quality in thumbnails and 'url' in thumbnails[quality]:
+                return thumbnails[quality]['url']
+    
+    # Return empty string if no thumbnail URL found
+    return ""

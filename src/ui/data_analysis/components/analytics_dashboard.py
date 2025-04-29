@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+import time
 from datetime import timedelta
 from src.analysis.youtube_analysis import YouTubeAnalysis
 from src.analysis.visualization.trend_line import add_trend_line
@@ -17,6 +18,7 @@ from src.analysis.visualization.chart_helpers import (
 )
 from src.ui.components.ui_utils import render_template_as_markdown, render_template
 from src.utils.helpers import debug_log
+from src.ui.data_analysis.components.data_coverage import render_data_coverage_summary
 
 def render_analytics_dashboard(channel_data):
     """
@@ -27,6 +29,22 @@ def render_analytics_dashboard(channel_data):
                      - A single channel's data dictionary (for backward compatibility)
                      - A dictionary of channel_name: channel_data for multiple channels
     """
+    # Initialize performance tracking variables in session state if they don't exist
+    if 'performance_timers' not in st.session_state:
+        st.session_state.performance_timers = {}
+    
+    if 'performance_metrics' not in st.session_state:
+        st.session_state.performance_metrics = {}
+    
+    # Start performance tracking for the entire dashboard render
+    start_time = time.time()
+    debug_log("Analytics dashboard render started", performance_tag="start_dashboard_render")
+    
+    # Show loading indicator at the top of the page
+    loading_placeholder = st.empty()
+    with loading_placeholder.container():
+        st.info("⏳ Loading analytics dashboard... This may take a moment depending on the amount of data.")
+    
     # Check if we're dealing with multiple channels
     if isinstance(channel_data, dict) and any(isinstance(v, dict) and 'channel_info' in v for v in channel_data.values()):
         # Multiple channels case
@@ -46,6 +64,10 @@ def render_analytics_dashboard(channel_data):
     # Initialize analysis object
     analysis = YouTubeAnalysis()
     
+    # Add data coverage summary at the top of the dashboard
+    render_data_coverage_summary(channel_data, analysis)
+    debug_log("Data coverage summary rendered", performance_tag="end_coverage_summary")
+    
     # Process each channel and collect data
     all_video_dfs = []
     channel_colors = {}
@@ -53,7 +75,14 @@ def render_analytics_dashboard(channel_data):
     # Create a color palette for the channels
     color_palette = px.colors.qualitative.Plotly
     
+    # Show processing status
+    channel_progress = st.progress(0.0, text="Processing channel data...")
+    
     for idx, (channel_name, channel_data) in enumerate(channels_dict.items()):
+        # Update progress indicator
+        progress_pct = (idx / len(channels_dict)) 
+        channel_progress.progress(progress_pct, text=f"Processing data for channel: {channel_name}")
+        
         # Generate a unique cache key for this channel
         cache_key = f"analysis_dashboard_{channel_name}"
         
@@ -65,8 +94,18 @@ def render_analytics_dashboard(channel_data):
             debug_log(f"Using cached analytics dashboard data for {channel_name}")
             video_stats = st.session_state[cache_key]
         else:
+            # Log start time for this operation
+            channel_start_time = time.time()
+            debug_log(f"Starting video statistics processing for {channel_name}", performance_tag=f"start_video_stats_{channel_name}")
+            
             # Get video statistics for charts
             video_stats = analysis.get_video_statistics(channel_data)
+            
+            # Log completion time
+            channel_end_time = time.time()
+            processing_time = channel_end_time - channel_start_time
+            debug_log(f"Video statistics processed for {channel_name} in {processing_time:.2f} seconds", 
+                     performance_tag=f"end_video_stats_{channel_name}")
             
             # Cache the results if caching is enabled
             if use_cache:
@@ -101,8 +140,16 @@ def render_analytics_dashboard(channel_data):
                 
             aggregated_metrics.append(channel_metrics)
     
+    # Finalize progress and remove channel progress indicator
+    channel_progress.progress(1.0, text="Channel data processing complete!")
+    time.sleep(0.5)  # Short pause to show completed progress
+    channel_progress.empty()
+    
     # Combine all dataframes
     combined_df = pd.concat(all_video_dfs) if all_video_dfs else None
+    
+    # Remove loading indicator now that initial processing is complete
+    loading_placeholder.empty()
     
     # Load analytics dashboard styles
     render_template_as_markdown("analytics_dashboard_styles.html")
@@ -122,10 +169,12 @@ def render_analytics_dashboard(channel_data):
     if combined_df is None or combined_df.empty:
         template_context['no_data'] = True
         render_template_as_markdown("analytics_dashboard.html", template_context)
+        debug_log("Analytics dashboard rendered with no data", performance_tag="end_dashboard_render")
         return
         
     # Display channel comparison table if we have multiple channels
     if is_multi_channel and len(aggregated_metrics) > 1:
+        chart_start_time = time.time()
         st.subheader("Channel Comparison")
         metrics_df = pd.DataFrame(aggregated_metrics)
         
@@ -142,7 +191,10 @@ def render_analytics_dashboard(channel_data):
         st.dataframe(
             metrics_df,
             column_config={
-                "Channel": st.column_config.TextColumn("Channel", width="medium"),
+                "Channel": st.column_config.TextColumn(
+                        "Channel",
+                        help="Click on a channel name to analyze it"
+                    ),
                 "Total Videos": st.column_config.TextColumn("Videos", width="small"),
                 "Avg Views": st.column_config.TextColumn("Avg Views", width="small"),
                 "Avg Likes": st.column_config.TextColumn("Avg Likes", width="small"),
@@ -155,18 +207,72 @@ def render_analytics_dashboard(channel_data):
             hide_index=True,
             use_container_width=True
         )
+        
+        # Add clickable channel names with JavaScript interactivity
+        st.markdown("""
+        <style>
+        .channel-link {
+            text-decoration: none;
+            color: #1E88E5;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .channel-link:hover {
+            text-decoration: underline;
+            color: #0D47A1;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Create links for each channel
+        for _, row in metrics_df.iterrows():
+            channel_name = row['Channel']
+            st.markdown(f"""
+            <p><a class="channel-link" href="javascript:void(0);" 
+            onclick="document.dispatchEvent(new CustomEvent('streamlit:selectChannel', {{detail: '{channel_name}'}}))">
+            {channel_name}</a></p>
+            """, unsafe_allow_html=True)
+            
+        # JavaScript to handle the custom event
+        st.markdown("""
+        <script>
+        document.addEventListener('streamlit:selectChannel', function(e) {
+            const channelName = e.detail;
+            window.parent.postMessage({
+                type: 'streamlit:setSessionState', 
+                session_state: {
+                    selected_channel: channelName,
+                    active_analysis_section: 'dashboard'
+                }
+            }, '*');
+            // Force reload to apply the change
+            setTimeout(() => window.parent.postMessage({type: 'streamlit:forceRerun'}, '*'), 100);
+        });
+        </script>
+        """, unsafe_allow_html=True)
+        debug_log(f"Channel comparison table rendered in {time.time() - chart_start_time:.2f} seconds",
+                 performance_tag="end_comparison_table")
     
     # Create multi-column layout for better organization
     col1, col2 = st.columns([3, 2])
     
     with col1:
+        section_start_time = time.time()
         st.subheader("Video Performance Trends")
         
         # Generate engagement timeline chart
         if 'Published' in combined_df.columns:
             try:
+                # Show loading state
+                chart_load = st.empty()
+                with chart_load.container():
+                    st.info("⏳ Generating timeline charts...")
+                
                 # Create the engagement timeline chart directly in Streamlit
                 engagement_fig = create_engagement_timeline_chart(combined_df, template_context, channel_colors, is_multi_channel)
+                
+                # Clear loading state and show chart
+                chart_load.empty()
                 st.plotly_chart(engagement_fig, use_container_width=True)
                 
                 # Generate note based on data
@@ -178,12 +284,17 @@ def render_analytics_dashboard(channel_data):
                 else:
                     st.caption(f"Analysis based on {video_count} videos from {date_range}.")
                 
+                debug_log(f"Timeline charts rendered in {time.time() - section_start_time:.2f} seconds",
+                         performance_tag="end_timeline_charts")
+                
             except Exception as e:
                 st.error(f"Error generating timeline charts: {str(e)}")
                 import traceback
                 debug_log(f"Timeline chart error: {traceback.format_exc()}")
+                debug_log("Timeline chart generation failed", performance_tag="end_timeline_charts_error")
     
     with col2:
+        section_start_time = time.time()
         st.subheader("Performance Metrics")
         
         if is_multi_channel:
@@ -195,6 +306,12 @@ def render_analytics_dashboard(channel_data):
                 metrics_to_plot = ['Avg Views', 'Engagement Rate']
                 for metric in metrics_to_plot:
                     if metric in metrics_df.columns:
+                        # Show loading indicator
+                        chart_load = st.empty()
+                        with chart_load.container():
+                            st.info(f"⏳ Generating {metric} chart...")
+                        
+                        # Create and display chart
                         fig = px.bar(
                             metrics_df,
                             x='Channel',
@@ -203,10 +320,17 @@ def render_analytics_dashboard(channel_data):
                             color='Channel',
                             color_discrete_map=channel_colors
                         )
+                        
+                        # Clear loading indicator and show chart
+                        chart_load.empty()
                         st.plotly_chart(fig, use_container_width=True)
+                
+                debug_log(f"Performance metrics charts rendered in {time.time() - section_start_time:.2f} seconds",
+                         performance_tag="end_metrics_charts")
             except Exception as e:
                 st.error(f"Error generating metrics comparison: {str(e)}")
                 debug_log(f"Metrics comparison error: {str(e)}")
+                debug_log("Metrics comparison chart generation failed", performance_tag="end_metrics_charts_error")
         else:
             # For single channel, display metrics as before
             channel_name = list(channels_dict.keys())[0]
@@ -235,9 +359,19 @@ def render_analytics_dashboard(channel_data):
                 # Add engagement rate calculation
                 engagement_rate = (avg_likes + avg_comments) / avg_views * 100 if avg_views > 0 else 0
                 st.metric("Engagement Rate", f"{engagement_rate:.2f}%")
+            
+            debug_log(f"Single channel metrics rendered in {time.time() - section_start_time:.2f} seconds",
+                     performance_tag="end_single_channel_metrics")
     
     # Create row for publication timeline analysis
     st.subheader("Publication Analysis")
+    timeline_start_time = time.time()
+    
+    # Show loading indicator for timeline section
+    timeline_loading = st.empty()
+    with timeline_loading.container():
+        st.info("⏳ Generating publication timeline analysis...")
+    
     timeline_col1, timeline_col2 = st.columns([1, 1])
     
     # Generate publication timeline visualizations for each channel or combined
@@ -252,10 +386,9 @@ def render_analytics_dashboard(channel_data):
                     if use_cache and timeline_cache_key in st.session_state:
                         timeline_data = st.session_state[timeline_cache_key]
                     else:
-                        with st.spinner(f"Analyzing publication patterns for {channel_name}..."):
-                            timeline_data = analysis.get_publication_timeline(channel_data)
-                            if use_cache:
-                                st.session_state[timeline_cache_key] = timeline_data
+                        timeline_data = analysis.get_publication_timeline(channel_data)
+                        if use_cache:
+                            st.session_state[timeline_cache_key] = timeline_data
                     
                     # Process monthly data
                     if timeline_data['monthly_df'] is not None:
@@ -270,13 +403,22 @@ def render_analytics_dashboard(channel_data):
                     # Create monthly publication chart with channel colors
                     monthly_fig = px.bar(
                         combined_monthly, 
-                        x='Month-Year', 
+                        x='__date',  # Use the actual date column for proper chronological ordering
                         y='Count',
                         color='Channel',
                         color_discrete_map=channel_colors,
                         title="Videos Published Per Month",
-                        labels={'Count': 'Number of Videos', 'Month-Year': 'Month'}
+                        labels={'Count': 'Number of Videos', '__date': 'Month', 'Month-Year': 'Month'}
                     )
+                    
+                    # Configure x-axis to show Month-Year format
+                    monthly_fig.update_xaxes(
+                        ticktext=combined_monthly['Month-Year'],
+                        tickvals=combined_monthly['__date'],
+                        tickangle=45,
+                        tickmode='array'
+                    )
+                    
                     monthly_fig = configure_bar_chart_layout(
                         monthly_fig,
                         title="Videos Published Per Month",
@@ -287,6 +429,7 @@ def render_analytics_dashboard(channel_data):
             except Exception as e:
                 st.error(f"Error generating monthly publication chart: {str(e)}")
                 debug_log(f"Monthly chart error: {str(e)}")
+                debug_log("Monthly publication chart generation failed", performance_tag="end_monthly_chart_error")
         
         with timeline_col2:
             try:
@@ -327,8 +470,9 @@ def render_analytics_dashboard(channel_data):
             except Exception as e:
                 st.error(f"Error generating yearly publication chart: {str(e)}")
                 debug_log(f"Yearly chart error: {str(e)}")
+                debug_log("Yearly publication chart generation failed", performance_tag="end_yearly_chart_error")
     else:
-        # Single channel case - use the original code
+        # Single channel case - use the original code with loading indicators
         channel_name = list(channels_dict.keys())[0]
         channel_data = channels_dict[channel_name]
         
@@ -337,24 +481,46 @@ def render_analytics_dashboard(channel_data):
         if use_cache and timeline_cache_key in st.session_state:
             timeline_data = st.session_state[timeline_cache_key]
         else:
-            with st.spinner("Analyzing publication patterns..."):
-                timeline_data = analysis.get_publication_timeline(channel_data)
-                if use_cache:
-                    st.session_state[timeline_cache_key] = timeline_data
+            timeline_processing = st.empty()
+            with timeline_processing.container():
+                st.info("Analyzing publication patterns...")
+            
+            timeline_data = analysis.get_publication_timeline(channel_data)
+            
+            timeline_processing.empty()
+            if use_cache:
+                st.session_state[timeline_cache_key] = timeline_data
         
         with timeline_col1:
             # Get publication timeline data
             if timeline_data['monthly_df'] is not None:
-                # Create monthly publication chart
                 try:
                     monthly_df = timeline_data['monthly_df'].copy()
-                    monthly_fig = px.bar(
-                        monthly_df, 
-                        x='Month-Year', 
-                        y='Count',
-                        title="Videos Published Per Month",
-                        labels={'Count': 'Number of Videos', 'Month-Year': 'Month'}
-                    )
+                    # Use the __date column for proper chronological ordering if it exists
+                    if '__date' in monthly_df.columns:
+                        monthly_fig = px.bar(
+                            monthly_df, 
+                            x='__date', 
+                            y='Count',
+                            title="Videos Published Per Month",
+                            labels={'Count': 'Number of Videos', '__date': 'Month'}
+                        )
+                        # Configure x-axis to show Month-Year format
+                        monthly_fig.update_xaxes(
+                            ticktext=monthly_df['Month-Year'],
+                            tickvals=monthly_df['__date'],
+                            tickangle=45,
+                            tickmode='array'
+                        )
+                    else:
+                        # Fallback to old method if date column is not available (backward compatibility)
+                        monthly_fig = px.bar(
+                            monthly_df, 
+                            x='Month-Year', 
+                            y='Count',
+                            title="Videos Published Per Month",
+                            labels={'Count': 'Number of Videos', 'Month-Year': 'Month'}
+                        )
                     monthly_fig = configure_bar_chart_layout(
                         monthly_fig,
                         title="Videos Published Per Month",
@@ -366,6 +532,7 @@ def render_analytics_dashboard(channel_data):
                     st.error(f"Error generating monthly publication chart: {str(e)}")
                     import traceback
                     debug_log(f"Monthly chart error: {traceback.format_exc()}")
+                    debug_log("Monthly publication chart generation failed", performance_tag="end_monthly_chart_error")
         
         with timeline_col2:
             # Create yearly publication chart if we have it
@@ -390,6 +557,12 @@ def render_analytics_dashboard(channel_data):
                     st.error(f"Error generating yearly publication chart: {str(e)}")
                     import traceback
                     debug_log(f"Yearly chart error: {traceback.format_exc()}")
+                    debug_log("Yearly publication chart generation failed", performance_tag="end_yearly_chart_error")
+    
+    # Clear the timeline loading indicator
+    timeline_loading.empty()
+    debug_log(f"Publication timeline analysis rendered in {time.time() - timeline_start_time:.2f} seconds",
+             performance_tag="end_timeline_analysis")
     
     # Video duration analysis
     if st.session_state.show_duration_chart:
@@ -568,9 +741,21 @@ def render_analytics_dashboard(channel_data):
                     if 'Published' in top_likes_df.columns and pd.api.types.is_datetime64_dtype(top_likes_df['Published']):
                         top_likes_df['Published'] = top_likes_df['Published'].dt.strftime('%b %d, %Y')
                     st.dataframe(top_likes_df, use_container_width=True)
+            
+    # Add link to data coverage dashboard for updating data
+    st.divider()
+    st.markdown("### Need more complete data?")
+    st.markdown("If you would like to update your data or see more detailed coverage information, go to the Data Coverage Dashboard.")
+    
+    if st.button("Go to Data Coverage Dashboard", key="analytics_goto_coverage_btn"):
+        st.session_state.active_analysis_section = "coverage"
+        st.rerun()
 
 def create_engagement_timeline_chart(df, template_context, channel_colors=None, is_multi_channel=False):
     """Create engagement timeline charts."""
+    # Track chart creation time
+    chart_start_time = time.time()
+    
     # Make a copy to avoid pandas warnings
     df = df.copy()
     
@@ -743,21 +928,14 @@ def create_engagement_timeline_chart(df, template_context, channel_colors=None, 
     # Configure layout
     fig = configure_time_series_layout(
         fig,
-        title="Video Performance Over Time"
+        title="Video Performance Over Time",
+        x_title="Publication Date",
+        y_title="Count"
     )
     
-    # Set axis titles directly with update_layout since configure_time_series_layout doesn't support them
-    fig.update_layout(
-        xaxis_title="Publish Date",
-        yaxis_title="Count",
-        hovermode='closest',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
+    # Log chart creation time for performance monitoring
+    chart_creation_time = time.time() - chart_start_time
+    debug_log(f"Engagement timeline chart created in {chart_creation_time:.2f} seconds",
+             performance_tag="end_engagement_chart")
     
     return fig

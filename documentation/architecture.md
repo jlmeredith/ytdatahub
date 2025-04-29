@@ -147,6 +147,8 @@ The analysis layer is responsible for processing and analyzing data collected fr
   - Input validation and error handling
   - Progress tracking and reporting
   - Result summaries and visualizations
+  - Delta reporting with DeepDiff to show changes between data refreshes
+  - Smart thumbnail handling with fallback options
 
 - **src/ui/data_storage.py**: Storage configuration interface:
 

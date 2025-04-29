@@ -62,3 +62,31 @@ class YouTubeAPI:
     def resolve_custom_channel_url(self, custom_url_or_handle):
         """Resolve a custom URL or handle (@username) to a channel ID"""
         return self.channel_client.resolver.resolve_custom_channel_url(custom_url_or_handle)
+    
+    def test_connection(self):
+        """
+        Test the API connection with a simple request
+        
+        Returns:
+            bool: True if connection successful, False otherwise
+        """
+        try:
+            # Try a simple API call to confirm the API key works
+            # This performs a search with minimal quota use
+            if not self.is_initialized():
+                return False
+                
+            # Simple test using a channel search (costs 1 unit)
+            # We only need to know if it succeeds, not the actual results
+            self.youtube.search().list(
+                part="snippet",
+                maxResults=1,
+                type="channel",
+                q="YouTube"
+            ).execute()
+            
+            return True
+        except Exception as e:
+            from src.utils.helpers import debug_log
+            debug_log(f"API test connection failed: {str(e)}")
+            return False
