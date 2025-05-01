@@ -53,6 +53,9 @@ def render_data_coverage_dashboard(channel_data, db=None):
     # Start performance tracking for the entire dashboard rendering
     debug_log("Starting data coverage dashboard render", performance_tag="start_coverage_dashboard")
     
+    # Initialize background_tasks variable with empty dictionary to prevent UnboundLocalError
+    background_tasks = {}
+    
     # Check if we're dealing with multiple channels
     if isinstance(channel_data, dict) and any(isinstance(v, dict) and 'channel_info' in v for v in channel_data.values()):
         # Multiple channels case

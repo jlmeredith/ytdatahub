@@ -202,10 +202,19 @@ The analysis layer is responsible for processing and analyzing data collected fr
 ### 7. Utility Functions
 
 - **src/utils/helpers.py**: Cross-cutting utility functions:
+
   - Date formatting
   - Text processing
   - Data validation
   - URL handling
+  - Debug logging with Streamlit compatibility
+
+- **src/utils/queue_tracker.py**: Queue management system:
+  - Tracks uncommitted data operations
+  - Monitors queue state during operations
+  - Provides hooks for testing
+  - Handles test mode for streamlined testing
+  - Maintains queue statistics for reporting
 
 ## Data Flow
 
@@ -575,3 +584,29 @@ The modular architecture allows for several extension points:
 YTDataHub's architecture is designed for flexibility, maintainability, and extensibility. The clean separation of concerns allows for independent development of components and makes the system adaptable to changing requirements. The modular design ensures that new features can be added with minimal impact on existing functionality.
 
 For specific implementation details, refer to the code comments and docstrings within each module.
+
+## UI Component Architecture
+
+The YTDataHub application uses Streamlit for its UI components and follows a modular approach to organize different interface elements:
+
+### Tab Navigation System
+
+YTDataHub implements a consistent tab navigation system throughout the application using Streamlit's native tab components with custom styling enhancements:
+
+- **Top-level Navigation**: Main application sections (Data Collection, Data Analysis, Utilities, Bulk Import)
+- **Section-specific Tabs**: Each section contains its own tab navigation for specific workflows
+- **Custom Styling**: Enhanced tab visibility with custom CSS for both light and dark themes
+
+The tab styling has been significantly improved as of April 30, 2025, with:
+
+- Better contrast in dark mode
+- Clear visual indication of the active tab
+- Consistent styling across all tab interfaces
+- Theme-specific adaptations for both light and dark mode
+- Proper padding and spacing for improved readability
+
+### UI Component Structure
+
+The UI components are organized as follows:
+
+// ...existing code...

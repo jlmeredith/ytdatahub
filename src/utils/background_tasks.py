@@ -13,7 +13,17 @@ from src.services.youtube_service import YouTubeService
 
 # Global queue for background tasks
 if 'background_task_queue' not in st.session_state:
-    st.session_state.background_task_queue = queue.Queue()
+    try:
+        st.session_state.background_task_queue = queue.Queue()
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to initialize queue: {str(e)}")
+        # Provide a fallback that won't break functionality
+        class FallbackQueue:
+            def put(self, item): pass
+            def get(self, timeout=None): return None
+            def task_done(self): pass
+        st.session_state.background_task_queue = FallbackQueue()
 
 # Track running tasks
 if 'background_tasks_running' not in st.session_state:

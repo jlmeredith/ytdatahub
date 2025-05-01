@@ -393,3 +393,188 @@ def render_utilities_tab():
             
             st.success("API key cleared from session and .env file.")
             st.rerun()  # Rerun to update the UI
+            
+    # Add a new section for Debug Settings
+    st.divider()
+    st.subheader("Debug Settings")
+    st.write("""
+    Configure debugging options to help troubleshoot issues with the application.
+    Debug logging provides detailed information about application operations.
+    """)
+    
+    # Import logging module
+    import logging
+    
+    # Initialize debug mode if not set
+    if 'debug_mode' not in st.session_state:
+        st.session_state.debug_mode = False
+        
+    # Initialize log level if not set
+    if 'log_level' not in st.session_state:
+        st.session_state.log_level = logging.WARNING
+        
+    # Initialize UI freeze thresholds if not set
+    if 'ui_freeze_thresholds' not in st.session_state:
+        st.session_state.ui_freeze_thresholds = {
+            'ui_blocking': 0.5,  # Operations that may cause UI lag
+            'warning': 1.0,      # Operations that likely cause noticeable lag
+            'critical': 3.0      # Operations that definitely freeze the UI
+        }
+    
+    # Create a layout for debug settings
+    debug_col1, debug_col2 = st.columns(2)
+    
+    with debug_col1:
+        # Debug mode toggle
+        debug_enabled = st.toggle(
+            "Enable Debug Mode", 
+            value=st.session_state.debug_mode,
+            help="When enabled, detailed debug information will be logged"
+        )
+        
+        # Update session state if changed
+        if debug_enabled != st.session_state.debug_mode:
+            st.session_state.debug_mode = debug_enabled
+            st.success(f"Debug mode {'enabled' if debug_enabled else 'disabled'}")
+        
+        # Log level selector (only if debug mode is enabled)
+        if debug_enabled:
+            log_levels = {
+                "DEBUG": logging.DEBUG,
+                "INFO": logging.INFO, 
+                "WARNING": logging.WARNING,
+                "ERROR": logging.ERROR,
+                "CRITICAL": logging.CRITICAL
+            }
+            
+            # Find the current log level name
+            current_level_name = next(
+                (name for name, level in log_levels.items() 
+                 if level == st.session_state.log_level),
+                "WARNING"
+            )
+            
+            selected_level = st.selectbox(
+                "Log Level",
+                options=list(log_levels.keys()),
+                index=list(log_levels.keys()).index(current_level_name),
+                help="Controls the verbosity of logging"
+            )
+            
+            # Update log level if changed
+            if log_levels[selected_level] != st.session_state.log_level:
+                st.session_state.log_level = log_levels[selected_level]
+                st.success(f"Log level set to {selected_level}")
+    
+    with debug_col2:
+        st.write("Performance Monitoring")
+        
+        # Show performance metrics toggle
+        show_metrics = st.checkbox(
+            "Show Performance Metrics",
+            value=st.session_state.get('show_performance_metrics', False),
+            help="Display performance metrics for UI operations"
+        )
+        
+        # Update session state
+        st.session_state.show_performance_metrics = show_metrics
+        
+        # Advanced performance settings
+        if show_metrics:
+            st.write("UI Freeze Thresholds (seconds):")
+            
+            ui_blocking = st.slider(
+                "UI Blocking Threshold",
+                min_value=0.1,
+                max_value=2.0,
+                value=st.session_state.ui_freeze_thresholds.get('ui_blocking', 0.5),
+                step=0.1,
+                help="Operations taking longer than this may cause UI lag"
+            )
+            
+            warning_threshold = st.slider(
+                "Warning Threshold",
+                min_value=0.5,
+                max_value=5.0,
+                value=st.session_state.ui_freeze_thresholds.get('warning', 1.0),
+                step=0.5,
+                help="Operations taking longer than this will trigger a warning"
+            )
+            
+            critical_threshold = st.slider(
+                "Critical Threshold",
+                min_value=1.0,
+                max_value=10.0,
+                value=st.session_state.ui_freeze_thresholds.get('critical', 3.0),
+                step=1.0,
+                help="Operations taking longer than this will trigger a critical alert"
+            )
+            
+            # Update thresholds if changed
+            if (ui_blocking != st.session_state.ui_freeze_thresholds.get('ui_blocking', 0.5) or
+                warning_threshold != st.session_state.ui_freeze_thresholds.get('warning', 1.0) or
+                critical_threshold != st.session_state.ui_freeze_thresholds.get('critical', 3.0)):
+                
+                st.session_state.ui_freeze_thresholds = {
+                    'ui_blocking': ui_blocking,
+                    'warning': warning_threshold,
+                    'critical': critical_threshold
+                }
+                st.success("Performance thresholds updated")
+    
+    # Display performance metrics if enabled
+    if show_metrics and 'performance_metrics' in st.session_state:
+        st.subheader("Recent Performance Metrics")
+        
+        # Import helpers to get UI freeze report
+        from src.utils.helpers import get_ui_freeze_report
+        
+        # Get and display performance data
+        performance_df = get_ui_freeze_report()
+        
+        if not performance_df.empty:
+            # Display the performance data table
+            st.dataframe(performance_df, use_container_width=True)
+            
+            # Add a button to clear performance data
+            if st.button("Clear Performance Data"):
+                st.session_state.performance_metrics = {}
+                st.session_state.ui_timing_metrics = []
+                st.success("Performance data cleared")
+                st.rerun()
+        else:
+            st.info("No performance metrics collected yet. Enable debug mode and use the app to generate metrics.")
+    
+    # Add debug log viewer
+    if debug_enabled:
+        st.subheader("Debug Actions")
+        
+        # Add a button to view logs
+        if st.button("View Recent Debug Logs"):
+            try:
+                import os
+                # Try to locate streamlit log file (location depends on platform)
+                possible_log_paths = [
+                    os.path.expanduser("~/.streamlit/logs/streamlit.log"),
+                    os.path.expanduser("~/Library/Application Support/streamlit/logs/streamlit.log"),
+                    os.path.expanduser("~/.streamlit/streamlit.log"),
+                    "streamlit.log"
+                ]
+                
+                log_file = next((path for path in possible_log_paths if os.path.exists(path)), None)
+                
+                if log_file:
+                    # Read the last 50 lines of the log file
+                    with open(log_file, 'r') as f:
+                        lines = f.readlines()
+                        last_lines = lines[-50:] if len(lines) > 50 else lines
+                    
+                    # Display the logs
+                    with st.expander("Recent Debug Logs", expanded=True):
+                        for line in last_lines:
+                            if "DEBUG" in line:
+                                st.text(line.strip())
+                else:
+                    st.warning("Could not locate Streamlit log file. Try running the app with --log_level=debug")
+            except Exception as e:
+                st.error(f"Error reading log file: {str(e)}")

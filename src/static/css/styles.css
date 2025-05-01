@@ -42,42 +42,143 @@ section[data-testid="stSidebar"] button[kind="primary"]:hover {
 
 /* Card styling */
 div.card {
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 1.5rem;
-  margin-bottom: 1rem;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s, box-shadow 0.3s;
+  border-left: 4px solid #0066cc;
+  background-color: #ffffff;
 }
 
 div.card:hover {
   transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* Section containers with visual separation */
+div.section-container {
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+/* Section headers with improved visibility */
+div.section-header {
+  border-bottom: 2px solid #dee2e6;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+}
+
+div.section-header h2,
+div.section-header h3 {
+  margin-bottom: 0.3rem;
+  color: #212529;
 }
 
 /* Dashboard containers */
 div.dashboard-container {
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e9ecef;
+}
+
+/* Group containers for related cards */
+div.card-group {
   border-radius: 8px;
-  padding: 1rem;
+  padding: 1.25rem;
+  margin-bottom: 1.75rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+div.card-group div.card {
   margin-bottom: 1rem;
+}
+
+div.card-group div.card:last-child {
+  margin-bottom: 0.5rem;
 }
 
 /* Custom metric styles */
 div.custom-metric {
   border-radius: 8px;
-  padding: 1rem;
+  padding: 1.25rem;
   text-align: center;
+  background-color: #ffffff;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1rem;
 }
 
 /* Custom header */
 div.custom-header {
   margin-bottom: 2rem;
+  border-bottom: 2px solid #dee2e6;
+  padding-bottom: 1rem;
 }
 
 /* Improved section dividers */
 hr {
-  margin-top: 2rem;
-  margin-bottom: 2rem;
+  margin-top: 2.5rem;
+  margin-bottom: 2.5rem;
   border: 0;
   height: 1px;
+  background-color: #dee2e6;
+}
+
+/* UPDATED: Enhanced Tab styling for much better visibility in dark and light modes */
+/* Global tab styling */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 10px;
+  padding: 5px 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.stTabs [data-baseweb="tab"] {
+  padding: 10px 20px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-weight: 600;
+  margin: 5px 0;
+}
+
+.stTabs [aria-selected="true"] {
+  background-color: rgba(255, 99, 132, 0.7) !important;
+  color: white !important;
+}
+
+/* For dark mode specific overrides */
+[data-theme="dark"] .stTabs [data-baseweb="tab-list"] {
+  background-color: rgba(30, 30, 30, 0.9);
+}
+
+[data-theme="dark"] .stTabs [data-baseweb="tab"] {
+  background-color: rgba(50, 50, 50, 0.9);
+}
+
+[data-theme="dark"] .stTabs [aria-selected="true"] {
+  background-color: rgba(255, 99, 132, 0.7) !important;
+  color: white !important;
+}
+
+/* For light mode specific overrides */
+[data-theme="light"] .stTabs [data-baseweb="tab-list"] {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .stTabs [data-baseweb="tab"] {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .stTabs [aria-selected="true"] {
+  background-color: rgba(255, 59, 92, 0.7) !important;
+  color: white !important;
 }
 
 /* Pagination container */
@@ -87,6 +188,8 @@ hr {
   border-radius: 8px;
   padding: 10px;
   margin-bottom: 15px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
 }
 
 .pagination-info {
@@ -97,6 +200,11 @@ hr {
 /* Responsive fixes */
 @media (max-width: 768px) {
   div.card {
+    padding: 1rem;
+  }
+
+  div.section-container,
+  div.card-group {
     padding: 1rem;
   }
 }
@@ -116,4 +224,48 @@ input[type="password"] {
 /* Fix for non-passive event listeners */
 * {
   touch-action: pan-y;
+}
+
+/* Step indicators for multi-step flows */
+div.step-indicator {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+div.step-indicator::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: #dee2e6;
+  z-index: 1;
+}
+
+div.step-indicator .step {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #f8f9fa;
+  border: 2px solid #dee2e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+
+div.step-indicator .step.active {
+  background-color: #0066cc;
+  border-color: #0066cc;
+  color: white;
+}
+
+div.step-indicator .step.completed {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: white;
 }

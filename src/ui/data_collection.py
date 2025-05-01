@@ -7,12 +7,15 @@ from datetime import datetime
 import pandas as pd
 import json
 import os
+import logging
 
 from src.api.youtube_api import YouTubeAPI
 from src.services.youtube_service import YouTubeService
 from src.utils.helpers import debug_log, format_number, format_duration, get_thumbnail_url, estimate_quota_usage
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
+from src.utils.queue_manager import QueueManager
+from src.utils.queue_tracker import QueueTracker, render_queue_status_sidebar, get_queue_stats
 
 # Import DeepDiff for comparing data objects
 try:
@@ -20,6 +23,89 @@ try:
 except ImportError:
     # If not installed, we'll handle this later
     pass
+
+# Initialize or get debug log capture handler
+if 'debug_log_handler' not in st.session_state:
+    # Create a StringIO handler to capture log messages
+    import io
+    from logging import StreamHandler
+    
+    class StringIOHandler(StreamHandler):
+        def __init__(self):
+            self.string_io = io.StringIO()
+            StreamHandler.__init__(self, self.string_io)
+            self.setLevel(logging.DEBUG)
+            self.setFormatter(logging.Formatter(
+                '%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
+                datefmt='%H:%M:%S'
+            ))
+        
+        def get_logs(self):
+            return self.string_io.getvalue()
+            
+        def clear(self):
+            self.string_io.truncate(0)
+            self.string_io.seek(0)
+    
+    # Create the handler and add it to the root logger
+    st.session_state.debug_log_handler = StringIOHandler()
+    logging.getLogger().addHandler(st.session_state.debug_log_handler)
+    
+# Function to update debug mode state
+def toggle_debug_mode():
+    """Update debug mode state and logging level"""
+    if st.session_state.debug_mode:
+        # Enable debug logging
+        logging.getLogger().setLevel(logging.DEBUG)
+        debug_log("Debug mode enabled")
+        # When debug mode is turned on, update the session state log level
+        st.session_state.log_level = logging.DEBUG
+    else:
+        # Disable debug logging
+        logging.getLogger().setLevel(logging.WARNING)
+        # When debug mode is turned off, update the session state log level
+        st.session_state.log_level = logging.WARNING
+        
+# Function to display debug logs in the UI
+def render_debug_logs():
+    """Display debug logs in the UI when debug mode is enabled"""
+    if st.session_state.debug_mode and 'debug_log_handler' in st.session_state:
+        logs = st.session_state.debug_log_handler.get_logs()
+        if logs:
+            with st.expander("Debug Logs", expanded=True):
+                st.text_area("Debug Information", logs, height=300)
+                if st.button("Clear Logs"):
+                    st.session_state.debug_log_handler.clear()
+                    st.rerun()
+
+def render_template_as_markdown(template_file, context):
+    """
+    Render a template file as markdown in Streamlit.
+    
+    Args:
+        template_file (str): The filename of the template in the templates directory
+        context (dict): A dictionary of variables to pass to the template
+    """
+    try:
+        import os
+        from jinja2 import Environment, FileSystemLoader
+        
+        # Get the path to the templates directory
+        templates_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                                    "src", "static", "templates")
+        
+        # Set up Jinja2 environment with autoescape enabled for security
+        env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
+        template = env.get_template(template_file)
+        
+        # Render the template with the provided context
+        rendered_html = template.render(**context)
+        
+        # Display as markdown in Streamlit
+        st.markdown(rendered_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error rendering template: {str(e)}")
+        debug_log(f"Template rendering error: {str(e)}", e)
 
 def render_video_item(video, index):
     """Render a single video item in a consistent, readable format"""
@@ -71,15 +157,16 @@ def render_video_item(video, index):
         if comments:
             st.metric("Comments", len(comments))
             
-            # Show sample comments in an expander
-            with st.expander("View Comments"):
-                for i, comment in enumerate(comments[:5]):  # Show first 5 comments
-                    comment_text = comment.get('comment_text', '')
-                    comment_author = comment.get('comment_author', 'Anonymous')
-                    st.markdown(f"**{comment_author}:** {comment_text}")
-                
-                if len(comments) > 5:
-                    st.markdown(f"*...and {len(comments) - 5} more comments*")
+            # Instead of using another expander which would cause nesting issues,
+            # show a small sample of comments directly and add a "See more" tooltip
+            st.markdown("**Sample Comments:**")
+            for i, comment in enumerate(comments[:3]):  # Show first 3 comments
+                comment_text = comment.get('comment_text', '')
+                comment_author = comment.get('comment_author', 'Anonymous')
+                st.markdown(f"- **{comment_author}**: {comment_text[:100]}{'...' if len(comment_text) > 100 else ''}")
+            
+            if len(comments) > 3:
+                st.markdown(f"*...and {len(comments) - 3} more comments*")
 
 def render_delta_report(previous_data, updated_data, data_type="channel"):
     """
@@ -94,12 +181,68 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
         # Use DeepDiff to calculate differences
         diff = DeepDiff(previous_data, updated_data, ignore_order=True, verbose_level=2)
         
-        if not diff:
-            st.info(f"No changes detected in {data_type} data")
-            return False
-        
         # Show a summary of changes
         st.subheader(f"Changes in {data_type.title()} Data")
+        
+        if not diff:
+            # Show a more informative message and key metrics when no changes are detected
+            st.info(f"No changes detected in {data_type} data")
+            
+            # For channel data, show the key metrics that were compared
+            if data_type == "channel":
+                st.write("The following metrics remain unchanged:")
+                metrics_to_show = []
+                
+                # Extract key metrics to display from channel data
+                if 'channel_name' in updated_data:
+                    metrics_to_show.append(("Channel Name", updated_data.get('channel_name', 'Unknown')))
+                if 'subscribers' in updated_data:
+                    metrics_to_show.append(("Subscribers", format_number(int(updated_data.get('subscribers', 0)))))
+                if 'views' in updated_data:
+                    metrics_to_show.append(("Views", format_number(int(updated_data.get('views', 0)))))
+                if 'total_videos' in updated_data:
+                    metrics_to_show.append(("Videos", format_number(int(updated_data.get('total_videos', 0)))))
+                
+                # Display metrics in a clear format
+                if metrics_to_show:
+                    # Use columns to display metrics nicely
+                    cols = st.columns(min(4, len(metrics_to_show)))
+                    for i, (label, value) in enumerate(metrics_to_show):
+                        with cols[i % len(cols)]:
+                            st.metric(label, value)
+                
+                # Add timestamp info for last check
+                st.caption(f"Last checked: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # For video data, show a summary of the videos that were checked
+            elif data_type == "video":
+                video_count = len(updated_data.get('video_id', []))
+                if video_count > 0:
+                    st.write(f"All {video_count} videos remain unchanged.")
+                    
+                    # Show a sample of video titles
+                    sample_size = min(5, video_count)
+                    if sample_size > 0:
+                        st.write(f"Sample videos checked:")
+                        for i in range(sample_size):
+                            video = updated_data['video_id'][i]
+                            st.write(f"- {video.get('title', 'Unknown')}")
+                        
+                        if video_count > sample_size:
+                            st.write(f"...and {video_count - sample_size} more videos")
+            
+            # For comments data, show a summary of the comments that were checked
+            elif data_type == "comment":
+                if 'comments' in updated_data:
+                    comment_data = updated_data['comments']
+                    video_count = len(comment_data.keys())
+                    comment_count = sum(comment_data.values())
+                    
+                    if video_count > 0:
+                        st.write(f"All comments across {video_count} videos remain unchanged.")
+                        st.write(f"Total comments checked: {comment_count}")
+            
+            return False
         
         # Count total changes
         total_changes = sum(len(changes) for changes in diff.values())
@@ -200,18 +343,26 @@ def convert_db_to_api_format(db_data):
     Returns:
         dict: Data in YouTube API format
     """
+    # Always log some debug info to help with troubleshooting
+    debug_log(f"Starting DB to API format conversion")
+    
+    # Create a new data structure in the API format with default values
+    api_data = {
+        'channel_id': '',
+        'channel_name': '',
+        'subscribers': 0,
+        'views': 0,
+        'total_videos': 0,
+        'channel_description': '',
+        'playlist_id': '',
+        'video_id': []
+    }
+    
     try:
-        # Create a new data structure in the API format
-        api_data = {
-            'channel_id': '',
-            'channel_name': '',
-            'subscribers': 0,
-            'views': 0,
-            'total_videos': 0,
-            'channel_description': '',
-            'playlist_id': '',  # Add explicit initialization for playlist_id
-            'video_id': []
-        }
+        # Validate input data
+        if not db_data:
+            debug_log(f"WARNING: Empty database data provided to convert_db_to_api_format")
+            return api_data
         
         # Debug logging to track the conversion process
         debug_log(f"Converting DB data to API format. Keys in db_data: {list(db_data.keys())}")
@@ -219,36 +370,58 @@ def convert_db_to_api_format(db_data):
         # Map channel info fields
         if 'channel_info' in db_data:
             channel_info = db_data['channel_info']
-            api_data['channel_name'] = channel_info.get('title', '')
-            api_data['channel_description'] = channel_info.get('description', '')
-            api_data['channel_id'] = channel_info.get('id', '')
+            debug_log(f"Found channel_info with keys: {list(channel_info.keys() if isinstance(channel_info, dict) else [])}")
             
-            debug_log(f"Channel info found. ID: {api_data['channel_id']}, Name: {api_data['channel_name']}")
-            
-            # Check for uploads playlist ID in channel info
-            if 'contentDetails' in channel_info and 'relatedPlaylists' in channel_info['contentDetails'] and 'uploads' in channel_info['contentDetails']['relatedPlaylists']:
-                api_data['playlist_id'] = channel_info['contentDetails']['relatedPlaylists']['uploads']
-                debug_log(f"Found uploads playlist ID in contentDetails: {api_data['playlist_id']}")
-            
-            if 'statistics' in channel_info:
-                stats = channel_info['statistics']
-                api_data['subscribers'] = int(stats.get('subscriberCount', 0))
-                api_data['views'] = int(stats.get('viewCount', 0))
+            if isinstance(channel_info, dict):
+                api_data['channel_name'] = channel_info.get('title', '')
+                api_data['channel_description'] = channel_info.get('description', '')
+                api_data['channel_id'] = channel_info.get('id', '')
                 
-                # Get video count from statistics
-                video_count_from_stats = int(stats.get('videoCount', 0))
-                api_data['total_videos'] = video_count_from_stats
+                debug_log(f"Channel info found. ID: {api_data['channel_id']}, Name: {api_data['channel_name']}")
                 
-                debug_log(f"Channel statistics found. Subscribers: {api_data['subscribers']}, "
-                          f"Views: {api_data['views']}, Total videos from stats: {video_count_from_stats}")
+                # Check for uploads playlist ID in channel info
+                if 'contentDetails' in channel_info and isinstance(channel_info['contentDetails'], dict):
+                    if 'relatedPlaylists' in channel_info['contentDetails'] and isinstance(channel_info['contentDetails']['relatedPlaylists'], dict):
+                        if 'uploads' in channel_info['contentDetails']['relatedPlaylists']:
+                            api_data['playlist_id'] = channel_info['contentDetails']['relatedPlaylists']['uploads']
+                            debug_log(f"Found uploads playlist ID in contentDetails: {api_data['playlist_id']}")
+                
+                if 'statistics' in channel_info and isinstance(channel_info['statistics'], dict):
+                    stats = channel_info['statistics']
+                    # Safely convert to integers with fallbacks
+                    try:
+                        api_data['subscribers'] = int(stats.get('subscriberCount', '0'))
+                    except (ValueError, TypeError):
+                        api_data['subscribers'] = 0
+                        debug_log(f"Failed to convert subscriberCount to int: {stats.get('subscriberCount')}")
+                    
+                    try:
+                        api_data['views'] = int(stats.get('viewCount', '0'))
+                    except (ValueError, TypeError):
+                        api_data['views'] = 0
+                        debug_log(f"Failed to convert viewCount to int: {stats.get('viewCount')}")
+                    
+                    # Get video count from statistics
+                    try:
+                        video_count_from_stats = int(stats.get('videoCount', '0'))
+                        api_data['total_videos'] = video_count_from_stats
+                    except (ValueError, TypeError):
+                        video_count_from_stats = 0
+                        api_data['total_videos'] = 0
+                        debug_log(f"Failed to convert videoCount to int: {stats.get('videoCount')}")
+                    
+                    debug_log(f"Channel statistics found. Subscribers: {api_data['subscribers']}, "
+                              f"Views: {api_data['views']}, Total videos from stats: {video_count_from_stats}")
+        else:
+            debug_log(f"WARNING: No channel_info field found in database data")
         
         # Look for uploads_playlist_id in db_data (older databases might store it here)
-        if 'uploads_playlist_id' in db_data:
+        if 'uploads_playlist_id' in db_data and db_data['uploads_playlist_id']:
             api_data['playlist_id'] = db_data['uploads_playlist_id']
             debug_log(f"Found uploads playlist ID at root level: {api_data['playlist_id']}")
         
         # Convert videos
-        if 'videos' in db_data:
+        if 'videos' in db_data and isinstance(db_data['videos'], list):
             videos_count = len(db_data['videos'])
             
             # Only use the videos count as a fallback if stats didn't provide it or it's 0
@@ -263,36 +436,86 @@ def convert_db_to_api_format(db_data):
             
             # Convert each video
             for db_video in db_data['videos']:
+                if not isinstance(db_video, dict):
+                    debug_log(f"Skipping non-dictionary video entry: {type(db_video)}")
+                    continue
+                    
                 video_id = db_video.get('id', '')
+                if not video_id:
+                    debug_log(f"Skipping video missing ID")
+                    continue
                 
-                # Create API-format video object
+                # Create API-format video object with safe defaults
                 api_video = {
                     'video_id': video_id,
-                    'title': db_video.get('snippet', {}).get('title', ''),
-                    'video_description': db_video.get('snippet', {}).get('description', ''),
-                    'published_at': db_video.get('snippet', {}).get('publishedAt', ''),
-                    'published_date': db_video.get('snippet', {}).get('publishedAt', '')[:10] if db_video.get('snippet', {}).get('publishedAt', '') else '',
-                    'views': int(db_video.get('statistics', {}).get('viewCount', 0)),
-                    'likes': int(db_video.get('statistics', {}).get('likeCount', 0)),
-                    'comment_count': int(db_video.get('statistics', {}).get('commentCount', 0)),
-                    'duration': db_video.get('contentDetails', {}).get('duration', ''),
+                    'title': '',
+                    'video_description': '',
+                    'published_at': '',
+                    'published_date': '',
+                    'views': 0,
+                    'likes': 0,
+                    'comment_count': 0,
+                    'duration': '',
                     'comments': []
                 }
                 
+                # Safely extract nested properties with type checking
+                if 'snippet' in db_video and isinstance(db_video['snippet'], dict):
+                    snippet = db_video['snippet']
+                    api_video['title'] = snippet.get('title', '')
+                    api_video['video_description'] = snippet.get('description', '')
+                    api_video['published_at'] = snippet.get('publishedAt', '')
+                    # Extract date part of publishedAt if available
+                    if api_video['published_at'] and len(api_video['published_at']) >= 10:
+                        api_video['published_date'] = api_video['published_at'][:10]
+                
+                if 'statistics' in db_video and isinstance(db_video['statistics'], dict):
+                    stats = db_video['statistics']
+                    # Safely convert to integers
+                    try:
+                        api_video['views'] = int(stats.get('viewCount', '0'))
+                    except (ValueError, TypeError):
+                        api_video['views'] = 0
+                    
+                    try:
+                        api_video['likes'] = int(stats.get('likeCount', '0'))
+                    except (ValueError, TypeError):
+                        api_video['likes'] = 0
+                        
+                    try:
+                        api_video['comment_count'] = int(stats.get('commentCount', '0'))
+                    except (ValueError, TypeError):
+                        api_video['comment_count'] = 0
+                
+                if 'contentDetails' in db_video and isinstance(db_video['contentDetails'], dict):
+                    api_video['duration'] = db_video['contentDetails'].get('duration', '')
+                
                 # Add comments if available for this video
-                if 'comments' in db_data and video_id in db_data['comments']:
+                if 'comments' in db_data and isinstance(db_data['comments'], dict) and video_id in db_data['comments']:
                     video_comments = db_data['comments'][video_id]
-                    for db_comment in video_comments:
-                        comment_data = {
-                            'comment_id': db_comment.get('id', ''),
-                            'comment_text': db_comment.get('snippet', {}).get('topLevelComment', {}).get('snippet', {}).get('textDisplay', ''),
-                            'comment_author': db_comment.get('snippet', {}).get('topLevelComment', {}).get('snippet', {}).get('authorDisplayName', ''),
-                            'comment_published_at': db_comment.get('snippet', {}).get('topLevelComment', {}).get('snippet', {}).get('publishedAt', '')
-                        }
-                        api_video['comments'].append(comment_data)
+                    if isinstance(video_comments, list):
+                        for db_comment in video_comments:
+                            if not isinstance(db_comment, dict):
+                                continue
+                            
+                            # Carefully extract nested comment data
+                            comment_data = {'comment_id': '', 'comment_text': '', 'comment_author': '', 'comment_published_at': ''}
+                            
+                            comment_data['comment_id'] = db_comment.get('id', '')
+                            
+                            # Navigate the nested structure carefully
+                            if 'snippet' in db_comment and isinstance(db_comment['snippet'], dict):
+                                if 'topLevelComment' in db_comment['snippet'] and isinstance(db_comment['snippet']['topLevelComment'], dict):
+                                    if 'snippet' in db_comment['snippet']['topLevelComment'] and isinstance(db_comment['snippet']['topLevelComment']['snippet'], dict):
+                                        comment_snippet = db_comment['snippet']['topLevelComment']['snippet']
+                                        comment_data['comment_text'] = comment_snippet.get('textDisplay', '')
+                                        comment_data['comment_author'] = comment_snippet.get('authorDisplayName', '')
+                                        comment_data['comment_published_at'] = comment_snippet.get('publishedAt', '')
+                            
+                            api_video['comments'].append(comment_data)
                 
                 # Add locations if available
-                if 'locations' in db_video:
+                if 'locations' in db_video and isinstance(db_video['locations'], list):
                     api_video['locations'] = db_video['locations']
                 
                 # Add this video to the channel data
@@ -302,7 +525,7 @@ def convert_db_to_api_format(db_data):
             debug_log(f"Converted {len(api_data['video_id'])} videos to API format. "
                       f"total_videos: {api_data['total_videos']}, videos_fetched: {api_data['videos_fetched']}")
         else:
-            debug_log("No videos found in database data")
+            debug_log("No videos found in database data or 'videos' is not a list")
         
         # Final check on uploads playlist ID
         if not api_data['playlist_id']:
@@ -315,10 +538,21 @@ def convert_db_to_api_format(db_data):
                     debug_log(f"Found uploads playlist ID in channel_info.uploads_playlist_id: {uploads_id}")
         
         debug_log(f"Final API data structure - has playlist_id: {'playlist_id' in api_data}, value: {api_data.get('playlist_id', 'NOT_FOUND')}")
+        
+        # Final validation - ensure channel_id exists
+        if not api_data['channel_id']:
+            debug_log("WARNING: No channel_id found in the converted data. This may cause issues downstream.")
+            # Try to find channel_id in the database structure
+            if 'channel_id' in db_data:
+                api_data['channel_id'] = db_data['channel_id']
+                debug_log(f"Found channel_id at root level: {api_data['channel_id']}")
+        
         return api_data
     except Exception as e:
-        debug_log(f"Error converting DB to API format: {str(e)}", e)
-        return None
+        # Catch all exceptions and log them, but return a valid data structure
+        debug_log(f"ERROR in convert_db_to_api_format: {str(e)}", e)
+        # Return the partially filled api_data, which should at least have default values
+        return api_data
 
 def render_collection_steps(channel_input, youtube_service):
     """
@@ -401,13 +635,6 @@ def render_collection_steps(channel_input, youtube_service):
                     )
                     
                     if updated_channel_info and 'video_id' in updated_channel_info:
-                        # Check for deltas if we're in existing channel mode
-                        if previous_data and st.session_state.collection_mode == "existing_channel":
-                            with st.expander("View Changes in Videos", expanded=True):
-                                prev_video_data = {'video_id': previous_data.get('video_id', [])}
-                                updated_video_data = {'video_id': updated_channel_info.get('video_id', [])}
-                                render_delta_report(prev_video_data, updated_video_data, data_type="video")
-                        
                         st.session_state.channel_info_temp = updated_channel_info
                         st.session_state.current_channel_data = updated_channel_info
                         st.session_state.videos_fetched = True
@@ -421,6 +648,13 @@ def render_collection_steps(channel_input, youtube_service):
                             success_msg += f" ({videos_unavailable} were unavailable)"
                         st.success(success_msg)
                         st.rerun()
+
+        # Check for deltas if we're in existing channel mode (MOVED OUTSIDE EXPANDER)
+        if previous_data and st.session_state.collection_mode == "existing_channel":
+            st.subheader("Changes in Videos")
+            prev_video_data = {'video_id': previous_data.get('video_id', [])}
+            updated_video_data = {'video_id': channel_info.get('video_id', [])}
+            render_delta_report(prev_video_data, updated_video_data, data_type="video")
         
         # Calculate total comments if available
         total_comments = 0
@@ -590,6 +824,30 @@ def render_collection_steps(channel_input, youtube_service):
                     "collected_data_html": collected_data_html
                 })
             
+            # Check for deltas if we're in existing channel mode (MOVED OUTSIDE EXPANDER)
+            if previous_data and st.session_state.collection_mode == "existing_channel":
+                st.subheader("Changes in Comments")
+                # Extract only comment data for comparison
+                prev_videos = previous_data.get('video_id', [])
+                updated_videos = channel_info.get('video_id', [])
+                
+                # Create simple objects for comment comparison
+                prev_comment_data = {'comments': {}}
+                updated_comment_data = {'comments': {}}
+                
+                # Extract comment counts for each video
+                for video in prev_videos:
+                    vid_id = video.get('video_id', '')
+                    if vid_id:
+                        prev_comment_data['comments'][vid_id] = len(video.get('comments', []))
+                
+                for video in updated_videos:
+                    vid_id = video.get('video_id', '')
+                    if vid_id:
+                        updated_comment_data['comments'][vid_id] = len(video.get('comments', []))
+                
+                render_delta_report(prev_comment_data, updated_comment_data, data_type="comment")
+            
             # Next steps guidance with a clear button
             st.markdown("### Next Steps")
             st.info("You've successfully collected data from YouTube. Now you can save this data for analysis.")
@@ -625,10 +883,12 @@ def render_collection_steps(channel_input, youtube_service):
                             if success:
                                 st.success(f"Data saved to {storage_option} successfully!")
                                 
-                                # Optional: Offer to view the data or continue to analysis
+                                # Improved section with clearer options for what to do next
+                                st.markdown("### What would you like to do next?")
+                                st.info("You can analyze the data you just collected, or continue to iterate by collecting data for another channel.")
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if st.button("Continue to Data Analysis", key="goto_analysis"):
+                                    if st.button("Analyze This Channel Data", key="goto_analysis"):
                                         st.session_state.active_tab = "Data Analysis"
                                         st.rerun()
                                 with col2:
@@ -716,68 +976,6 @@ def render_collection_steps(channel_input, youtube_service):
                             st.session_state.current_channel_data = updated_channel_info
                             st.session_state.comments_fetched = True  # Mark comments as fetched
                             
-                            # Check for deltas if we're in existing channel mode
-                            if previous_data and st.session_state.collection_mode == "existing_channel":
-                                with st.expander("View Changes in Comments", expanded=True):
-                                    # Extract only comment data for comparison
-                                    prev_videos = previous_data.get('video_id', [])
-                                    updated_videos = updated_channel_info.get('video_id', [])
-                                    
-                                    # Create simple objects for comment comparison
-                                    prev_comment_data = {'comments': {}}
-                                    updated_comment_data = {'comments': {}}
-                                    
-                                    # Extract comment counts for each video
-                                    for video in prev_videos:
-                                        vid_id = video.get('video_id', '')
-                                        if vid_id:
-                                            prev_comment_data['comments'][vid_id] = len(video.get('comments', []))
-                                    
-                                    for video in updated_videos:
-                                        vid_id = video.get('video_id', '')
-                                        if vid_id:
-                                            updated_comment_data['comments'][vid_id] = len(video.get('comments', []))
-                                    
-                                    render_delta_report(prev_comment_data, updated_comment_data, data_type="comment")
-                            
-                            # Count total comments retrieved for display
-                            total_comments = 0
-                            videos_with_comments = 0
-                            
-                            debug_log("COMMENT UI DEBUG: Scanning returned videos to count comments...")
-                            for video in updated_channel_info.get('video_id', []):
-                                comments_count = len(video.get('comments', []))
-                                
-                                # Add debugging for first video with comments
-                                if comments_count > 0 and videos_with_comments == 0:
-                                    debug_log(f"COMMENT UI DEBUG: First video with comments: '{video.get('title')}' has {comments_count} comments")
-                                    if comments_count > 0:
-                                        sample_comment = video['comments'][0]
-                                        debug_log(f"COMMENT UI DEBUG: Sample comment: {sample_comment}")
-                                
-                                total_comments += comments_count
-                                if comments_count > 0:
-                                    videos_with_comments += 1
-                            
-                            # Check if we have comment stats from the API
-                            if 'comment_stats' in updated_channel_info:
-                                stats = updated_channel_info['comment_stats']
-                                debug_log(f"COMMENT UI DEBUG: Comment stats from API: {stats}")
-                            else:
-                                debug_log("COMMENT UI DEBUG: No comment_stats found in returned channel_info")
-                            
-                            if total_comments == 0:
-                                debug_log("COMMENT UI DEBUG: No comments were found after fetch operation")
-                                
-                                # Check if any videos might have disabled comments
-                                videos_with_disabled_comments = 0
-                                for video in updated_channel_info.get('video_id', []):
-                                    if video.get('comments_disabled', False):
-                                        videos_with_disabled_comments += 1
-                                
-                                if videos_with_disabled_comments > 0:
-                                    st.warning(f"⚠️ {videos_with_disabled_comments} videos have comments disabled by the channel owner")
-                            
                             # Force UI refresh to show the updated comment counts and summary view
                             st.rerun()
                 else:
@@ -845,62 +1043,6 @@ def render_collection_steps(channel_input, youtube_service):
                     updated_channel_info = youtube_service.collect_channel_data(channel_input, options, existing_data=channel_info)
                     
                     if updated_channel_info and 'video_id' in updated_channel_info:
-                        # If we're in existing channel mode, show delta report
-                        if previous_data and st.session_state.collection_mode == "existing_channel":
-                            with st.expander("View Changes in Videos", expanded=True):
-                                # Create simple objects for video comparison
-                                prev_video_ids = [v.get('video_id') for v in previous_data.get('video_id', [])]
-                                new_video_ids = [v.get('video_id') for v in updated_channel_info.get('video_id', [])]
-                                
-                                # Find new videos
-                                new_videos = [v for v in new_video_ids if v not in prev_video_ids]
-                                if new_videos:
-                                    st.success(f"✅ {len(new_videos)} new videos found")
-                                    
-                                    # Show a bit more detail about the new videos
-                                    new_video_titles = []
-                                    for v in updated_channel_info.get('video_id', []):
-                                        if v.get('video_id') in new_videos:
-                                            new_video_titles.append(v.get('title', 'Untitled'))
-                                    
-                                    if new_video_titles:
-                                        st.write("New videos:")
-                                        for i, title in enumerate(new_video_titles[:5]):
-                                            st.write(f"- {title}")
-                                        if len(new_video_titles) > 5:
-                                            st.write(f"...and {len(new_video_titles) - 5} more")
-                                
-                                # Compare video stats for existing videos
-                                common_video_ids = [v for v in prev_video_ids if v in new_video_ids]
-                                
-                                changes = []
-                                for vid_id in common_video_ids:
-                                    # Find the video in both old and new data
-                                    old_video = next((v for v in previous_data.get('video_id', []) if v.get('video_id') == vid_id), None)
-                                    new_video = next((v for v in updated_channel_info.get('video_id', []) if v.get('video_id') == vid_id), None)
-                                    
-                                    if old_video and new_video:
-                                        # Check for changes in key metrics
-                                        old_views = int(old_video.get('views', 0))
-                                        new_views = int(new_video.get('views', 0))
-                                        old_likes = int(old_video.get('likes', 0))
-                                        new_likes = int(new_video.get('likes', 0))
-                                        
-                                        if old_views != new_views or old_likes != new_likes:
-                                            change = {
-                                                "Title": new_video.get('title', 'Unknown'),
-                                                "Views": f"{format_number(old_views)} → {format_number(new_views)}",
-                                                "Likes": f"{format_number(old_likes)} → {format_number(new_likes)}"
-                                            }
-                                            changes.append(change)
-                                
-                                if changes:
-                                    st.write("#### Changes in existing videos")
-                                    changes_df = pd.DataFrame(changes)
-                                    st.dataframe(changes_df, use_container_width=True)
-                                else:
-                                    st.info("No changes detected in existing videos")
-                        
                         st.session_state.channel_info_temp = updated_channel_info
                         st.session_state.current_channel_data = updated_channel_info
                         st.session_state.videos_fetched = True
@@ -912,6 +1054,63 @@ def render_collection_steps(channel_input, youtube_service):
                         if videos_unavailable > 0:
                             success_msg += f" ({videos_unavailable} were unavailable)"
                         st.success(success_msg)
+                        
+                        # Check for deltas if we're in existing channel mode (MOVED OUTSIDE EXPANDER)
+                        if previous_data and st.session_state.collection_mode == "existing_channel":
+                            st.subheader("Changes in Videos")
+                            # Create simple objects for video comparison
+                            prev_video_ids = [v.get('video_id') for v in previous_data.get('video_id', [])]
+                            new_video_ids = [v.get('video_id') for v in updated_channel_info.get('video_id', [])]
+                            
+                            # Find new videos
+                            new_videos = [v for v in new_video_ids if v not in prev_video_ids]
+                            if new_videos:
+                                st.success(f"✅ {len(new_videos)} new videos found")
+                                
+                                # Show a bit more detail about the new videos
+                                new_video_titles = []
+                                for v in updated_channel_info.get('video_id', []):
+                                    if v.get('video_id') in new_videos:
+                                        new_video_titles.append(v.get('title', 'Untitled'))
+                                
+                                if new_video_titles:
+                                    st.write("New videos:")
+                                    for i, title in enumerate(new_video_titles[:5]):
+                                        st.write(f"- {title}")
+                                    if len(new_video_titles) > 5:
+                                        st.write(f"...and {len(new_video_titles) - 5} more")
+                            
+                            # Compare video stats for existing videos
+                            common_video_ids = [v for v in prev_video_ids if v in new_video_ids]
+                            
+                            changes = []
+                            for vid_id in common_video_ids:
+                                # Find the video in both old and new data
+                                old_video = next((v for v in previous_data.get('video_id', []) if v.get('video_id') == vid_id), None)
+                                new_video = next((v for v in updated_channel_info.get('video_id', []) if v.get('video_id') == vid_id), None)
+                                
+                                if old_video and new_video:
+                                    # Check for changes in key metrics
+                                    old_views = int(old_video.get('views', 0))
+                                    new_views = int(new_video.get('views', 0))
+                                    old_likes = int(old_video.get('likes', 0))
+                                    new_likes = int(new_video.get('likes', 0))
+                                    
+                                    if old_views != new_views or old_likes != new_likes:
+                                        change = {
+                                            "Title": new_video.get('title', 'Unknown'),
+                                            "Views": f"{format_number(old_views)} → {format_number(new_views)}",
+                                            "Likes": f"{format_number(old_likes)} → {format_number(new_likes)}"
+                                        }
+                                        changes.append(change)
+                            
+                            if changes:
+                                st.write("#### Changes in existing videos")
+                                changes_df = pd.DataFrame(changes)
+                                st.dataframe(changes_df, use_container_width=True)
+                            else:
+                                st.info("No changes detected in existing videos")
+                        
                         st.rerun()  # Rerun to update UI
             else:
                 st.error("This channel has no videos to fetch.")
@@ -921,6 +1120,33 @@ def render_data_collection_tab():
     Render the Data Collection tab UI.
     """
     st.header("YouTube Data Collection")
+
+    # Add custom CSS to improve tab visibility and styling
+    st.markdown("""
+    <style>
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        padding: 5px 10px;
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 20px;
+        background-color: rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        font-weight: 600;
+        margin: 5px 0;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(255, 99, 132, 0.7) !important;
+        color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     # Initialize session state variables if they don't exist
     if 'collection_step' not in st.session_state:
@@ -937,6 +1163,8 @@ def render_data_collection_tab():
         st.session_state.collection_mode = "new_channel"  # "new_channel" or "existing_channel"
     if 'previous_channel_data' not in st.session_state:
         st.session_state.previous_channel_data = None
+    if 'api_call_status' not in st.session_state:
+        st.session_state.api_call_status = None
     
     # API Key input
     api_key = os.getenv('YOUTUBE_API_KEY', '')
@@ -981,25 +1209,10 @@ def render_data_collection_tab():
                 if st.session_state.channel_data_fetched and 'channel_info_temp' in st.session_state:
                     render_collection_steps(channel_input, youtube_service)
                 else:
-                    # First step - fetch channel data only
-                    st.subheader("Step 1: Channel Data")
-                    st.write("First, fetch the channel data to get basic information.")
-                    
-                    # Calculate quota for just channel data
-                    channel_quota = estimate_quota_usage(
-                        fetch_channel=True,
-                        fetch_videos=False,
-                        fetch_comments=False,
-                        video_count=0,
-                        comments_count=0
-                    )
-                    st.info(f"Estimated API quota cost for channel data: {channel_quota} units")
-                    
-                    # Button to fetch channel data
                     if st.button("Fetch Channel Data", type="primary"):
                         if channel_input:
                             with st.spinner("Fetching channel data from YouTube..."):
-                                # Create options with only channel data retrieval enabled
+                                # Create options object with only channel data retrieval enabled
                                 options = {
                                     'fetch_channel_data': True,
                                     'fetch_videos': False,
@@ -1008,66 +1221,100 @@ def render_data_collection_tab():
                                     'max_comments_per_video': 0
                                 }
                                 
+                                # Call the service to fetch channel data
                                 channel_info = youtube_service.collect_channel_data(channel_input, options)
                                 
                                 if channel_info:
                                     st.session_state.channel_info_temp = channel_info
                                     st.session_state.channel_data_fetched = True
                                     st.success(f"Successfully fetched channel data for: {channel_info.get('channel_name')}")
-                                    st.rerun()  # Rerun to update UI
-                                else:
-                                    st.error("Failed to collect data for the channel. Please check the channel ID and API key.")
-                        else:
-                            st.error("Please enter a YouTube Channel ID or URL")
-        
-        # Existing Channel tab
-        with tab2:
-            if st.session_state.collection_mode == "new_channel":
-                # Get available channels from SQLite database
-                db = SQLiteDatabase(SQLITE_DB_PATH)
-                channels_list = db.get_channels_list()
-                
-                if not channels_list:
-                    st.info("No channels found in the database. Please collect data for a new channel first.")
-                else:
-                    st.write("Select an existing channel to update or refresh its data.")
-                    selected_channel = st.selectbox("Select Channel:", channels_list)
-                    
-                    if st.button("Load Channel Data", type="primary"):
-                        with st.spinner("Loading existing channel data..."):
-                            # Get channel ID from title
-                            channel_id = db.get_channel_id_by_title(selected_channel)
-                            
-                            if channel_id:
-                                # Load existing channel data for comparison later
-                                db_channel_data = db.get_channel_data(selected_channel)
-                                if db_channel_data:
-                                    # Convert database format to YouTube API format for compatibility
-                                    existing_data = convert_db_to_api_format(db_channel_data)
-                                    
-                                    # Store the previous data for delta reporting
-                                    st.session_state.previous_channel_data = existing_data
-                                    
-                                    # Set up session for existing channel update
-                                    st.session_state.collection_mode = "existing_channel"
-                                    
-                                    # Critical fix: Set channel_data_fetched to True (was previously False)
-                                    st.session_state.channel_data_fetched = True
-                                    st.session_state.videos_fetched = False
-                                    st.session_state.comments_fetched = False
-                                    
-                                    # Pass channel ID to the standard input flow
-                                    st.session_state.existing_channel_id = channel_id
-                                    
-                                    # Store the channel info so render_collection_steps can use it
-                                    st.session_state.channel_info_temp = existing_data
-                                    
-                                    st.success(f"Loaded channel: {selected_channel}")
                                     st.rerun()
                                 else:
-                                    st.error(f"Failed to load data for channel: {selected_channel}")
-                            else:
-                                st.error(f"Could not find channel ID for: {selected_channel}")
+                                    st.error("Failed to fetch channel data. Please check your channel ID/URL and API key.")
+                        else:
+                            st.error("Please enter a Channel ID or URL")
+        
+        # Update Existing Channel tab
+        with tab2:
+            if st.session_state.collection_mode == "new_channel":
+                # Initialize channel_id to None before it's potentially used
+                channel_id = None
+                
+                # Here goes the code for selecting an existing channel
+                db = SQLiteDatabase(SQLITE_DB_PATH)
+                
+                try:
+                    channels = db.list_channels()
+                    
+                    if channels:
+                        # Show dropdown with available channels
+                        selected_channel = st.selectbox(
+                            "Select a channel to update:",
+                            options=channels,
+                            format_func=lambda x: f"{x[1]} ({x[0]})"  # Show name (id)
+                        )
+                        
+                        # Get channel ID from selection 
+                        if selected_channel:
+                            channel_id = selected_channel[0]  # First element is ID
+                            debug_log(f"Channel selected from dropdown: {channel_id}")
+                        
+                        # Check if we have any error status to show from a previous attempt
+                        if "api_call_error" in st.session_state:
+                            st.error(st.session_state.api_call_error)
+                            # Clear the error after showing it
+                            del st.session_state.api_call_error
+                        
+                        if st.button("Load Channel Data", type="primary"):
+                            with st.spinner("Loading existing channel data..."):
+                                if channel_id:
+                                    debug_log(f"Loading channel data for: {channel_id}")
+                                    # Load existing channel data
+                                    try:
+                                        db_channel_data = db.get_channel_data(channel_id)
+                                        
+                                        if db_channel_data:
+                                            debug_log(f"Channel data loaded successfully. Converting format...")
+                                            # Convert DB format to API format for consistency
+                                            api_format_data = convert_db_to_api_format(db_channel_data)
+                                            debug_log(f"Data conversion completed. API format data keys: {list(api_format_data.keys())}")
+                                            
+                                            if api_format_data:
+                                                # Store as previous data for delta comparison
+                                                st.session_state.previous_channel_data = api_format_data
+                                                
+                                                # Setup for existing channel mode
+                                                st.session_state.collection_mode = "existing_channel"
+                                                st.session_state.existing_channel_id = channel_id
+                                                st.session_state.api_call_status = "Success: Channel data loaded"
+                                                
+                                                # Notification of success
+                                                st.success(f"Loaded channel: {selected_channel[1]}")
+                                                st.rerun()
+                                            else:
+                                                error_msg = f"Failed to convert data format for channel: {selected_channel[1]}"
+                                                debug_log(error_msg)
+                                                st.session_state.api_call_status = f"Error: {error_msg}"
+                                                st.error(error_msg)
+                                        else:
+                                            error_msg = f"Failed to load data for channel: {selected_channel[1]}"
+                                            debug_log(error_msg)
+                                            st.session_state.api_call_status = f"Error: {error_msg}"
+                                            st.error(error_msg)
+                                    except Exception as e:
+                                        error_msg = f"Error loading channel data: {str(e)}"
+                                        debug_log(error_msg, e)
+                                        st.session_state.api_call_status = f"Error: {error_msg}"
+                                        st.error(error_msg)
+                                else:
+                                    st.error("Please select a channel to load")
+                    else:
+                        st.warning("No channels found in database. Collect data for a channel first.")
+                except Exception as e:
+                    error_msg = f"Database error when listing channels: {str(e)}"
+                    debug_log(error_msg, e)
+                    st.session_state.api_call_status = f"Error: {error_msg}"
+                    st.error(error_msg)
             else:
                 # We're in existing channel mode
                 if 'existing_channel_id' in st.session_state:
@@ -1078,39 +1325,198 @@ def render_data_collection_tab():
                     st.subheader("Step 1: Update Channel Data")
                     st.write("Fetch the latest channel data from YouTube.")
                     
+                    # Show current status if available
+                    if 'api_call_status' in st.session_state and st.session_state.api_call_status:
+                        if st.session_state.api_call_status.startswith("Success"):
+                            st.success(st.session_state.api_call_status)
+                        elif st.session_state.api_call_status.startswith("Error"):
+                            st.error(st.session_state.api_call_status)
+                        elif st.session_state.api_call_status.startswith("Warning"):
+                            st.warning(st.session_state.api_call_status)
+                        else:
+                            st.info(st.session_state.api_call_status)
+                    
                     if st.button("Refresh Channel Data", type="primary"):
+                        debug_log(f"Refresh Channel Data button clicked for channel: {channel_id}")
                         with st.spinner("Fetching latest channel data from YouTube..."):
-                            # Create options with only channel data retrieval enabled
-                            options = {
-                                'fetch_channel_data': True,
-                                'fetch_videos': False,
-                                'fetch_comments': False,
-                                'max_videos': 0,
-                                'max_comments_per_video': 0
-                            }
-                            
-                            # Get previous data if available
-                            previous_data = st.session_state.previous_channel_data
-                            
-                            # Fetch updated channel data
-                            updated_channel_info = youtube_service.collect_channel_data(channel_id, options)
-                            
-                            if updated_channel_info:
-                                # Store the updated data
-                                st.session_state.channel_info_temp = updated_channel_info
-                                st.session_state.channel_data_fetched = True
+                            try:
+                                # Create options with only channel data retrieval enabled
+                                options = {
+                                    'fetch_channel_data': True,
+                                    'fetch_videos': False,
+                                    'fetch_comments': False,
+                                    'max_videos': 0,
+                                    'max_comments_per_video': 0
+                                }
                                 
-                                # Show delta between previous and new data
-                                st.success(f"Successfully fetched updated data for: {updated_channel_info.get('channel_name')}")
+                                # Get previous data if available
+                                previous_data = st.session_state.previous_channel_data
+                                debug_log(f"Previous data available: {previous_data is not None}")
                                 
-                                # Only show delta if we have previous data
-                                if previous_data:
-                                    with st.expander("View Changes in Channel Data", expanded=True):
+                                # Calculate and store last refresh time before refreshing
+                                if 'channel_info_temp' in st.session_state:
+                                    old_data = st.session_state.channel_info_temp
+                                    if 'last_refresh' not in old_data:
+                                        old_data['last_refresh'] = {}
+                                    old_data['last_refresh']['timestamp'] = datetime.now().isoformat()
+                                
+                                debug_log(f"Calling YouTube API to fetch channel data for: {channel_id}")
+                                # Fetch updated channel data
+                                updated_channel_info = youtube_service.collect_channel_data(channel_id, options)
+                                
+                                if updated_channel_info:
+                                    debug_log(f"API call successful. Received data with keys: {list(updated_channel_info.keys())}")
+                                    
+                                    # Add refresh timestamp to updated data
+                                    if 'last_refresh' not in updated_channel_info:
+                                        updated_channel_info['last_refresh'] = {}
+                                    updated_channel_info['last_refresh']['timestamp'] = datetime.now().isoformat()
+                                    
+                                    # Store the updated data in multiple session state variables for consistency
+                                    st.session_state.channel_info_temp = updated_channel_info
+                                    st.session_state.current_channel_data = updated_channel_info  # Also set this for later storage
+                                    
+                                    # Important: Update ALL session state flags consistently
+                                    st.session_state.channel_data_fetched = True
+                                    st.session_state.api_call_status = "Success: Channel data loaded"
+                                    
+                                    # Update API debug information
+                                    st.session_state.api_last_response = updated_channel_info
+                                    st.session_state.api_client_initialized = True
+                                    
+                                    # Add a flag to indicate the channel data was successfully fetched
+                                    if 'debug_state' not in st.session_state:
+                                        st.session_state.debug_state = {}
+                                    st.session_state.debug_state['channel_data_fetched'] = True
+                                    
+                                    # Calculate delta metrics and store them in the updated data
+                                    if previous_data:
+                                        delta = {}
+                                        # Subscriber delta
+                                        old_subs = int(previous_data.get('subscribers', 0))
+                                        new_subs = int(updated_channel_info.get('subscribers', 0))
+                                        delta['subscribers'] = new_subs - old_subs
+                                        delta['subscribers_percent'] = (delta['subscribers'] / old_subs * 100) if old_subs > 0 else 0
+                                        
+                                        # Video count delta
+                                        old_videos = int(previous_data.get('total_videos', 0))
+                                        new_videos = int(updated_channel_info.get('total_videos', 0))
+                                        delta['videos'] = new_videos - old_videos
+                                        delta['videos_percent'] = (delta['videos'] / old_videos * 100) if old_videos > 0 else 0
+                                        
+                                        # Views delta
+                                        old_views = int(previous_data.get('views', 0))
+                                        new_views = int(updated_channel_info.get('views', 0))
+                                        delta['views'] = new_views - old_views
+                                        delta['views_percent'] = (delta['views'] / old_views * 100) if old_views > 0 else 0
+                                        
+                                        # Store delta in updated_channel_info
+                                        updated_channel_info['last_refresh']['delta'] = delta
+                                        # Also store previous metrics
+                                        updated_channel_info['last_refresh']['previous'] = {
+                                            'subscribers': old_subs,
+                                            'videos': old_videos,
+                                            'views': old_views
+                                        }
+                                        
+                                        debug_log(f"Calculated deltas: {delta}")
+                                    
+                                    # Show success message
+                                    st.success(f"Successfully fetched updated data for: {updated_channel_info.get('channel_name')}")
+                                    
+                                    # Display the delta information prominently
+                                    if previous_data:
+                                        debug_log("Displaying delta information")
+                                        # Always show the delta metrics at the top
+                                        st.subheader("Channel Update Delta")
+                                        
+                                        # Show delta summary with metrics
+                                        if 'last_refresh' in updated_channel_info and 'delta' in updated_channel_info['last_refresh']:
+                                            delta = updated_channel_info['last_refresh']['delta']
+                                            
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                sub_delta = delta.get('subscribers', 0)
+                                                sub_delta_str = f"+{format_number(sub_delta)}" if sub_delta >= 0 else f"{format_number(sub_delta)}"
+                                                st.metric(
+                                                    "Subscribers", 
+                                                    format_number(int(updated_channel_info.get('subscribers', 0))),
+                                                    sub_delta_str
+                                                )
+                                            with col2:
+                                                vid_delta = delta.get('videos', 0)
+                                                vid_delta_str = f"+{vid_delta}" if vid_delta >= 0 else f"{vid_delta}"
+                                                st.metric(
+                                                    "Videos", 
+                                                    format_number(int(updated_channel_info.get('total_videos', 0))),
+                                                    vid_delta_str
+                                                )
+                                            with col3:
+                                                view_delta = delta.get('views', 0)
+                                                view_delta_str = f"+{format_number(view_delta)}" if view_delta >= 0 else f"{format_number(view_delta)}"
+                                                st.metric(
+                                                    "Total Views",
+                                                    format_number(int(updated_channel_info.get('views', 0))),
+                                                    view_delta_str
+                                                )
+                                            
+                                            # Calculate activity scores to help with refresh frequency decisions
+                                            activity_score = 0
+                                            if abs(delta.get('subscribers_percent', 0)) > 0.5:
+                                                activity_score += 1
+                                            if abs(delta.get('videos_percent', 0)) > 1:
+                                                activity_score += 1
+                                            if abs(delta.get('views_percent', 0)) > 1:
+                                                activity_score += 1
+                                                
+                                            # Provide recommendation based on activity score
+                                            activity_level = "Low"
+                                            refresh_recommendation = "Monthly"
+                                            if activity_score >= 2:
+                                                activity_level = "High"
+                                                refresh_recommendation = "Daily or Weekly"
+                                            elif activity_score == 1:
+                                                activity_level = "Medium"
+                                                refresh_recommendation = "Weekly or Bi-weekly"
+                                            
+                                            # Show activity level and recommendation
+                                            st.info(f"**Channel Activity Level: {activity_level}** - Recommended refresh frequency: {refresh_recommendation}")
+                                        
+                                        # Move delta reporting outside of the expander and make it more prominent
+                                        st.subheader("Detailed Changes")
+                                        # Explicitly call render_delta_report with the previous and updated data
                                         render_delta_report(previous_data, updated_channel_info, data_type="channel")
-                                
-                                st.rerun()  # Rerun to update UI
-                            else:
-                                st.error("Failed to collect updated data for the channel.")
+                                        
+                                        # Still keep detailed view in an expander for reference
+                                        with st.expander("View Detailed Channel Data"):
+                                            # Display channel metrics in a clean format
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                st.metric("Subscribers", format_number(int(updated_channel_info.get('subscribers', 0))))
+                                            with col2:
+                                                st.metric("Total Videos", format_number(int(updated_channel_info.get('total_videos', 0))))
+                                            with col3:
+                                                st.metric("Total Views", format_number(int(updated_channel_info.get('views', 0))))
+                                            
+                                            # Show full channel details
+                                            st.write("**Channel ID:**", updated_channel_info.get('channel_id', ''))
+                                            st.write("**Description:**", updated_channel_info.get('channel_description', 'No description available'))
+                                    
+                                    # Update the previous_channel_data with the new data for future comparisons
+                                    st.session_state.previous_channel_data = updated_channel_info
+                                    
+                                    # Rerun to update UI
+                                    st.rerun()
+                                else:
+                                    error_msg = f"YouTube API returned no data for channel ID: {channel_id}"
+                                    debug_log(error_msg)
+                                    st.session_state.api_call_status = f"Error: {error_msg}"
+                                    st.error(error_msg)
+                            except Exception as e:
+                                error_msg = f"Error refreshing channel data: {str(e)}"
+                                debug_log(error_msg, e)
+                                st.session_state.api_call_status = f"Error: {error_msg}"
+                                st.error(error_msg)
                     
                     # If channel data has been fetched, render the rest of the collection steps
                     if st.session_state.channel_data_fetched and 'channel_info_temp' in st.session_state:
@@ -1120,6 +1526,345 @@ def render_data_collection_tab():
         
         # Debug mode toggle at the bottom
         st.divider()
-        st.session_state.debug_mode = st.checkbox("Debug Mode", value=st.session_state.get('debug_mode', False))
+        # Use on_change callback to properly update logging when checkbox changes
+        st.session_state.debug_mode = st.checkbox("Debug Mode", value=st.session_state.get('debug_mode', False), on_change=toggle_debug_mode)
+        
+        # When debug mode is enabled, show debug information
+        if st.session_state.debug_mode:
+            render_debug_panel()
     else:
         st.error("Please enter a YouTube API Key")
+
+def render_queue_status():
+    """
+    Display the current queue status to help users understand the current working state
+    of data fetching operations.
+    """
+    try:
+        # Get queue stats directly from QueueTracker
+        queue_stats = get_queue_stats()
+        
+        if not queue_stats or (queue_stats.get('total_items', 0) == 0 and 
+                             queue_stats.get('channels_count', 0) == 0 and
+                             queue_stats.get('videos_count', 0) == 0 and
+                             queue_stats.get('comments_count', 0) == 0):
+            st.info("No active queue tasks found. All data shown is from cached results.")
+            return
+        
+        # Show a clear summary of what's happening
+        st.subheader("Data Source Status")
+        
+        # Display metrics for each type of data
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if queue_stats.get('channels_count', 0) > 0:
+                st.metric("Channels in Queue", queue_stats.get('channels_count', 0))
+            if queue_stats.get('videos_count', 0) > 0:
+                st.metric("Videos in Queue", queue_stats.get('videos_count', 0))
+                
+        with col2:
+            if queue_stats.get('comments_count', 0) > 0:
+                st.metric("Comments in Queue", queue_stats.get('comments_count', 0))
+            if queue_stats.get('analytics_count', 0) > 0:
+                st.metric("Analytics in Queue", queue_stats.get('analytics_count', 0))
+        
+        # Show overall status
+        if queue_stats.get('total_items', 0) > 0:
+            st.info(f"New data is being fetched via API calls - {queue_stats.get('total_items', 0)} items in queue")
+        else:
+            st.success("All data is being loaded from cache")
+            
+        # Show last updated time if available
+        if queue_stats.get('last_updated'):
+            st.caption(f"Last updated: {queue_stats.get('last_updated')}")
+            
+    except Exception as e:
+        debug_log(f"Error displaying queue status: {str(e)}", e)
+        st.warning("Could not retrieve queue status information")
+
+def get_queue_stats():
+    """
+    Get current queue statistics from session state
+    
+    Returns:
+        dict: Queue statistics including info about cached vs. API fetched data
+    """
+    # Initialize default stats
+    if 'queue_stats' not in st.session_state:
+        st.session_state.queue_stats = {
+            'total_items': 0,
+            'channels_count': 0,
+            'videos_count': 0,
+            'comments_count': 0,
+            'analytics_count': 0,
+            'last_updated': None
+        }
+    
+    # Import QueueTracker to get latest queue status
+    from src.utils.queue_tracker import get_queue_stats as get_tracker_stats
+    
+    # Get the stats from the QueueTracker
+    tracker_stats = get_tracker_stats()
+    
+    # Combine local and tracker stats
+    combined_stats = {**st.session_state.queue_stats}
+    
+    if tracker_stats:
+        # Update with tracker data
+        for key in tracker_stats:
+            combined_stats[key] = tracker_stats[key]
+    
+    return combined_stats
+
+def refresh_channel_data(channel_id, youtube_service, options):
+    """
+    Refresh channel data with a Streamlit UI for the 'Continue to iterate?' prompt
+    
+    Args:
+        channel_id (str): The channel ID to refresh
+        youtube_service (YouTubeService): The YouTube service instance
+        options (dict): Dictionary containing collection options
+        
+    Returns:
+        dict or None: The updated channel data or None if refresh failed
+    """
+    # Initialize state for iteration prompt if it doesn't exist
+    if 'show_iteration_prompt' not in st.session_state:
+        st.session_state.show_iteration_prompt = False
+        st.session_state.iteration_choice = None
+    
+    # Define the callback function for the iteration prompt
+    def iteration_prompt_callback():
+        # Set flag to show the prompt
+        st.session_state.show_iteration_prompt = True
+        # We need to return something, but the actual decision will be made in the UI
+        return None
+    
+    # Get the existing data from the database
+    db = SQLiteDatabase(SQLITE_DB_PATH)
+    existing_data = db.get_channel_data(channel_id)
+    
+    if not existing_data:
+        debug_log(f"No existing data found for channel {channel_id}")
+        return None
+    
+    # Convert DB format to API format
+    api_format_data = convert_db_to_api_format(existing_data)
+    
+    # Update channel data with interactive mode enabled
+    # We pass the callback to handle the "Continue to iterate?" prompt
+    updated_data = youtube_service.update_channel_data(
+        channel_id, 
+        options, 
+        existing_data=api_format_data,
+        interactive=True,
+        # Modified to use our callback for the prompt
+        callback=iteration_prompt_callback
+    )
+    
+    return updated_data
+
+def render_debug_panel():
+    """
+    Render debug information panel when debug mode is enabled
+    """
+    with st.expander("Debug Information", expanded=True):
+        # Create tabs for different debug info categories
+        debug_tabs = st.tabs(["API Status", "Session State", "Logs", "Response Data"])
+        
+        # API Status Tab
+        with debug_tabs[0]:
+            st.subheader("YouTube API Status")
+            
+            # Display API initialization status
+            api_initialized = st.session_state.get('api_client_initialized', False)
+            st.metric(
+                label="API Client Status", 
+                value="Initialized" if api_initialized else "Not Initialized"
+            )
+            
+            # Display last API call status
+            api_call_status = st.session_state.get('api_call_status', 'No API calls made yet')
+            st.info(f"Last API call: {api_call_status}")
+            
+            # Display any API errors
+            if 'api_last_error' in st.session_state and st.session_state.api_last_error:
+                st.error(f"Last API error: {st.session_state.api_last_error}")
+        
+        # Session State Tab
+        with debug_tabs[1]:
+            st.subheader("Session State Variables")
+            
+            # Display relevant session state variables in a table
+            debug_vars = [
+                {"Variable": "channel_input", "Value": str(st.session_state.get('channel_input', 'Not set'))},
+                {"Variable": "channel_data_fetched", "Value": str(st.session_state.get('channel_data_fetched', False))},
+                {"Variable": "api_initialized", "Value": str(st.session_state.get('api_initialized', False))},
+                {"Variable": "api_client_initialized", "Value": str(st.session_state.get('api_client_initialized', False))}
+            ]
+            
+            # Add channel data summary if available
+            if 'channel_data' in st.session_state and st.session_state.channel_data:
+                channel = st.session_state.channel_data
+                debug_vars.append({"Variable": "channel_name", "Value": str(channel.get('channel_name', 'Unknown'))})
+                debug_vars.append({"Variable": "channel_id", "Value": str(channel.get('channel_id', 'Unknown'))})
+                debug_vars.append({"Variable": "total_videos", "Value": str(channel.get('total_videos', '0'))})
+            
+            # Display the debug variables table
+            st.table(debug_vars)
+        
+        # Logs Tab
+        with debug_tabs[2]:
+            st.subheader("Debug Logs")
+            
+            # Display logs from string IO handler
+            if 'debug_logs' in st.session_state:
+                log_text = st.session_state.debug_logs.getvalue()
+                st.text_area("Log Output", value=log_text, height=300)
+                
+                # Add button to clear logs
+                if st.button("Clear Debug Logs"):
+                    st.session_state.debug_logs.truncate(0)
+                    st.session_state.debug_logs.seek(0)
+                    st.rerun()
+            else:
+                st.info("No logs available. Enable debug mode to see logs.")
+        
+        # Response Data Tab
+        with debug_tabs[3]:
+            st.subheader("API Response Data")
+            
+            if 'api_last_response' in st.session_state and st.session_state.api_last_response:
+                st.json(st.session_state.api_last_response)
+            else:
+                st.info("No API response data available yet.")
+
+def channel_refresh_section(youtube_service):
+    """Display the channel refresh section."""
+    st.subheader("Refresh Channel Data")
+    
+    # Get the list of channels
+    channels = youtube_service.get_channels_list("sqlite")
+    
+    if not channels:
+        st.warning("No channels found in the database.")
+        return
+
+    # Display dropdown to select channel
+    selected_channel = st.selectbox(
+        "Select a channel to refresh", 
+        options=channels,
+        format_func=lambda x: x.get('channel_name', x.get('channel_id', 'Unknown'))
+    )
+    
+    if not selected_channel:
+        return
+        
+    channel_id = selected_channel.get('channel_id')
+    channel_name = selected_channel.get('channel_name', 'Unknown')
+    
+    # Add a debug toggle specific to this operation
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.write(f"Selected channel: **{channel_name}**")
+    with col2:
+        st.session_state.refresh_debug_mode = st.checkbox("Debug Mode", 
+                                                          value=st.session_state.get('refresh_debug_mode', False),
+                                                          key="refresh_debug_checkbox")
+    
+    # Collection options
+    st.write("Refresh Options:")
+    col1, col2 = st.columns(2)
+    with col1:
+        fetch_channel_data = st.checkbox("Channel Info", value=True, key="refresh_channel_info")
+        fetch_videos = st.checkbox("Videos", value=True, key="refresh_videos")
+    with col2:
+        fetch_comments = st.checkbox("Comments", value=True, key="refresh_comments")
+        analyze_sentiment = st.checkbox("Analyze Sentiment", value=False, key="refresh_sentiment")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        max_videos = st.number_input("Max Videos to Refresh", value=10, min_value=1, max_value=50, key="refresh_max_videos")
+    with col2:
+        max_comments = st.number_input("Max Comments per Video", value=20, min_value=0, max_value=100, key="refresh_max_comments")
+    
+    # Build options dict
+    options = {
+        'fetch_channel_data': fetch_channel_data,
+        'fetch_videos': fetch_videos,
+        'fetch_comments': fetch_comments,
+        'analyze_sentiment': analyze_sentiment,
+        'max_videos': max_videos,
+        'max_comments_per_video': max_comments
+    }
+    
+    # Initialize session state for iteration prompt if it doesn't exist
+    if 'show_iteration_prompt' not in st.session_state:
+        st.session_state.show_iteration_prompt = False
+        st.session_state.iteration_response = None
+    
+    # Create a placeholder for debug output
+    debug_output = st.empty()
+    
+    # Refresh button
+    if st.button("Refresh Channel Data", key="refresh_button"):
+        with st.spinner("Refreshing channel data..."):
+            # Setup debug capture
+            debug_io = None
+            if st.session_state.refresh_debug_mode:
+                debug_io = StringIOHandler()
+                debug_io.activate()
+            
+            # Define the iteration prompt callback
+            def iteration_callback():
+                st.session_state.show_iteration_prompt = True
+                # Return None initially - the actual response will be handled by the UI
+                return False
+            
+            try:
+                # Call the update_channel_data method with the interactive callback
+                updated_data = youtube_service.update_channel_data(
+                    channel_id,
+                    options,
+                    interactive=True,
+                    callback=iteration_callback  # Pass the callback function
+                )
+                
+                if updated_data:
+                    # Save the updated data
+                    if youtube_service.save_channel_data(updated_data, "sqlite"):
+                        st.success(f"Successfully refreshed and saved data for {channel_name}")
+                    else:
+                        st.error("Failed to save the refreshed data")
+                else:
+                    st.error("Failed to refresh channel data")
+            
+            except Exception as e:
+                st.error(f"Error refreshing channel data: {str(e)}")
+                
+            finally:
+                # Capture and display debug output
+                if st.session_state.refresh_debug_mode and debug_io:
+                    debug_io.deactivate()
+                    debug_text = debug_io.getvalue()
+                    if debug_text:
+                        debug_output.text_area("Debug Output", debug_text, height=400)
+    
+    # Display the iteration prompt if needed
+    if st.session_state.show_iteration_prompt:
+        st.subheader("Continue Iteration?")
+        st.write("Additional data is available. Would you like to continue iterating to fetch more?")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Yes, continue", key="continue_yes"):
+                st.session_state.iteration_response = True
+                st.session_state.show_iteration_prompt = False
+                # Simulate clicking the refresh button again with the same options
+                st.experimental_rerun()
+        with col2:
+            if st.button("No, stop", key="continue_no"):
+                st.session_state.iteration_response = False
+                st.session_state.show_iteration_prompt = False
+                st.success("Data refresh completed")

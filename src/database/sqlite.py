@@ -357,40 +357,75 @@ class SQLiteDatabase:
             debug_log(f"Exception in get_channels_list: {str(e)}", e)
             return []
     
-    def get_channel_data(self, channel_name):
-        """Get full data for a specific channel including videos, comments, and locations"""
+    def get_channel_data(self, channel_identifier):
+        """Get full data for a specific channel including videos, comments, and locations
+        
+        Args:
+            channel_identifier (str): Either a YouTube channel ID (UC...) or a channel title
+            
+        Returns:
+            dict or None: Channel data or None if not found
+        """
         try:
+            # First check if this is a channel title or ID
+            is_id = channel_identifier.startswith('UC')
+            
             # Check if we have this channel data cached in session state
-            cache_key = f"channel_data_{channel_name}"
+            cache_key = f"channel_data_{channel_identifier}"
             if cache_key in st.session_state and st.session_state.get('use_data_cache', True):
-                debug_log(f"Using cached data for channel: {channel_name}")
+                debug_log(f"Using cached data for channel: {channel_identifier}")
                 return st.session_state[cache_key]
             
-            debug_log(f"Loading data for channel: {channel_name} from database")
+            debug_log(f"Loading data for channel: {channel_identifier} from database")
             
             # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get channel info - updating column names to match schema
-            cursor.execute("""
-                SELECT id, youtube_id, title, subscriber_count, view_count, 
-                       video_count, description, uploads_playlist_id 
-                FROM channels 
-                WHERE title = ?
-            """, (channel_name,))
+            # Get channel info - using either ID or title depending on what was provided
+            if is_id:
+                # Query by YouTube channel ID (preferred method)
+                cursor.execute("""
+                    SELECT id, youtube_id, title, subscriber_count, view_count, 
+                           video_count, description, uploads_playlist_id 
+                    FROM channels 
+                    WHERE youtube_id = ?
+                """, (channel_identifier,))
+            else:
+                # Query by channel title (fallback method)
+                cursor.execute("""
+                    SELECT id, youtube_id, title, subscriber_count, view_count, 
+                           video_count, description, uploads_playlist_id 
+                    FROM channels 
+                    WHERE title = ?
+                """, (channel_identifier,))
             
             channel_row = cursor.fetchone()
             if not channel_row:
-                conn.close()
-                return None
+                # If not found and it's not an ID, try a partial match on title
+                if not is_id:
+                    cursor.execute("""
+                        SELECT id, youtube_id, title, subscriber_count, view_count, 
+                               video_count, description, uploads_playlist_id 
+                        FROM channels 
+                        WHERE title LIKE ?
+                    """, (f"%{channel_identifier}%",))
+                    channel_row = cursor.fetchone()
+                
+                if not channel_row:
+                    conn.close()
+                    debug_log(f"No channel found for identifier: {channel_identifier}")
+                    return None
             
             channel_db_id = channel_row[0]
+            channel_youtube_id = channel_row[1]  # Store the actual YouTube ID
             uploads_playlist_id = channel_row[7]  # Get the uploads_playlist_id
+            
+            debug_log(f"Found channel with database ID: {channel_db_id}, YouTube ID: {channel_youtube_id}")
             
             # Create channel data dictionary
             channel_info = {
-                'id': channel_row[1],  # youtube_id
+                'id': channel_youtube_id,  # Always use the actual YouTube ID
                 'title': channel_row[2],
                 'statistics': {
                     'subscriberCount': channel_row[3],
@@ -415,6 +450,7 @@ class SQLiteDatabase:
             
             channel_data = {
                 'channel_info': channel_info,
+                'channel_id': channel_youtube_id,  # Include the channel ID at the root level
                 'uploads_playlist_id': uploads_playlist_id,  # Also add it at the root level for compatibility
                 'videos': []  # Changed from 'video_id' to 'videos'
             }
@@ -428,7 +464,7 @@ class SQLiteDatabase:
             """, (channel_db_id,))
             
             videos = cursor.fetchall()
-            debug_log(f"DEBUG: Found {len(videos)} videos for channel {channel_name}")
+            debug_log(f"DEBUG: Found {len(videos)} videos for channel {channel_identifier}")
             
             # Add each video to the channel data
             for video_row in videos:
@@ -545,7 +581,13 @@ class SQLiteDatabase:
             # Cache the result in session state if caching is enabled
             if st.session_state.get('use_data_cache', True):
                 st.session_state[cache_key] = channel_data
-                debug_log(f"Cached data for channel: {channel_name}")
+                debug_log(f"Cached data for channel: {channel_identifier}")
+                
+                # Also cache by YouTube ID if we found the channel by title
+                if not is_id and channel_youtube_id:
+                    id_cache_key = f"channel_data_{channel_youtube_id}"
+                    st.session_state[id_cache_key] = channel_data
+                    debug_log(f"Also cached data by YouTube ID: {channel_youtube_id}")
             
             # Close the connection
             conn.close()
@@ -809,6 +851,33 @@ class SQLiteDatabase:
         except Exception as e:
             debug_log(f"Exception in get_channel_id_by_title: {str(e)}", e)
             return None
+
+    def list_channels(self):
+        """
+        Get a list of all channels from the database with their IDs and titles.
+        
+        Returns:
+            list: List of tuples containing (youtube_id, title) for each channel
+        """
+        debug_log("Fetching list of all channels")
+        
+        try:
+            # Connect to the database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Query all channels, returning both ID and title
+            cursor.execute("SELECT youtube_id, title FROM channels ORDER BY title")
+            channels = cursor.fetchall()
+            
+            # Close the connection
+            conn.close()
+            
+            debug_log(f"Retrieved {len(channels)} channels from database")
+            return channels
+        except Exception as e:
+            debug_log(f"Exception in list_channels: {str(e)}", e)
+            return []
 
     def clear_all_data(self):
         """

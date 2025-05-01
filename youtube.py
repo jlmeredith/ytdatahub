@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import urllib.parse
+import time
+from datetime import datetime
 
 # Set Streamlit page configuration - MUST be the first Streamlit command
 st.set_page_config(
@@ -28,6 +30,7 @@ from src.ui.data_analysis import render_data_analysis_tab
 from src.ui.utilities import render_utilities_tab
 from src.ui.bulk_import import render_bulk_import_tab
 from src.ui.components.ui_utils import load_css_file, apply_security_headers
+from src.utils.queue_tracker import render_queue_status_sidebar, initialize_queue_state
 
 def init_application():
     """Initialize application environment and state."""
@@ -178,6 +181,42 @@ def create_sidebar():
                 # Update URL parameters
                 st.query_params.tab = tab
                 st.rerun()
+        
+        # Database Queue Status Section
+        st.markdown("---")
+        st.subheader("Database Queue Status")
+        
+        # Get queue status from session state
+        queue_status = st.session_state.get('queue_status', {
+            'channels': 0,
+            'videos': 0,
+            'comments': 0,
+            'last_updated': None
+        })
+        
+        # Show queue status as metrics
+        if any([queue_status.get('channels', 0), 
+                queue_status.get('videos', 0), 
+                queue_status.get('comments', 0)]):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Channels", queue_status.get('channels', 0))
+            with col2:
+                st.metric("Videos", queue_status.get('videos', 0))
+            with col3:
+                st.metric("Comments", queue_status.get('comments', 0))
+                
+            # Show last updated time if available
+            if queue_status.get('last_updated'):
+                st.caption(f"Last updated: {queue_status.get('last_updated').strftime('%H:%M:%S')}")
+                
+            # Add button to flush queue manually if needed
+            if st.button("Flush Queue to Database", type="primary", use_container_width=True):
+                # This will be connected to the database saving functionality
+                st.session_state['flush_queue_requested'] = True
+                st.rerun()
+        else:
+            st.info("No items in queue", icon="ℹ️")
         
         # Add version info
         st.markdown("---")

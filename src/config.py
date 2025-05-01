@@ -125,6 +125,21 @@ SESSION_STATE_VARS = {
             'critical': 3.0,
             'ui_blocking': 0.5
         }
+    },
+    
+    # Database queue tracking
+    'db_queue': {
+        'pending_items': {
+            'channels': [],
+            'videos': [],
+            'comments': []
+        },
+        'queue_status': {
+            'channels': 0,
+            'videos': 0,
+            'comments': 0,
+            'last_updated': None
+        }
     }
 }
 

@@ -107,13 +107,34 @@ class ChannelResolver(YouTubeBaseClient):
 
     def resolve_custom_channel_url(self, custom_url_or_handle: str) -> Optional[str]:
         # Resolve a custom URL or handle to a channel ID
-        # Handle different URL formats
-        # Find the best matching channel
+        # Handle different URL formats and variants including:
+        #   - Direct channel IDs (UCxxxxxxxx)
+        #   - Channel handles (@username)
+        #   - Custom URLs (youtube.com/c/customname)
+        #   - Channel URLs (youtube.com/channel/UCxxxxxxxx)
+        #   - User URLs (youtube.com/user/username)
+        # Find the best matching channel using search functionality
+        # Prioritize matches based on exact custom URL, handle match, and title match
 ```
+
+The Channel Resolver has sophisticated logic to handle all the following formats:
+
+- Channel IDs starting with "UC" (e.g., "UCxxxxxxxx")
+- Channel handles with @ symbol (e.g., "@channelname")
+- Full YouTube URLs (e.g., "youtube.com/@channelname")
+- Custom URLs without @ symbol (automatically prefixed)
+- Partial URLs where only the username is provided
+
+The resolver uses a multi-step matching process that:
+
+1. Cleans and normalizes the input
+2. Searches for potential matching channels
+3. Applies prioritized matching logic to find the best candidate
+4. Returns the canonical channel ID for use with the YouTube API
 
 ### Main Integration Class
 
-The main `YouTubeAPI` class integrates all the specialized clients while maintaining backward compatibility:
+The `YouTubeAPI` class integrates all the specialized clients while maintaining backward compatibility:
 
 ```python
 class YouTubeAPI:

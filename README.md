@@ -6,6 +6,66 @@ A powerful YouTube data collection and analysis tool that helps you gather, stor
 
 ![YTDataHub Homepage](documentation/homepage.png)
 
+## Recent Updates (April 2025)
+
+### Enhanced Delta Reporting (April 30, 2025)
+
+- **Comprehensive Change Tracking**: Improved tracking of all metrics changes between data refreshes
+- **Hierarchical Delta Display**: Clear visualization of changes at channel, video, and comment levels
+- **Percentage Change Calculation**: Automatic calculation of percentage differences for numerical metrics
+- **New Content Flagging**: Clear identification of newly added videos and comments
+- **Unavailable Content Detection**: Warning indicators when content becomes unavailable
+- **DeepDiff Integration**: Advanced diff algorithm provides detailed structural change analysis
+
+### Improved Tab Navigation and UI Styling (April 30, 2025)
+
+- **Enhanced Tab Visibility**: Fixed issues with tab navigation being difficult to see in dark mode
+- **Consistent Tab Styling**: Applied consistent styling to all tab interfaces throughout the application
+- **Better Dark Mode Support**: Improved contrast and visibility specifically for dark mode users
+- **Adaptive Theme Styling**: Added theme-specific styling that works in both light and dark modes
+- **Improved Visual Feedback**: Selected tabs now have clear visual distinction with accent color highlighting
+
+### Improved Data Coverage Analysis (April 29, 2025)
+
+- **Enhanced Coverage Calculation**: Fixed issues with data coverage percentages to correctly display when you have 100% of a channel's videos
+- **Visual Status Indicators**: Added clear visual indicators (✅, ⚠️, ❌) showing complete, partial, or incomplete data coverage
+- **One-Click Updates**: New button to automatically update your data collection to 100% coverage with a single click
+- **Last Updated Timestamps**: Added display of when data was last updated (Today, Yesterday, or X days ago)
+- **Clear Date Ranges**: Data coverage summary now shows the full date range of collected videos
+- **Improved Recommendations**: Smart update recommendations now accurately identify what data is missing
+
+### Enhanced Channel Selection Table (April 28, 2025)
+
+- **Clickable Channel Names**: Channel names now appear as clickable links for convenient single-channel analysis
+- **Improved Date Display**: Fixed issues with "Created" and "Last Updated" date columns to properly show formatted dates
+- **Enhanced Likes Rate Calculation**: Improved calculation and display of engagement metrics including likes-to-views ratio
+- **Streamlined Interface**: Removed redundant channel links for a cleaner, more intuitive user experience
+- **Fixed Checkbox Positioning**: Selection checkboxes now appear on the left side of the table for consistent UX
+- **Better Visual Styling**: Updated channel links with proper styling and hover effects for better usability
+
+### Improved Channel Table Display
+
+- **Fixed Date Formatting**: The "Created" and "Last Updated" date columns now display in a consistent, readable format
+- **Auto-sized Columns**: Table columns automatically adjust their width based on content
+- **Enhanced Channel Lookup**: Improved database queries to display accurate channel creation dates
+- **Better Number Formatting**: Fixed formatting issues with large numeric values in the table
+
+### Optimized Logging System
+
+- **Reduced Debug Output**: Server logs now show only errors and important issues by default
+- **Configurable Log Level**: Added a session state variable to control log verbosity when needed
+- **Performance Logging**: Critical performance issues and UI freeze warnings are still captured
+- **Improved Error Context**: Error logs now include more context to help with troubleshooting
+
+### How to Use Debug Mode
+
+For troubleshooting, you can enable debug logging by adding this code at the beginning of your application:
+
+```python
+st.session_state.debug_mode = True
+st.session_state.log_level = logging.DEBUG
+```
+
 ## Analytics Objectives
 
 YTDataHub is designed with a comprehensive set of analytics objectives to help content creators, marketers, and researchers extract meaningful insights from YouTube data:
@@ -230,6 +290,48 @@ Once you've collected and stored your YouTube data, the analysis tab offers powe
 - Browse through comments with pagination controls
 - Identify common themes and sentiments in audience feedback
 - Discover your most engaged viewers and their feedback patterns
+
+## Delta Reporting
+
+YTDataHub includes a robust delta reporting system that tracks and visualizes changes between data collection sessions. This feature is particularly valuable for understanding channel growth and content performance over time.
+
+### How Delta Reporting Works
+
+When updating an existing channel in the database, YTDataHub:
+
+1. Loads the previously stored data as a baseline
+2. Fetches fresh data from the YouTube API
+3. Performs a deep comparison between the datasets using DeepDiff
+4. Generates a user-friendly report showing exactly what has changed
+
+### Channel-Level Delta Tracking
+
+- **Subscriber Growth**: Track increases or decreases in subscriber count with percentage changes
+- **View Accumulation**: Monitor total view count changes across the channel
+- **Video Count Changes**: See when new videos are published or when videos become unavailable
+- **Description Updates**: Compare changes in channel descriptions and metadata
+
+### Video-Level Delta Tracking
+
+- **View Increases**: Monitor view count growth for individual videos
+- **Engagement Changes**: Track likes and comments metrics with percentage changes
+- **New Video Detection**: Clearly identify newly published videos since last update
+- **Metadata Modifications**: See changes in video titles, descriptions, or other attributes
+
+### Comment-Level Delta Tracking
+
+- **New Comment Counting**: Track how many new comments each video receives
+- **Comment Availability**: Detect when comments become unavailable or are removed
+- **Engagement Growth**: Measure increasing engagement through comment interactions
+
+### Technical Implementation
+
+The delta reporting feature is powered by:
+
+- **DeepDiff Library**: Performs sophisticated structural comparisons between datasets
+- **Channel Collection Logic**: Preserves original values before updates for comparison
+- **Video Collection Process**: Creates mappings of existing video data for comparison
+- **Comment Collection Process**: Tracks existing comments for detecting new additions
 
 ## Complete Project Structure
 
