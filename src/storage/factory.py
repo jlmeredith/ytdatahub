@@ -17,16 +17,21 @@ class StorageFactory:
         
         Args:
             storage_type (str): The type of storage provider to create.
-                                Options: "SQLite Database", "Local Storage (JSON)",
+                                Options: "SQLite Database", "sqlite", "Local Storage (JSON)",
                                 "MongoDB", "PostgreSQL"
             config (Settings, optional): Application configuration
         
         Returns:
             object: An instance of the requested storage provider
         """
-        if storage_type == "SQLite Database":
+        # Normalize storage type string to handle different formats
+        storage_type_lower = storage_type.lower()
+        
+        # SQLite Database - handle both formats: "SQLite Database" and "sqlite"
+        if storage_type == "SQLite Database" or storage_type_lower == "sqlite":
             from src.database.sqlite import SQLiteDatabase
-            sqlite_path = config.sqlite_db_path if config else Path("./data/youtube_data.db")
+            from src.config import SQLITE_DB_PATH
+            sqlite_path = config.sqlite_db_path if config else SQLITE_DB_PATH
             return SQLiteDatabase(sqlite_path)
             
         elif storage_type == "Local Storage (JSON)":

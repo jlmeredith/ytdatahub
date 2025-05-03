@@ -214,7 +214,15 @@ class TestSQLiteDatabase:
         
         # Verify the list contains our test channel
         assert len(channels) == 1
-        assert channels[0] == sample_channel_data['channel_name']
+        
+        # Verify the format of the returned data (should be a list of dictionaries)
+        assert isinstance(channels[0], dict)
+        assert 'channel_id' in channels[0]
+        assert 'channel_name' in channels[0]
+        
+        # Verify the content matches our sample data
+        assert channels[0]['channel_id'] == sample_channel_data['channel_id']
+        assert channels[0]['channel_name'] == sample_channel_data['channel_name']
     
     def test_get_channel_data(self, sqlite_db, sample_channel_data):
         """Test retrieving full channel data by ID"""
@@ -280,6 +288,33 @@ class TestSQLiteDatabase:
         assert len(channels) == 1
         assert channels[0][0] == sample_channel_data['channel_id']
         assert channels[0][1] == sample_channel_data['channel_name']
+    
+    def test_factory_with_sqlite_shortname(self, temp_db_path, sample_channel_data, monkeypatch):
+        """Test that the StorageFactory can handle the 'sqlite' shortname"""
+        from src.storage.factory import StorageFactory
+        from src.config import SQLITE_DB_PATH
+        
+        # Store some data for testing
+        db = SQLiteDatabase(temp_db_path)
+        db.store_channel_data(sample_channel_data)
+        
+        # Patch the SQLITE_DB_PATH to use our test database
+        monkeypatch.setattr("src.config.SQLITE_DB_PATH", temp_db_path)
+        
+        # Get storage provider using 'sqlite' (lowercase, no "Database") as in the UI code
+        storage_provider = StorageFactory.get_storage_provider("sqlite")
+        
+        # Verify it returns an instance of SQLiteDatabase
+        assert isinstance(storage_provider, SQLiteDatabase)
+        
+        # Verify it works with the shortname
+        channels = storage_provider.get_channels_list()
+        
+        # Check that we can get channels with the correct format
+        assert len(channels) == 1
+        assert isinstance(channels[0], dict)
+        assert 'channel_id' in channels[0]
+        assert 'channel_name' in channels[0]
 
 
 if __name__ == '__main__':

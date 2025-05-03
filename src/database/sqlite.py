@@ -345,13 +345,17 @@ class SQLiteDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get all channel names - updating column name from 'channel_name' to 'title'
-            cursor.execute("SELECT title FROM channels")
-            channels = [row[0] for row in cursor.fetchall()]
+            # Get all channel IDs and titles
+            cursor.execute("SELECT youtube_id, title FROM channels ORDER BY title")
+            rows = cursor.fetchall()
+            
+            # Format as a list of dictionaries with channel_id and channel_name keys
+            channels = [{'channel_id': row[0], 'channel_name': row[1]} for row in rows]
             
             # Close the connection
             conn.close()
             
+            debug_log(f"Retrieved {len(channels)} channels from database")
             return channels
         except Exception as e:
             debug_log(f"Exception in get_channels_list: {str(e)}", e)

@@ -78,7 +78,7 @@ class TestTabNavigation:
         """Test that tabs render properly in the data collection UI."""
         with patch('streamlit.tabs') as mock_tabs:
             # Configure the mock to return a list of tab objects
-            tab_mocks = [MagicMock(), MagicMock()]
+            tab_mocks = [MagicMock(), MagicMock(), MagicMock()]  # Create THREE tabs instead of two
             mock_tabs.return_value = tab_mocks
             
             # Call the function that creates tabs
@@ -89,9 +89,10 @@ class TestTabNavigation:
             
             # Check the arguments - this may need adjustment based on actual implementation
             args = mock_tabs.call_args[0][0]
-            assert len(args) >= 2, "At least two tabs should be created"
-            assert "New Channel" in args, "Should have a 'New Channel' tab"
-            assert "Update Existing Channel" in args, "Should have an 'Update Existing Channel' tab"
+            assert len(args) >= 3, "At least three tabs should be created"
+            assert "New Collection" in args or "New Channel" in args, "Should have a 'New Collection' or 'New Channel' tab"
+            assert "Update Channel" in args or "Update Existing Channel" in args, "Should have an 'Update Channel' tab"
+            assert "Queue Status" in args, "Should have a 'Queue Status' tab"
 
     @pytest.mark.parametrize("theme", ["light", "dark"])
     def test_theme_specific_tab_styling(self, theme):

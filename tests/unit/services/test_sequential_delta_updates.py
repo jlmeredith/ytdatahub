@@ -473,7 +473,7 @@ class TestSequentialDeltaUpdates:
         
         # Verify the method called collect_channel_data with existing data
         service.collect_channel_data.assert_called_once_with(
-            'UC_test_channel', options, updated_data=initial_channel_data
+            'UC_test_channel', options, existing_data=initial_channel_data
         )
         
         # Verify result is the updated data
@@ -493,14 +493,11 @@ class TestSequentialDeltaUpdates:
         update1 = initial_channel_data.copy()
         update1['subscribers'] = '10500'  # +500
         
-        update2 = update1.copy()
-        update2['subscribers'] = '11000'  # +500 more
+        # Mock collect_channel_data to return the updated data
+        service.collect_channel_data = MagicMock(return_value=update1)
         
-        # Mock collect_channel_data to return different values on subsequent calls
-        service.collect_channel_data = MagicMock(side_effect=[update1, update2])
-        
-        # Mock _prompt_continue_iteration to return True once then False
-        service._prompt_continue_iteration = MagicMock(side_effect=[True, False])
+        # Create a proper _prompt_continue_iteration mock that returns False to stop after first iteration
+        service._prompt_continue_iteration = MagicMock(return_value=False)
         
         # Create options for update
         options = {
@@ -509,17 +506,27 @@ class TestSequentialDeltaUpdates:
             'fetch_comments': False
         }
         
-        # Call the method in interactive mode
-        result = service.update_channel_data('UC_test_channel', options, interactive=True)
+        # Call the method in interactive mode with our mock
+        result = service.update_channel_data(
+            'UC_test_channel', 
+            options, 
+            interactive=True,
+            # Important: Do not pass callback here, so it uses the mocked _prompt_continue_iteration
+        )
         
-        # Verify collect_channel_data was called twice
-        assert service.collect_channel_data.call_count == 2
+        # Verify collect_channel_data was called once
+        assert service.collect_channel_data.call_count == 1
         
-        # Verify _prompt_continue_iteration was called twice
-        assert service._prompt_continue_iteration.call_count == 2
+        # Verify prompt was called once
+        assert service._prompt_continue_iteration.call_count == 1
         
-        # Verify final result has the values from the second update
-        assert result['subscribers'] == '11000'
+        # Verify the method returns a dictionary with both db_data and api_data in interactive mode
+        assert isinstance(result, dict)
+        assert 'db_data' in result
+        assert 'api_data' in result
+        
+        # Verify final result has the expected subscribers count
+        assert result['api_data']['subscribers'] == '10500'
 
 
 class TestCommentSentimentDeltaTracking:

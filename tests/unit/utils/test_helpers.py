@@ -64,11 +64,18 @@ class TestDataHelperFunctions:
 class TestQueueManagement:
     """Tests for background task queue management"""
     
-    @patch('src.utils.background_tasks.st.session_state.background_task_queue.put')
+    @patch('src.utils.background_tasks.debug_log')  # Direct patch at the import location
+    @patch('src.utils.background_tasks.st.session_state')
     @patch('src.utils.background_tasks.ensure_worker_thread_running')
-    def test_queue_data_collection_task(self, mock_ensure_worker, mock_queue_put):
+    def test_queue_data_collection_task(self, mock_ensure_worker, mock_session_state, mock_debug_log):
         """Test queuing a data collection task"""
         from src.utils.background_tasks import queue_data_collection_task
+        
+        # Setup mock queue
+        mock_queue = MagicMock()
+        mock_session_state.get.return_value = mock_queue  # Mock the .get() check for background_task_queue
+        mock_session_state.background_task_queue = mock_queue
+        mock_session_state.background_tasks_status = {}
         
         # Test queueing a task
         channel_id = 'UC_test_channel'
@@ -82,11 +89,11 @@ class TestQueueManagement:
         
         # Verify task was properly queued
         assert task_id is not None
-        mock_queue_put.assert_called_once()
+        mock_queue.put.assert_called_once()  # Check that put was called on our mock queue
         mock_ensure_worker.assert_called_once()
         
         # Check correct data was added to the queue
-        call_args = mock_queue_put.call_args[0][0]
+        call_args = mock_queue.put.call_args[0][0]
         assert call_args['channel_id'] == channel_id
         assert call_args['api_key'] == api_key
         assert call_args['options'] == options

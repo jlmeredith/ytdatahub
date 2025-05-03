@@ -15,6 +15,7 @@ from src.services.youtube_service import YouTubeService
 if 'background_task_queue' not in st.session_state:
     try:
         st.session_state.background_task_queue = queue.Queue()
+        debug_log("Created background task queue successfully")
     except Exception as e:
         import logging
         logging.error(f"Failed to initialize queue: {str(e)}")
@@ -23,7 +24,10 @@ if 'background_task_queue' not in st.session_state:
             def put(self, item): pass
             def get(self, timeout=None): return None
             def task_done(self): pass
+            def __bool__(self): return True  # Make sure boolean evaluation doesn't break functionality
+        
         st.session_state.background_task_queue = FallbackQueue()
+        debug_log("Using fallback queue due to initialization error")
 
 # Track running tasks
 if 'background_tasks_running' not in st.session_state:
@@ -54,6 +58,11 @@ def queue_data_collection_task(channel_id, api_key, options, task_id=None):
     Returns:
         task_id: Unique ID for the queued task
     """
+    # Ensure the background task queue is available and properly initialized
+    if not st.session_state.get('background_task_queue'):
+        debug_log("Queue was not initialized properly. Creating a new queue.")
+        st.session_state.background_task_queue = queue.Queue()
+    
     if task_id is None:
         # Generate a unique task ID
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -73,8 +82,14 @@ def queue_data_collection_task(channel_id, api_key, options, task_id=None):
         'error': None
     }
     
-    # Add to queue
-    st.session_state.background_task_queue.put(task)
+    # Add to queue - ensure the queue object is valid
+    try:
+        st.session_state.background_task_queue.put(task)
+        debug_log(f"Successfully added task {task_id} to queue")
+    except AttributeError as e:
+        debug_log(f"Error adding task to queue: {str(e)}. Reinitializing queue")
+        st.session_state.background_task_queue = queue.Queue()
+        st.session_state.background_task_queue.put(task)
     
     # Update task status
     st.session_state.background_tasks_status[task_id] = task
