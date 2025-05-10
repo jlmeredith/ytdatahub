@@ -95,7 +95,9 @@ def render_data_collection_tab():
             
             # Tab 1: New Collection
             with tabs[0]:
-                if 'channel_info_temp' in st.session_state and st.session_state.channel_data_fetched:
+                if ('channel_info_temp' in st.session_state and 
+                    st.session_state.get('channel_info_temp') is not None and 
+                    st.session_state.channel_data_fetched):
                     # Render the collection steps if channel data is already fetched
                     render_collection_steps(st.session_state.channel_input, youtube_service)
                 else:

@@ -19,8 +19,19 @@ def render_collection_steps(channel_input, youtube_service):
         channel_input: Channel ID/URL input
         youtube_service: Instance of the YouTubeService
     """
-    # Get the channel info from session state
-    channel_info = st.session_state.channel_info_temp
+    # Get the channel info from session state with safe access
+    channel_info = st.session_state.get('channel_info_temp')
+    
+    # Safety check - if channel_info is None, show an error and return
+    if channel_info is None:
+        st.error("⚠️ Channel information is unavailable. Please refresh or try entering the channel again.")
+        if st.button("Return to channel entry"):
+            # Clear temp state and force a rerun
+            if 'channel_info_temp' in st.session_state:
+                del st.session_state['channel_info_temp']
+            st.rerun()
+        return
+    
     # Get previous data if in existing channel mode
     previous_data = st.session_state.get('previous_channel_data')
     

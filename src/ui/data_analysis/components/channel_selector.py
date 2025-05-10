@@ -26,6 +26,19 @@ def render_channel_selector(channels, db):
     # Initialize selected_channels as a list in session state for multi-selection
     if 'selected_channels' not in st.session_state:
         st.session_state.selected_channels = []
+        
+    # Initialize channel_search_query for search functionality
+    if 'channel_search_query' not in st.session_state:
+        st.session_state.channel_search_query = ""
+    
+    # Initialize channel_display_limit for pagination, but don't override an existing value
+    default_limit = 5
+    if 'channel_display_limit' not in st.session_state:
+        st.session_state.channel_display_limit = default_limit  # Default to showing 5 channels
+    
+    # Initialize user's selected display limit if not set
+    if 'user_selected_display_limit' not in st.session_state:
+        st.session_state.user_selected_display_limit = st.session_state.channel_display_limit
     
     # Initialize YouTube Analysis for channel metrics
     analysis = YouTubeAnalysis()
@@ -310,13 +323,8 @@ def render_channel_selector(channels, db):
         # By default, only show the most recent 5 channels
         default_limit = 5
         
-        # Initialize session state for channel limit if it doesn't exist
-        if 'channel_display_limit' not in st.session_state:
-            st.session_state.channel_display_limit = default_limit
-        
-        # Initialize session state for channel search if it doesn't exist
-        if 'channel_search_query' not in st.session_state:
-            st.session_state.channel_search_query = ""
+        # NOTE: Removed duplicate initialization of channel_display_limit
+        # The channel_display_limit is already initialized at the beginning of this function
             
         # Apply current limit to the dataframe
         if len(channels_df) > st.session_state.channel_display_limit:
@@ -351,13 +359,20 @@ def render_channel_selector(channels, db):
         
         # If search query changed, update session state and apply filter
         if search_query != st.session_state.channel_search_query:
+            # Store previous query for comparison
+            previous_query = st.session_state.channel_search_query
+            
+            # Update current query
             st.session_state.channel_search_query = search_query
             
             # Reset display limit when searching to avoid confusion
-            if search_query:
+            if search_query and not previous_query:
+                # Expanding to show all results for a new search
                 st.session_state.channel_display_limit = total_channels
-            else:
-                st.session_state.channel_display_limit = default_limit
+            elif not search_query and previous_query:
+                # Restore user's selected display limit when clearing search
+                if 'user_selected_display_limit' in st.session_state:
+                    st.session_state.channel_display_limit = st.session_state.user_selected_display_limit
             
             # Re-render
             st.rerun()
@@ -368,10 +383,22 @@ def render_channel_selector(channels, db):
         with col1:
             # Add control for number of channels to display
             display_options = [5, 10, 20, 50, 100, "All"]
+            
+            # Get the current value's index in the options, defaulting to the first option (5)
+            default_index = 0
+            current_value = st.session_state.channel_display_limit
+            
+            # Find the index of the current value in the options, or use default
+            for i, opt in enumerate(display_options):
+                if opt == current_value or (isinstance(opt, int) and isinstance(current_value, int) and opt == current_value):
+                    default_index = i
+                    break
+            
+            # Only update if the user changes the selection
             selected_display = st.selectbox(
                 "Number of channels to display:",
                 options=display_options,
-                index=display_options.index(st.session_state.channel_display_limit if st.session_state.channel_display_limit in display_options else 5),
+                index=default_index,
                 key="display_limit_selector"
             )
             
@@ -379,8 +406,10 @@ def render_channel_selector(channels, db):
             if selected_display == "All":
                 selected_display = total_channels
             
-            # Update session state if changed
+            # Store user's selection, but ONLY if they explicitly changed it
             if selected_display != st.session_state.channel_display_limit:
+                # Save this as the user's explicit choice
+                st.session_state.user_selected_display_limit = selected_display
                 st.session_state.channel_display_limit = selected_display
                 st.rerun()
                 

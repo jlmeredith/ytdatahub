@@ -370,6 +370,7 @@ class SQLiteDatabase:
         Returns:
             dict or None: Channel data or None if not found
         """
+        conn = None
         try:
             # First check if this is a channel title or ID
             is_id = channel_identifier.startswith('UC')
@@ -378,7 +379,15 @@ class SQLiteDatabase:
             cache_key = f"channel_data_{channel_identifier}"
             if cache_key in st.session_state and st.session_state.get('use_data_cache', True):
                 debug_log(f"Using cached data for channel: {channel_identifier}")
-                return st.session_state[cache_key]
+                # Verify the cached data has required information
+                cached_data = st.session_state[cache_key]
+                if cached_data and 'channel_info' in cached_data:
+                    return cached_data
+                else:
+                    # Clear invalid cache entry
+                    debug_log(f"Clearing invalid cache entry for {channel_identifier}")
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
             
             debug_log(f"Loading data for channel: {channel_identifier} from database")
             
@@ -417,8 +426,10 @@ class SQLiteDatabase:
                     channel_row = cursor.fetchone()
                 
                 if not channel_row:
-                    conn.close()
                     debug_log(f"No channel found for identifier: {channel_identifier}")
+                    # Clear any stale cache entries
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
                     return None
             
             channel_db_id = channel_row[0]
@@ -593,9 +604,6 @@ class SQLiteDatabase:
                     st.session_state[id_cache_key] = channel_data
                     debug_log(f"Also cached data by YouTube ID: {channel_youtube_id}")
             
-            # Close the connection
-            conn.close()
-            
             # Final debug verification of channel data structure
             if channel_data and 'channel_info' in channel_data:
                 debug_log(f"DEBUG: Final channel info structure: {list(channel_data['channel_info'].keys())}")
@@ -610,6 +618,14 @@ class SQLiteDatabase:
         except Exception as e:
             debug_log(f"Exception in get_channel_data: {str(e)}", e)
             return None
+        finally:
+            # Ensure connection is always closed
+            if conn:
+                try:
+                    conn.close()
+                    debug_log("Database connection closed in get_channel_data")
+                except Exception as e:
+                    debug_log(f"Error closing connection: {str(e)}", e)
     
     def display_channels_data(self):
         """Display all channels from SQLite database in a Streamlit interface"""
@@ -833,28 +849,8 @@ class SQLiteDatabase:
             
         except Exception as e:
             debug_log(f"Exception in continue_iteration: {str(e)}", e)
-            # Default to False on error to be safe
-            return False
-
-    def get_channel_id_by_title(self, channel_title):
-        """Get the YouTube channel ID for a given channel title"""
-        try:
-            # Connect to the database
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Query the database for the channel ID by title
-            cursor.execute("SELECT youtube_id FROM channels WHERE title = ?", (channel_title,))
-            result = cursor.fetchone()
-            
-            # Close the connection
-            conn.close()
-            
-            # Return the channel ID if found, otherwise None
-            return result[0] if result else None
-        except Exception as e:
-            debug_log(f"Exception in get_channel_id_by_title: {str(e)}", e)
-            return None
+            # Default to continuing if there's an error
+            return True
 
     def list_channels(self):
         """

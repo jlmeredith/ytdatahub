@@ -18,7 +18,7 @@ def initialize_session_state():
     if 'show_all_videos' not in st.session_state:
         st.session_state.show_all_videos = False
     if 'collection_mode' not in st.session_state:
-        st.session_state.collection_mode = "new_channel"  # "new_channel" or "existing_channel"
+        st.session_state.collection_mode = "new_channel"  # "new_channel", "existing_channel", or "refresh_channel"
     if 'previous_channel_data' not in st.session_state:
         st.session_state.previous_channel_data = None
     if 'api_call_status' not in st.session_state:
@@ -48,7 +48,11 @@ def reset_collection_state():
     st.session_state.videos_fetched = False
     st.session_state.comments_fetched = False
     st.session_state.show_all_videos = False
-    st.session_state.collection_mode = "new_channel"
+    
+    # Default to new_channel mode unless explicitly setting to another mode
+    if 'collection_mode' not in st.session_state or st.session_state.collection_mode not in ["existing_channel", "refresh_channel"]:
+        st.session_state.collection_mode = "new_channel"
+        
     if 'channel_info_temp' in st.session_state:
         del st.session_state.channel_info_temp
     if 'current_channel_data' in st.session_state:

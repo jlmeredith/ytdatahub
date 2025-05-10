@@ -17,8 +17,34 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
         updated_data (dict): New channel data after update
         data_type (str): Type of data being compared ("channel", "video", or "comment")
     """
-    if not previous_data or not updated_data:
-        st.info("No previous data available for comparison.")
+    # Better handling for empty or None data
+    if previous_data is None and updated_data is None:
+        st.info("No data available for comparison.")
+        return
+    elif previous_data is None:
+        st.info("No previous data available. This appears to be new data.")
+        if updated_data:
+            st.write("New data:")
+            st.json(updated_data)
+        return
+    elif updated_data is None:
+        st.info("No updated data available for comparison.")
+        if previous_data:
+            st.write("Previous data:")
+            st.json(previous_data)
+        return
+    
+    # Handle empty dictionaries
+    if isinstance(previous_data, dict) and not previous_data:
+        if isinstance(updated_data, dict) and not updated_data:
+            st.info("Both previous and updated data sets are empty.")
+            return
+        st.info("Previous data is empty. Showing only updated data.")
+        st.json(updated_data)
+        return
+    elif isinstance(updated_data, dict) and not updated_data:
+        st.info("Updated data is empty. Showing only previous data.")
+        st.json(previous_data)
         return
     
     try:
@@ -63,134 +89,64 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
                             st.write(f"- {video.get('title', 'Unknown')}")
                         
                         if video_count > sample_size:
-                            st.write(f"...and {video_count - sample_size} more videos")
+                            st.write(f"... and {video_count - sample_size} more videos.")
             
-            # For comments data, show a summary of the comments that were checked
-            elif data_type == "comment":
-                comment_count = sum(len(v.get('comments', [])) for v in updated_data.get('video_id', []))
-                if comment_count > 0:
-                    st.write(f"All {comment_count} comments remain unchanged.")
-                    
-        else:
-            # For channel data, display key channel metrics
-            if data_type == "channel":
-                # Display key channel metrics that have been updated
-                metrics_to_show = []
-                if 'channel_name' in updated_data:
-                    metrics_to_show.append(("Channel Name", updated_data.get('channel_name', 'Unknown')))
-                if 'subscribers' in updated_data:
-                    metrics_to_show.append(("Subscribers", format_number(int(updated_data.get('subscribers', 0)))))
-                if 'views' in updated_data:
-                    metrics_to_show.append(("Views", format_number(int(updated_data.get('views', 0)))))
-                if 'total_videos' in updated_data:
-                    metrics_to_show.append(("Videos", format_number(int(updated_data.get('total_videos', 0)))))
-                
-                # Display metrics in a clear format
-                if metrics_to_show:
-                    # Use columns to display metrics nicely
-                    cols = st.columns(min(4, len(metrics_to_show)))
-                    for i, (label, value) in enumerate(metrics_to_show):
-                        with cols[i % len(cols)]:
-                            st.metric(label, value)
-                
-                # Add timestamp info for last check
-                st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            return
             
-            # Show added items
-            if 'dictionary_item_added' in diff:
-                added_items = [item.replace("root['", "").replace("']", "").replace(".", " > ") 
-                              for item in diff['dictionary_item_added']]
+        # Display differences in a readable format
+        st.subheader("Changes Detected")
+        
+        # Display added items
+        if 'dictionary_item_added' in diff:
+            st.markdown("#### Added Items")
+            for item in diff['dictionary_item_added']:
+                item_path = item.replace("root['", "").replace("']", "")
+                st.write(f"- Added: {item_path}")
                 
-                if data_type == "video":
-                    new_videos_count = len([item for item in added_items if "video_id" in item])
-                    if new_videos_count > 0:
-                        st.success(f"✅ {new_videos_count} new videos found")
-                elif data_type == "comment":
-                    new_comments_count = len([item for item in added_items if "comments" in item])
-                    if new_comments_count > 0:
-                        st.success(f"✅ {new_comments_count} new comments found")
-                else:
-                    if added_items:
-                        st.success(f"✅ New data added: {', '.join(added_items[:5])}")
-                        if len(added_items) > 5:
-                            st.info(f"...and {len(added_items)-5} more items")
-            
-            # Show removed items
-            if 'dictionary_item_removed' in diff:
-                removed_items = [item.replace("root['", "").replace("']", "").replace(".", " > ") 
-                                for item in diff['dictionary_item_removed']]
+        # Display removed items
+        if 'dictionary_item_removed' in diff:
+            st.markdown("#### Removed Items")
+            for item in diff['dictionary_item_removed']:
+                item_path = item.replace("root['", "").replace("']", "")
+                st.write(f"- Removed: {item_path}")
                 
-                if removed_items:
-                    st.warning(f"⚠️ Items no longer present: {', '.join(removed_items[:5])}")
-                    if len(removed_items) > 5:
-                        st.info(f"...and {len(removed_items)-5} more items")
-            
-            # Show changed values
-            if 'values_changed' in diff:
-                changed_items = diff['values_changed']
+        # Display changed values
+        if 'values_changed' in diff:
+            st.markdown("#### Changed Values")
+            for path, change in diff['values_changed'].items():
+                # Clean up the path for display
+                clean_path = path.replace("root['", "").replace("']", "")
                 
-                # For nicer display, group changes by type
-                view_changes = []
-                like_changes = []
-                comment_changes = []
-                other_changes = []
+                # Format numbers with commas for readability
+                old_val = format_number(change['old_value']) if isinstance(change['old_value'], (int, float)) else change['old_value']
+                new_val = format_number(change['new_value']) if isinstance(change['new_value'], (int, float)) else change['new_value']
                 
-                for path, change in changed_items.items():
-                    if 'views' in path:
-                        view_changes.append(f"{change['old_value']} → {change['new_value']}")
-                    elif 'likes' in path:
-                        like_changes.append(f"{change['old_value']} → {change['new_value']}")
-                    elif 'comment_count' in path:
-                        comment_changes.append(f"{change['old_value']} → {change['new_value']}")
+                # Calculate and display percentage change for numerical values
+                if isinstance(change['old_value'], (int, float)) and isinstance(change['new_value'], (int, float)) and change['old_value'] != 0:
+                    pct_change = ((change['new_value'] - change['old_value']) / change['old_value']) * 100
+                    if pct_change > 0:
+                        change_str = f"(+{pct_change:.2f}%)"
+                        st.write(f"- {clean_path}: {old_val} → {new_val} {change_str} 📈")
+                    elif pct_change < 0:
+                        change_str = f"({pct_change:.2f}%)"
+                        st.write(f"- {clean_path}: {old_val} → {new_val} {change_str} 📉")
                     else:
-                        other_changes.append(f"{path}: {change['old_value']} → {change['new_value']}")
+                        st.write(f"- {clean_path}: {old_val} → {new_val}")
+                else:
+                    st.write(f"- {clean_path}: {old_val} → {new_val}")
                 
-                # Display view changes
-                if view_changes and len(view_changes) <= 5:
-                    st.info(f"📈 Views updated: {', '.join(view_changes)}")
-                elif view_changes:
-                    st.info(f"📈 Views updated for {len(view_changes)} items")
-                
-                # Display like changes
-                if like_changes and len(like_changes) <= 5:
-                    st.info(f"👍 Likes updated: {', '.join(like_changes)}")
-                elif like_changes:
-                    st.info(f"👍 Likes updated for {len(like_changes)} items")
-                
-                # Display comment count changes
-                if comment_changes and len(comment_changes) <= 5:
-                    st.info(f"💬 Comment counts updated: {', '.join(comment_changes)}")
-                elif comment_changes:
-                    st.info(f"💬 Comment counts updated for {len(comment_changes)} items")
-                
-                # Display other changes
-                if other_changes and len(other_changes) <= 5:
-                    st.info(f"Other changes: {', '.join(other_changes)}")
-                elif other_changes:
-                    st.info(f"Other changes in {len(other_changes)} items")
-                    
     except ImportError:
         # Fallback if DeepDiff is not available
-        st.info("Data has been updated. Install DeepDiff for detailed change reports.")
-        
+        st.warning("DeepDiff library not found. Using basic comparison.")
+        st.write("Previous data:")
+        st.json(previous_data)
+        st.write("Updated data:")
+        st.json(updated_data)
     except Exception as e:
-        debug_log(f"Error generating delta report: {str(e)}", e)
-        st.error(f"Error generating comparison report: {str(e)}")
-        
-        # Fallback to basic comparison
-        if data_type == "channel":
-            # Show basic metrics
-            if 'subscribers' in updated_data and 'subscribers' in previous_data:
-                old_subs = int(previous_data.get('subscribers', 0))
-                new_subs = int(updated_data.get('subscribers', 0))
-                st.metric("Subscribers", format_number(new_subs), format_number(new_subs - old_subs))
-            
-            if 'views' in updated_data and 'views' in previous_data:
-                old_views = int(previous_data.get('views', 0))
-                new_views = int(updated_data.get('views', 0))
-                st.metric("Total Views", format_number(new_views), format_number(new_views - old_views))
-            
-            if 'total_videos' in updated_data and 'total_videos' in previous_data:
-                old_videos = int(previous_data.get('total_videos', 0))
-                new_videos = int(updated_data.get('total_videos', 0))
-                st.metric("Videos", format_number(new_videos), format_number(new_videos - old_videos))
+        # Handle other errors
+        debug_log(f"Error in delta report: {str(e)}")
+        st.error(f"Error generating delta report: {str(e)}")
+        st.write("Previous data:")
+        st.json(previous_data)
+        st.write("Updated data:")
+        st.json(updated_data)

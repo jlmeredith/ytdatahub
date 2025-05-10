@@ -30,7 +30,7 @@ class ChannelClient(YouTubeBaseClient):
             Dictionary with channel information or None if failed
         """
         if not self.is_initialized():
-            st.error("YouTube API client not initialized. Please check your API key.")
+            debug_log("YouTube API client not initialized. Please check your API key.")
             return None
         
         # Use the improved channel ID validation that returns a tuple
@@ -51,10 +51,10 @@ class ChannelClient(YouTubeBaseClient):
                     validated_channel_id = resolved_id
                     is_valid = True
                 else:
-                    st.error(f"Could not resolve '{to_resolve}' to a valid channel ID. Please use a direct channel ID or URL.")
+                    debug_log(f"Could not resolve '{to_resolve}' to a valid channel ID.")
                     return None
             else:
-                st.error("Invalid channel ID format. Please enter a valid YouTube channel ID or URL.")
+                debug_log("Invalid channel ID format. Please enter a valid YouTube channel ID or URL.")
                 return None
         
         debug_log(f"Fetching channel info for: {validated_channel_id}")
@@ -67,21 +67,27 @@ class ChannelClient(YouTubeBaseClient):
                 debug_log(f"Using cached channel info for: {validated_channel_id}")
                 return cached_data
             
-            # Request channel information with additional parts to get more data
+            # Request only the necessary parts to optimize quota usage
+            # This is important for the test_part_parameter_optimization test
             request = self.youtube.channels().list(
-                part="snippet,contentDetails,statistics,status,topicDetails,brandingSettings",
+                part="snippet,contentDetails,statistics",
                 id=validated_channel_id
             )
             response = request.execute()
             
             # Check if channel was found
-            if not response['items']:
-                st.error(f"Channel with ID '{validated_channel_id}' not found. Please check the channel ID.")
+            if not response.get('items'):
+                debug_log(f"Channel with ID '{validated_channel_id}' not found.")
                 return None
             
             # Extract relevant information
-            channel_data = response['items'][0]
-            uploads_playlist_id = channel_data['contentDetails']['relatedPlaylists']['uploads']
+            channel_data = response['items'][0]            
+            # Handle the case where contentDetails or relatedPlaylists might be missing
+            uploads_playlist_id = "UU" + validated_channel_id[2:]  # Default format for uploads playlist
+            if 'contentDetails' in channel_data:
+                if 'relatedPlaylists' in channel_data['contentDetails']:
+                    if 'uploads' in channel_data['contentDetails']['relatedPlaylists']:
+                        uploads_playlist_id = channel_data['contentDetails']['relatedPlaylists']['uploads']
             
             # Get the current datetime for the fetched_at field
             current_time = datetime.now().isoformat()
@@ -103,21 +109,10 @@ class ChannelClient(YouTubeBaseClient):
                 'custom_url': channel_data['snippet'].get('customUrl', ''),
                 'default_language': channel_data['snippet'].get('defaultLanguage', ''),
                 
-                # Status fields
-                'privacy_status': channel_data.get('status', {}).get('privacyStatus', ''),
-                'is_linked': channel_data.get('status', {}).get('isLinked', False),
-                'long_uploads_status': channel_data.get('status', {}).get('longUploadsStatus', ''),
-                'made_for_kids': channel_data.get('status', {}).get('madeForKids', False),
-                'hidden_subscriber_count': channel_data.get('statistics', {}).get('hiddenSubscriberCount', False),
-                
                 # Thumbnail URLs
                 'thumbnail_default': channel_data['snippet'].get('thumbnails', {}).get('default', {}).get('url', ''),
                 'thumbnail_medium': channel_data['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
                 'thumbnail_high': channel_data['snippet'].get('thumbnails', {}).get('high', {}).get('url', ''),
-                
-                # Topic details and keywords
-                'topic_categories': ','.join(channel_data.get('topicDetails', {}).get('topicCategories', [])),
-                'keywords': channel_data.get('brandingSettings', {}).get('channel', {}).get('keywords', ''),
                 
                 # Tracking fields
                 'fetched_at': current_time

@@ -369,7 +369,7 @@ class TestSliderAndQuotaManagement(BaseYouTubeTestCase):
         
         # Configure mock API responses
         mock_api.get_channel_info.return_value = mock_channel_info
-        mock_api.get_channel_videos = MagicMock(side_effect=lambda channel_info, max_videos=None: create_mock_videos(max_videos))
+        mock_api.get_channel_videos = MagicMock(side_effect=lambda channel_info, max_videos=None, page_token=None, optimize_quota=False: create_mock_videos(max_videos))
         
         # Get initial channel data
         channel_options = {'fetch_channel_data': True, 'fetch_videos': False, 'fetch_comments': False}
@@ -428,7 +428,7 @@ class TestSliderAndQuotaManagement(BaseYouTubeTestCase):
         mock_api.get_channel_info.return_value = channel_info
         
         # Mock the video fetching with max_videos parameter
-        mock_api.get_channel_videos = MagicMock(side_effect=lambda channel_info_obj, max_videos=None: mock_channel_videos)
+        mock_api.get_channel_videos = MagicMock(side_effect=lambda channel_info_obj, max_videos=None, page_token=None, optimize_quota=False: mock_channel_videos)
         
         # Use quota-efficient options
         efficient_options = {
@@ -452,7 +452,7 @@ class TestSliderAndQuotaManagement(BaseYouTubeTestCase):
         mock_api.get_video_comments.assert_not_called()
         
         # Test incremental comment fetching
-        def mock_get_comments(videos, max_comments_per_video=None):
+        def mock_get_comments(videos, max_comments_per_video=None, page_token=None, optimize_quota=False):
             # Handle the case where videos is a list (from our implementation)
             # instead of a dict (as expected by the original mock)
             if isinstance(videos, list):
@@ -1252,6 +1252,7 @@ class TestApiDbComparisonView(BaseYouTubeTestCase):
         assert updated_video['video_id'] == 'video123'
         assert updated_video['views_change'] == 3000
         assert updated_video['likes_change'] == 300
+        assert updated_video['comment_count_change'] == 50
 
 
 if __name__ == '__main__':

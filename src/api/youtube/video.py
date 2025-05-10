@@ -14,13 +14,14 @@ from src.api.youtube.base import YouTubeBaseClient
 class VideoClient(YouTubeBaseClient):
     """YouTube Data API client focused on video operations"""
     
-    def get_channel_videos(self, channel_info, max_videos=25):
+    def get_channel_videos(self, channel_info, max_videos=25, page_token=None):
         """
         Get videos for a channel using the uploads playlist ID
         
         Args:
             channel_info: Dictionary with channel information
             max_videos: Maximum number of videos to fetch
+            page_token: Token for pagination
             
         Returns:
             Updated channel_info dictionary with videos
@@ -145,9 +146,7 @@ class VideoClient(YouTubeBaseClient):
                         break
                         
                     # Get video ID for tracking
-                    video_id = video['id']
-                    
-                    # Build video data 
+                    video_id = video['id']                            # Build video data with improved view and comment handling
                     video_data = {
                         'video_id': video_id,
                         'title': video['snippet'].get('title', ''),
@@ -161,6 +160,14 @@ class VideoClient(YouTubeBaseClient):
                         'thumbnails': video['snippet'].get('thumbnails', {}).get('high', {}).get('url', ''),
                         'comments': []
                     }
+                    
+                    # Store the full statistics object for later reference and ensure consistent data
+                    video_data['statistics'] = video.get('statistics', {})
+                    
+                    # Double-check comment_count is correctly populated from statistics
+                    if 'commentCount' in video_data['statistics'] and (not video_data['comment_count'] or video_data['comment_count'] == '0'):
+                        video_data['comment_count'] = video_data['statistics']['commentCount']
+                        debug_log(f"Set comment_count to {video_data['comment_count']} from statistics for video {video_id}")
                     
                     # Track if comments are disabled
                     if video['contentDetails'].get('commentStatus') == 'disabled':
@@ -248,4 +255,90 @@ class VideoClient(YouTubeBaseClient):
             
         except Exception as e:
             self._handle_api_error(e, "get_videos_details")
+            return []
+
+    def get_video_details_batch(self, video_ids):
+        """
+        Get detailed information for a batch of videos
+        
+        Args:
+            video_ids (list): List of video IDs
+            
+        Returns:
+            list: List of video details
+        """
+        if not self.is_initialized():
+            debug_log("YouTube API client not initialized for video details batch.")
+            return []
+            
+        if not video_ids:
+            debug_log("No video IDs provided for batch details.")
+            return []
+        
+        try:
+            # The YouTube API can only handle 50 video IDs at once
+            max_results_per_request = 50
+            results = []
+            
+            # Process video IDs in batches of 50
+            for i in range(0, len(video_ids), max_results_per_request):
+                batch = video_ids[i:i + max_results_per_request]
+                
+                # Call the videos.list API endpoint with all necessary parts
+                # This ensures we get all statistics (view count, comment count, etc.)
+                debug_log(f"Fetching details for {len(batch)} videos in batch {i//max_results_per_request + 1}")
+                response = self.youtube.videos().list(
+                    part="snippet,contentDetails,statistics,status",
+                    id=','.join(batch)
+                ).execute()
+                
+                # Add video results to our list
+                batch_items = response.get('items', [])
+                debug_log(f"Received {len(batch_items)} video details from API")
+                
+                # Verify statistics are present in the response and process them
+                for item in batch_items:
+                    video_id = item.get('id', 'unknown')
+                    # Ensure statistics are present and complete
+                    if 'statistics' not in item:
+                        debug_log(f"WARNING: Statistics missing for video {video_id}")
+                        # Add empty statistics to prevent errors
+                        item['statistics'] = {
+                            'viewCount': '0',
+                            'likeCount': '0',
+                            'commentCount': '0'
+                        }
+                    else:
+                        # Ensure all stats fields exist with defaults
+                        if 'viewCount' not in item['statistics']:
+                            debug_log(f"WARNING: viewCount missing for video {video_id}")
+                            item['statistics']['viewCount'] = '0'
+                        if 'likeCount' not in item['statistics']:
+                            item['statistics']['likeCount'] = '0'
+                        if 'commentCount' not in item['statistics']:
+                            item['statistics']['commentCount'] = '0'
+                    
+                    # Add direct fields for better compatibility between new channel and refresh flows
+                    # This ensures views and comment_count are always at the top level
+                    if 'views' not in item and 'viewCount' in item['statistics']:
+                        item['views'] = item['statistics']['viewCount']
+                    if 'comment_count' not in item and 'commentCount' in item['statistics']:
+                        item['comment_count'] = item['statistics']['commentCount']
+                
+                results.extend(batch_items)
+                
+                # Handle API rate limiting if needed
+                if i + max_results_per_request < len(video_ids):
+                    time.sleep(0.5)  # Add a small delay between requests to avoid quota issues
+                    
+            debug_log(f"Successfully fetched details for {len(results)} videos")
+            return results
+            
+        except googleapiclient.errors.HttpError as e:
+            error_msg = f"YouTube API error getting video details: {str(e)}"
+            debug_log(error_msg)
+            return []
+        except Exception as e:
+            error_msg = f"Unexpected error getting video details: {str(e)}"
+            debug_log(error_msg)
             return []

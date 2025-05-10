@@ -53,20 +53,38 @@ def render_comparison_view(youtube_service):
     """
     st.header("Channel Data Comparison")
     
-    # Get data from session state
-    db_data = st.session_state.db_data
-    api_data = st.session_state.api_data
-    channel_id = st.session_state.existing_channel_id
+    # Get data from session state with improved error handling
+    db_data = st.session_state.get('db_data', {})
+    api_data = st.session_state.get('api_data', {})
+    channel_id = st.session_state.get('existing_channel_id')
     
-    if not db_data or not api_data:
+    # Check if we have valid data for comparison
+    if db_data is None or api_data is None:
         st.error("Missing comparison data. Please try refreshing the channel data again.")
         if st.button("Back to Update Channel"):
             st.session_state.compare_data_view = False
             st.rerun()
         return
     
+    # Ensure we have dictionaries, not some other type
+    if not isinstance(db_data, dict) or not isinstance(api_data, dict):
+        st.error("Invalid data format for comparison. Please try refreshing the channel data again.")
+        debug_log(f"Invalid data types: db_data={type(db_data)}, api_data={type(api_data)}")
+        if st.button("Back to Update Channel"):
+            st.session_state.compare_data_view = False
+            st.rerun()
+        return
+    
+    # Empty dictionaries with no data
+    if not db_data and not api_data:
+        st.warning("Both database and API data are empty. Please try refreshing the data.")
+        if st.button("Back to Update Channel"):
+            st.session_state.compare_data_view = False
+            st.rerun()
+        return
+    
     # Show channel name and summary
-    channel_name = api_data.get('channel_name', 'Unknown Channel')
+    channel_name = api_data.get('channel_name', db_data.get('channel_name', 'Unknown Channel'))
     
     st.markdown(f"### Comparing data for: {channel_name}")
     st.markdown("""
@@ -323,18 +341,30 @@ def render_api_db_comparison(st):
     Args:
         st: Streamlit instance
     """
-    # Get data from session state
-    db_data = st.session_state.get('db_data')
-    api_data = st.session_state.get('api_data')
+    # Get data from session state with improved error handling
+    db_data = st.session_state.get('db_data', {})
+    api_data = st.session_state.get('api_data', {})
     channel_id = st.session_state.get('existing_channel_id')
     delta = st.session_state.get('delta', {})
     
-    if not db_data or not api_data:
+    # Validate that we have proper data
+    if db_data is None or api_data is None:
         st.error("Missing comparison data. Please try refreshing the channel data again.")
+        return
+    
+    # Ensure we have dictionaries, not some other type
+    if not isinstance(db_data, dict) or not isinstance(api_data, dict):
+        st.error("Invalid data format for comparison. Please try refreshing the channel data again.")
+        debug_log(f"Invalid data types: db_data={type(db_data)}, api_data={type(api_data)}")
+        return
+    
+    # Empty dictionaries with no data
+    if not db_data and not api_data:
+        st.warning("Both database and API data are empty. Please try refreshing the data.")
         return
 
     # Show channel name and summary
-    channel_name = api_data.get('channel_name', 'Unknown Channel')
+    channel_name = api_data.get('channel_name', db_data.get('channel_name', 'Unknown Channel'))
     
     st.markdown(f"### Comparing data for: {channel_name}")
     
@@ -347,10 +377,17 @@ def render_api_db_comparison(st):
             # Using st.write instead of st.markdown for the section header to match test expectations
             st.write("### Database Data")
             
-            # Calculate values for metrics
-            subscribers_db = int(db_data.get('subscribers', 0))
-            views_db = int(db_data.get('views', 0))
-            videos_db = int(db_data.get('total_videos', 0))
+            # Calculate values for metrics with improved error handling
+            try:
+                subscribers_db = int(db_data.get('subscribers', 0))
+                views_db = int(db_data.get('views', 0))
+                videos_db = int(db_data.get('total_videos', 0))
+            except (ValueError, TypeError):
+                # Handle conversion errors gracefully
+                subscribers_db = 0
+                views_db = 0
+                videos_db = 0
+                debug_log("Error converting DB metrics to integers")
             
             # Use st.metric() for proper display with delta indicators (needed for test_api_data_display)
             # Use format_compact to ensure test compatibility
@@ -373,10 +410,17 @@ def render_api_db_comparison(st):
             # Using st.write instead of st.markdown for the section header to match test expectations
             st.write("### API Data")
             
-            # Calculate values for metrics
-            subscribers_api = int(api_data.get('subscribers', 0))
-            views_api = int(api_data.get('views', 0))
-            videos_api = int(api_data.get('total_videos', 0))
+            # Calculate values for metrics with improved error handling
+            try:
+                subscribers_api = int(api_data.get('subscribers', 0))
+                views_api = int(api_data.get('views', 0))
+                videos_api = int(api_data.get('total_videos', 0))
+            except (ValueError, TypeError):
+                # Handle conversion errors gracefully
+                subscribers_api = 0
+                views_api = 0
+                videos_api = 0
+                debug_log("Error converting API metrics to integers")
             
             # Calculate the delta values
             subscribers_delta = subscribers_api - subscribers_db
@@ -443,14 +487,28 @@ def render_api_db_comparison(st):
                 st.error(f"Error updating database: {str(e)}")
                 debug_log(f"Database update error: {str(e)}", e)
                 
-    # Check for new videos and display them
-    if 'video_id' in db_data and 'video_id' in api_data:
-        db_video_ids = {v.get('video_id') for v in db_data.get('video_id', []) if isinstance(v, dict)}
-        api_video_ids = {v.get('video_id') for v in api_data.get('video_id', []) if isinstance(v, dict)}
-        
-        new_videos = [v for v in api_data.get('video_id', []) if v.get('video_id') in (api_video_ids - db_video_ids)]
-        
-        if new_videos:
-            st.success(f"✅ {len(new_videos)} new videos found in API data!")
-            for video in new_videos:
-                st.write(f"**{video.get('title')}** - {format_number(int(video.get('views', 0)))} views")
+    # Check for new videos and display them with improved error handling
+    try:
+        if 'video_id' in db_data and 'video_id' in api_data:
+            if isinstance(db_data.get('video_id'), list) and isinstance(api_data.get('video_id'), list):
+                db_video_ids = {v.get('video_id') for v in db_data.get('video_id', []) 
+                               if isinstance(v, dict) and v.get('video_id')}
+                api_video_ids = {v.get('video_id') for v in api_data.get('video_id', []) 
+                                if isinstance(v, dict) and v.get('video_id')}
+                
+                new_videos = [v for v in api_data.get('video_id', []) 
+                             if isinstance(v, dict) and v.get('video_id') in (api_video_ids - db_video_ids)]
+                
+                if new_videos:
+                    st.success(f"✅ {len(new_videos)} new videos found in API data!")
+                    for video in new_videos:
+                        try:
+                            view_count = int(video.get('views', 0))
+                            formatted_views = format_number(view_count)
+                        except (ValueError, TypeError):
+                            formatted_views = "0"
+                        
+                        st.write(f"**{video.get('title', 'Untitled')}** - {formatted_views} views")
+    except Exception as e:
+        st.warning("Error processing video data for comparison.")
+        debug_log(f"Video comparison error: {str(e)}", e)

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import random
 import googleapiclient.discovery
 import googleapiclient.errors
 import streamlit as st
@@ -129,35 +130,42 @@ class YouTubeBaseClient:
             error: The exception that was raised
             operation: The operation that failed
         """
-        error_msg = str(error)
-        error_details = ""
-        
-        try:
-            if hasattr(error, 'content'):
-                error_content = json.loads(error.content.decode())
-                error_reason = error_content.get('error', {}).get('errors', [{}])[0].get('reason', 'unknown')
-                error_message = error_content.get('error', {}).get('message', 'Unknown error')
-                error_details = f"Reason: {error_reason}, Message: {error_message}"
-        except:
-            error_details = "Could not parse error details"
+        if isinstance(error, googleapiclient.errors.HttpError):
+            status_code = error.resp.status
             
-        log_msg = f"YouTube API error in {operation}: {error_msg} - {error_details}"
-        debug_log(log_msg)
-        logging.error(log_msg)
-        
-        # Update session state for debug panel
-        if hasattr(st, 'session_state'):
-            st.session_state.api_last_error = log_msg
-            st.session_state.api_call_status = f"Error in {operation}"
-        
-        # Increment error count
-        self._error_count += 1
-        
-        # If too many errors, reset client
-        if self._error_count > 5:
-            debug_log("Too many API errors. Resetting client.")
-            self._initialized = False
-            self._error_count = 0
+            # Handle rate limiting (429) with exponential backoff
+            if status_code == 429:
+                debug_log(f"Rate limit exceeded during {operation}. Implementing backoff...")
+                
+                # Start with a 1-second delay and add jitter
+                for attempt in range(1, 4):  # Try up to 3 times
+                    # Calculate exponential backoff with jitter
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    debug_log(f"Backing off for {delay:.2f} seconds (attempt {attempt})")
+                    
+                    # Sleep for the calculated delay
+                    time.sleep(delay)
+                    
+                    try:
+                        # Try the operation again
+                        debug_log(f"Retrying operation after backoff...")
+                        return
+                    except googleapiclient.errors.HttpError as retry_error:
+                        # If we get another rate limit error, continue the backoff loop
+                        if retry_error.resp.status == 429:
+                            continue
+                        else:
+                            # If it's a different error, re-raise it
+                            debug_log(f"Error during retry after backoff: {str(retry_error)}")
+                            raise
+            
+            # Handle other HTTP errors
+            error_message = f"YouTube API error during {operation}: {error.resp.status} {error.resp.reason}"
+            debug_log(error_message)
+            
+        else:
+            # Handle non-HTTP errors
+            debug_log(f"Error during {operation}: {str(error)}")
 
     def store_in_cache(self, key: str, value: Any, ttl_seconds: int = 3600):
         """Store a value in the cache
