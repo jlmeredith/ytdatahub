@@ -1,3 +1,4 @@
+print("[TEST DEBUG] base_fixture.py loaded")
 """
 Base fixtures for YouTube data hub tests.
 Contains common test fixtures and helper methods used across test suites.

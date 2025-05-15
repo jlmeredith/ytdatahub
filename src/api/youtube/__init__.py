@@ -84,9 +84,13 @@ class YouTubeAPI:
         """Get detailed information for a batch of videos by their IDs"""
         return self.video_client.get_videos_details(video_ids)
     
-    def get_video_comments(self, channel_info, max_comments_per_video=10):
+    def get_video_details_batch(self, video_ids):
+        """Get detailed information for a batch of videos by their IDs (backward compatible alias)"""
+        return self.video_client.get_video_details_batch(video_ids)
+    
+    def get_video_comments(self, channel_info, max_comments_per_video=10, page_token=None):
         """Get comments for each video in the channel"""
-        return self.comment_client.get_video_comments(channel_info, max_comments_per_video)
+        return self.comment_client.get_video_comments(channel_info, max_comments_per_video, page_token=page_token)
     
     def resolve_custom_channel_url(self, custom_url_or_handle):
         """Resolve a custom URL or handle (@username) to a channel ID"""

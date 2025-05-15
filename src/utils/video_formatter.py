@@ -192,16 +192,24 @@ def extract_video_views(video, format_func=None):
 def fix_missing_views(videos_data):
     """
     Advanced function to diagnose and fix missing view data in videos
+    Also handles extracting comment counts from statistics.
     
     Args:
         videos_data (list): List of video dictionaries
         
     Returns:
-        list: The same list with updated view data
+        list: The same list with updated view data and comment counts
     """
     if not videos_data or not isinstance(videos_data, list):
         return videos_data
-        
+    
+    # First - process all videos specifically for comment counts
+    # We need to do this first, separate from the view count processing
+    for video in videos_data:
+        if isinstance(video, dict) and 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
+            video['comment_count'] = video['statistics']['commentCount']
+            debug_log(f"Preprocess: Added comment_count from statistics: {video['statistics']['commentCount']}")
+            
     debug_log(f"Running fix_missing_views on {len(videos_data)} videos")
     
     for i, video in enumerate(videos_data):
@@ -220,6 +228,11 @@ def fix_missing_views(videos_data):
             
         debug_log(f"Attempting to fix missing views for video {video_id}")
         
+        # Always check for comment count regardless of view count status
+        if 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
+            video['comment_count'] = video['statistics']['commentCount']
+            debug_log(f"Added comment_count from statistics.commentCount: {video['statistics']['commentCount']} for video {video_id}")
+                
         # First try direct access to statistics.viewCount
         # This is the most common location in the YouTube API
         if 'statistics' in video:
@@ -247,6 +260,15 @@ def fix_missing_views(videos_data):
             view_count = match.group(1)
             video['views'] = view_count
             debug_log(f"Extracted views for {video_id} using regex: {view_count}")
+            
+            # Also look for commentCount while we're at it
+            commentcount_pattern = r'"commentCount":\s*"?(\d+)"?'
+            comment_match = re.search(commentcount_pattern, raw_video_str)
+            if comment_match and ('comment_count' not in video or not video['comment_count']):
+                comment_count = comment_match.group(1)
+                video['comment_count'] = comment_count
+                debug_log(f"Extracted comment_count for {video_id} using regex: {comment_count}")
+            
             continue
             
         # If we still don't have views, try additional locations
@@ -256,7 +278,10 @@ def fix_missing_views(videos_data):
                 if 'viewCount' in video['contentDetails']['statistics']:
                     video['views'] = video['contentDetails']['statistics']['viewCount']
                     debug_log(f"Fixed views for {video_id} from contentDetails.statistics.viewCount")
-                    continue
+                if 'commentCount' in video['contentDetails']['statistics'] and ('comment_count' not in video or not video['comment_count']):
+                    video['comment_count'] = video['contentDetails']['statistics']['commentCount']
+                    debug_log(f"Fixed comment_count for {video_id} from contentDetails.statistics.commentCount")
+                continue
         
         # Look for any field containing 'view' in its name (case insensitive)
         view_related_fields = [k for k in video.keys() if 'view' in k.lower() and k.lower() != 'preview']
@@ -271,6 +296,10 @@ def fix_missing_views(videos_data):
             if isinstance(value, dict) and 'viewCount' in value:
                 video['views'] = value['viewCount']
                 debug_log(f"Found viewCount in property {key} for {video_id}")
+                # Also look for commentCount in the same property
+                if 'commentCount' in value and ('comment_count' not in video or not video['comment_count']):
+                    video['comment_count'] = value['commentCount']
+                    debug_log(f"Found commentCount in property {key} for {video_id}")
                 continue
             
             # Look in dict values for anything containing view-related keywords 
@@ -292,10 +321,14 @@ def fix_missing_views(videos_data):
     
     # Count how many videos were fixed
     fixed_count = 0
+    comment_count = 0
     for video in videos_data:
         if isinstance(video, dict) and 'views' in video and video['views'] and str(video['views']) != '0':
             fixed_count += 1
+        if isinstance(video, dict) and 'comment_count' in video and video['comment_count']:
+            comment_count += 1
             
     debug_log(f"Views extraction complete: {fixed_count}/{len(videos_data)} videos have valid view counts")
+    debug_log(f"Comment count extraction complete: {comment_count}/{len(videos_data)} videos have valid comment counts")
     
     return videos_data

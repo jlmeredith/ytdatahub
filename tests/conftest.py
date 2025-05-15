@@ -1,6 +1,7 @@
 """
 Pytest configuration and fixtures for YTDataHub tests.
 """
+print("[TEST DEBUG] conftest.py loaded")
 import os
 import json
 import pytest
@@ -20,6 +21,7 @@ class SessionStateMock(dict):
 
 @pytest.fixture
 def mock_youtube_api():
+    print("[TEST DEBUG] conftest.py: mock_youtube_api fixture called")
     """
     Fixture that provides a mock YouTube API object
     """
@@ -155,6 +157,7 @@ def mock_youtube_api():
 
 @pytest.fixture
 def mock_sqlite_db():
+    print("[TEST DEBUG] conftest.py: mock_sqlite_db fixture called")
     """
     Fixture that provides a mock SQLite database
     """
@@ -206,6 +209,7 @@ def mock_sqlite_db():
 
 @pytest.fixture
 def sample_channel_data():
+    print("[TEST DEBUG] conftest.py: sample_channel_data fixture called")
     """
     Fixture providing sample channel data for testing
     """
@@ -245,6 +249,7 @@ def sample_channel_data():
 
 @pytest.fixture
 def sample_collection_options():
+    print("[TEST DEBUG] conftest.py: sample_collection_options fixture called")
     """
     Fixture providing sample collection options for testing
     """
@@ -260,6 +265,7 @@ def sample_collection_options():
 # Create a better patch for streamlit to prevent st.xxx commands from failing in tests
 @pytest.fixture(autouse=True)
 def mock_streamlit():
+    print("[TEST DEBUG] conftest.py: mock_streamlit fixture called")
     """
     Fixture to mock all streamlit functions to prevent failures during testing
     """

@@ -21,7 +21,7 @@ class YouTubeTestFactory:
     
     @staticmethod
     def create_mock_service():
-        """Create a mock YouTube service with preset behavior"""
+        print("[TEST DEBUG] YouTubeTestFactory.create_mock_service called")
         mock_api = MagicMock(spec=YouTubeAPI)
         mock_db = MagicMock(spec=SQLiteDatabase)
         
@@ -37,6 +37,13 @@ class YouTubeTestFactory:
             'total_videos': '50'
         }
         
+        if hasattr(mock_api, 'get_video_details_batch'):
+            mock_api.get_video_details_batch.return_value = {'items': [], 'nextPageToken': None}
+        if hasattr(mock_api, 'get_videos_details'):
+            mock_api.get_videos_details.return_value = {'items': [], 'nextPageToken': None}
+        # Patch: Always mock execute_api_request to return a minimal valid response
+        mock_api.execute_api_request = MagicMock(return_value={})
+
         # Create service
         service = YouTubeService("test_api_key")
         service.api = mock_api
@@ -62,9 +69,9 @@ class YouTubeTestFactory:
         channel_data = {
             'channel_id': channel_id,
             'channel_name': 'Test Channel',
-            'subscribers': subs,
-            'views': views,
-            'total_videos': videos,
+            'subscribers': int(subs),
+            'views': int(views),
+            'total_videos': int(videos),
             'channel_description': 'This is a test channel',
             'playlist_id': 'PL_test_playlist'
         }
@@ -78,11 +85,17 @@ class YouTubeTestFactory:
                     'video_description': f'Test video description {i+1}',
                     'published_at': '2025-04-01T12:00:00Z',
                     'published_date': '2025-04-01',
-                    'views': f'{15000 * (i+1)}',
-                    'likes': f'{1200 * (i+1)}',
-                    'comment_count': f'{300 * (i+1)}',
+                    'views': 15000 * (i+1),
+                    'likes': 1200 * (i+1),
+                    'comment_count': 300 * (i+1),
                     'duration': 'PT10M30S',
-                    'thumbnails': f'https://example.com/thumb{i+1}.jpg'
+                    'thumbnails': f'https://example.com/thumb{i+1}.jpg',
+                    # Add statistics field to match YouTube API structure
+                    'statistics': {
+                        'viewCount': str(15000 * (i+1)),
+                        'likeCount': str(1200 * (i+1)),
+                        'commentCount': str(300 * (i+1))
+                    }
                 }
                 
                 if include_comments:
@@ -92,7 +105,7 @@ class YouTubeTestFactory:
                             'comment_text': f'Comment {j+1} on video {i+1}',
                             'comment_author': f'Test User {j+1}',
                             'comment_published_at': '2025-04-02T10:00:00Z',
-                            'like_count': f'{50 * (j+1)}'
+                            'like_count': 50 * (j+1)
                         } for j in range(3)  # 3 comments per video
                     ]
                 
@@ -112,18 +125,90 @@ class YouTubeTestFactory:
     
     @staticmethod
     def configure_mock_api_for_workflow(mock_api, channel_data=None, video_data=None, comment_data=None):
-        """Configure a mock API to return specified responses"""
+        print(f"[TEST DEBUG] YouTubeTestFactory.configure_mock_api_for_workflow called with channel_data={channel_data is not None}, video_data={video_data is not None}, comment_data={comment_data is not None}")
         if channel_data:
             mock_api.get_channel_info.return_value = channel_data
-        
+        # --- PATCH: Robust, always-terminating pagination for get_channel_videos ---
         if video_data:
-            mock_api.get_channel_videos.return_value = video_data
-            
+            # Simulate two pages: first with data, second empty with nextPageToken=None
+            def paginated_videos(*args, **kwargs):
+                # Robustly extract pageToken from args or kwargs (support both snake_case and camelCase)
+                page_token = None
+                # Check both 'pageToken' and 'page_token' in kwargs
+                if 'pageToken' in kwargs:
+                    page_token = kwargs['pageToken']
+                elif 'page_token' in kwargs:
+                    page_token = kwargs['page_token']
+                elif args:
+                    # Try to find pageToken or page_token in positional args (if used)
+                    for arg in args:
+                        if isinstance(arg, dict):
+                            if 'pageToken' in arg:
+                                page_token = arg['pageToken']
+                                break
+                            elif 'page_token' in arg:
+                                page_token = arg['page_token']
+                                break
+                print(f"[MOCK get_channel_videos] Called with page_token={page_token}")
+                if not page_token:
+                    import copy
+                    first_page = {'video_id': copy.deepcopy(video_data.get('video_id', [{'video_id': 'vid1'}])), 'nextPageToken': 'PAGE2'}
+                    print(f"[MOCK get_channel_videos] Returning first page: {first_page}")
+                    return first_page
+                else:
+                    second_page = {'video_id': [], 'nextPageToken': None}
+                    print(f"[MOCK get_channel_videos] Returning second page: {second_page}")
+                    return second_page
+            mock_api.get_channel_videos.side_effect = paginated_videos
+            mock_api._video_call_counter = {'count': 0}  # For compatibility
+        else:
+            mock_api.get_channel_videos.return_value = {'video_id': [], 'nextPageToken': None}
+        # --- PATCH: Robust, always-terminating pagination for get_video_comments ---
         if comment_data:
-            mock_api.get_video_comments.return_value = comment_data
-            
+            first_comment_page = dict(comment_data)
+            first_comment_page['nextPageToken'] = 'PAGE2'
+            second_comment_page = dict(comment_data)
+            second_comment_page['items'] = []
+            second_comment_page['nextPageToken'] = None
+            comment_call_counter = {}
+            def paginated_comments(*args, **kwargs):
+                # Robustly extract video_id string
+                video_id = None
+                if args:
+                    arg0 = args[0]
+                    if isinstance(arg0, dict) and 'video_id' in arg0:
+                        video_id = arg0['video_id']
+                    elif isinstance(arg0, list) and arg0 and isinstance(arg0[0], dict) and 'video_id' in arg0[0]:
+                        video_id = arg0[0]['video_id']
+                    else:
+                        video_id = str(arg0)
+                elif 'video_id' in kwargs:
+                    video_id = kwargs['video_id']
+                else:
+                    video_id = 'default'
+                if video_id not in comment_call_counter:
+                    comment_call_counter[video_id] = 0
+                comment_call_counter[video_id] += 1
+                print(f"[MOCK get_video_comments] Call #{comment_call_counter[video_id]} for video_id={video_id}")
+                if comment_call_counter[video_id] == 1:
+                    print(f"[MOCK get_video_comments] Returning first page: {first_comment_page}")
+                    return first_comment_page
+                else:
+                    print(f"[MOCK get_video_comments] Returning second page: {second_comment_page}")
+                    return second_comment_page
+            mock_api.get_video_comments.side_effect = paginated_comments
+        else:
+            mock_api.get_video_comments.return_value = {'items': [], 'nextPageToken': None}
+        # --- PATCH: Always set get_video_details_batch and get_videos_details to a minimal valid response ---
+        mock_api.get_video_details_batch.return_value = {'items': []}
+        mock_api.get_videos_details.return_value = {'items': []}
         return mock_api
     
+    @staticmethod
+    def reset_video_pagination_counter(mock_api):
+        if hasattr(mock_api, '_video_call_counter'):
+            mock_api._video_call_counter['count'] = 0
+
     @staticmethod
     def create_delta_scenario(initial_state, updated_state):
         """Create a scenario for testing delta updates"""
@@ -260,6 +345,7 @@ class YouTubeTestFactory:
             }
             
             channel_data = service.collect_channel_data('UC_test_channel', step1_options)
+            print('[TEST DEBUG] Step 1 (channel) complete')
             results['channel'] = channel_data
             current_data = channel_data
             
@@ -274,6 +360,7 @@ class YouTubeTestFactory:
             
             video_data = service.collect_channel_data('UC_test_channel', step2_options, 
                                                      existing_data=current_data)
+            print('[TEST DEBUG] Step 2 (videos) complete')
             results['videos'] = video_data
             current_data = video_data
             
@@ -288,6 +375,7 @@ class YouTubeTestFactory:
             
             comment_data = service.collect_channel_data('UC_test_channel', step3_options, 
                                                       existing_data=current_data)
+            print('[TEST DEBUG] Step 3 (comments) complete')
             results['comments'] = comment_data
             current_data = comment_data
             
@@ -295,8 +383,10 @@ class YouTubeTestFactory:
         if steps_config.get('save', False) and current_data:
             with patch('src.storage.factory.StorageFactory.get_storage_provider', return_value=mock_db):
                 save_result = service.save_channel_data(current_data, 'SQLite Database')
+                print('[TEST DEBUG] Step 4 (save) complete')
                 results['save'] = save_result
         
+        print('[TEST DEBUG] Pipeline complete')
         return results, current_data
 
     @staticmethod

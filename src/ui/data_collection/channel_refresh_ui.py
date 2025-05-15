@@ -10,6 +10,7 @@ from src.config import SQLITE_DB_PATH
 from .debug_ui import StringIOHandler
 from .utils.data_conversion import format_number
 from src.utils.video_formatter import ensure_views_data, extract_video_views, fix_missing_views
+from src.utils.video_processor import process_video_data
 
 def channel_refresh_section(youtube_service):
     """Render the channel refresh section of the data collection UI."""
@@ -355,8 +356,15 @@ def channel_refresh_section(youtube_service):
                             debug_log(f"First video keys: {list(video_list[0].keys()) if isinstance(video_list[0], dict) else 'Not a dict'}")
                             debug_log(f"First video views: {video_list[0].get('views', 'Not found')}")
                             
-                            # Fix views data using our advanced utility function
+                            # Fix views AND comment data using our advanced utility functions
                         from src.utils.video_formatter import fix_missing_views
+                        from src.utils.video_processor import process_video_data
+                        
+                        # First process data to ensure comment counts are properly extracted
+                        debug_log("Applying process_video_data to video list")
+                        video_list = process_video_data(video_list)
+                        
+                        # Then apply fix_missing_views for backward compatibility
                         debug_log("Applying fix_missing_views to video list")
                         video_list = fix_missing_views(video_list)
                         
@@ -365,6 +373,7 @@ def channel_refresh_section(youtube_service):
                             first_video = video_list[0]
                             video_id = first_video.get('video_id', 'unknown')
                             debug_log(f"First video {video_id} views after fixing: {first_video.get('views', 'Not found')}")
+                            debug_log(f"First video {video_id} comment_count: {first_video.get('comment_count', 'Not found')}")
                             
                             # Show views from utility function
                             formatted_views = extract_video_views(first_video, format_number)
@@ -462,12 +471,16 @@ def channel_refresh_section(youtube_service):
                         
                         # Display comprehensive debug info
                         st.code(f"Original 'views' field: {original_views}")
+                        st.code(f"Original 'comment_count' field: {first_video.get('comment_count', 'Not found')}")
                         st.code(f"Has statistics object: {has_statistics}")
                         if has_statistics:
                             st.code(f"Raw statistics object: {statistics_obj}")
                         st.code(f"Has viewCount in statistics: {has_viewCount}")
+                        st.code(f"Has commentCount in statistics: {'commentCount' in statistics_obj if has_statistics else False}")
                         st.code(f"statistics.viewCount: {statistics_viewCount}")
+                        st.code(f"statistics.commentCount: {statistics_obj.get('commentCount', 'Not found') if has_statistics else 'No statistics object'}")
                         st.code(f"contentDetails.statistics.viewCount: {first_video.get('contentDetails', {}).get('statistics', {}).get('viewCount', 'Not found')}")
+                        st.code(f"contentDetails.statistics.commentCount: {first_video.get('contentDetails', {}).get('statistics', {}).get('commentCount', 'Not found')}")
                         st.code(f"Extracted raw value: {views_extracted}")
                         st.code(f"Extracted formatted value: {views_formatted}")
                         st.code(f"Final used value: {views_extracted if views_extracted != '0' else 'No valid views found'}")
@@ -493,8 +506,15 @@ def channel_refresh_section(youtube_service):
                 st.subheader("All Video Data")
                 st.json(videos_data)
             
-            # Process videos to fix views before display
+            # Process videos to fix views and comments before display
             from src.utils.video_formatter import fix_missing_views
+            from src.utils.video_processor import process_video_data
+            
+            # First process with the processor to handle both views and comment counts
+            debug_log("Applying process_video_data to video data")
+            videos_data = process_video_data(videos_data)
+            
+            # Then apply fix_missing_views for backward compatibility
             debug_log("Applying fix_missing_views to video data")
             videos_data = fix_missing_views(videos_data)
             
@@ -524,11 +544,19 @@ def channel_refresh_section(youtube_service):
                 # If we're getting 0 views, there's either an API issue or extraction problem
                 debug_log(f"Video {video_id} views extracted by utility: {views}")
                 
+                # Extract comment count
+                comment_count = video.get('comment_count', '0')
+                debug_log(f"Video {video_id} comment_count: {comment_count}")
+                
+                # Format comment count
+                formatted_comment_count = format_number(comment_count) if comment_count else '0'
+                
                 video_data_for_display.append({
                     "Video ID": video_id,
                     "Title": title,
                     "Published Date": published,
-                    "Views": views
+                    "Views": views,
+                    "Comments": formatted_comment_count
                 })
             
             if video_data_for_display:

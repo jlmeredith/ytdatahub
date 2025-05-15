@@ -8,21 +8,7 @@ This document provides a consolidated guide to working with the YouTube API in Y
 
 YTDataHub implements a modular architecture for YouTube API interactions that improves maintainability, separates concerns, and optimizes API usage. The architecture consists of specialized client components that focus on specific areas of functionality.
 
-![YouTube API Architecture](./images/youtube-api-architecture.png)
-
-### Component Structure
-
-The API client architecture is organized as follows:
-
-```
-src/api/youtube/
-  ├── __init__.py        # Package initialization
-  ├── base.py            # Base client with common functionality
-  ├── channel.py         # Channel-specific operations
-  ├── video.py           # Video-specific operations
-  ├── comment.py         # Comment-specific operations
-  └── resolver.py        # Channel URL/handle resolution
-```
+For detailed information about the architecture, including component structure, class relationships, and implementation details, please see the [YouTube API Architecture](youtube-api-architecture.md) document.
 
 ### Core Components
 
@@ -32,32 +18,18 @@ src/api/youtube/
 4. **Comment Client**: Focuses on comment retrieval and threading
 5. **Channel Resolver**: Specializes in resolving various channel identifiers
 
-### Integration Class
+## Understanding API Quota
 
-The `YouTubeAPI` class in `src/api/youtube_api.py` integrates all specialized clients while maintaining backward compatibility with existing code.
+The YouTube Data API uses a quota system where different operations consume different amounts of your daily quota (default is 10,000 units). For detailed information on quota costs and optimization strategies, please see the comprehensive [YouTube API Quota Guide](youtube-api-quota-guide.md).
 
-## Understanding API Quota Costs
+### Summary of Quota Costs
 
-The YouTube Data API uses a quota system where different operations consume different amounts of your daily quota (default is 10,000 units).
-
-### API Operation Costs
-
-| Operation Type            | API Method                                 | Quota Cost | Purpose                                               |
-| ------------------------- | ------------------------------------------ | ---------- | ----------------------------------------------------- |
-| **Channel Operations**    |
-| Reading channel data      | `channels.list`                            | 1 unit     | Retrieve channel metadata                             |
-| Updating channel metadata | `channels.update`                          | 50 units   | Modify channel details                                |
-| **Video Operations**      |
-| Listing videos            | `playlistItems.list`                       | 1 unit     | List videos from a playlist (up to 50 per request)    |
-| Video details             | `videos.list`                              | 1 unit     | Get detailed video information (up to 50 per request) |
-| Uploading videos          | `videos.insert`                            | 1600 units | Upload a new video                                    |
-| **Comment Operations**    |
-| Reading comments          | `commentThreads.list`, `comments.list`     | 1 unit     | Retrieve comments/replies                             |
-| Adding comments           | `commentThreads.insert`, `comments.insert` | ~50 units  | Post new comments/replies                             |
-| Updating comments         | `comments.update`                          | ~50 units  | Modify comment content                                |
-| Deleting comments         | `comments.delete`                          | ~50 units  | Remove comments                                       |
-| **Search Operations**     |
-| Search                    | `search.list`                              | 100 units  | Search across YouTube                                 |
+| Operation Type    | Example API Methods                  | Typical Cost | Key Consideration                     |
+| ----------------- | ------------------------------------ | ------------ | ------------------------------------- |
+| Read operations   | `channels.list`, `videos.list`       | 1 unit       | Very efficient, use freely            |
+| Write operations  | `channels.update`, `comments.update` | 50 units     | Expensive, minimize usage             |
+| Search operations | `search.list`                        | 100 units    | Very expensive, use sparingly         |
+| Upload operations | `videos.insert`                      | 1600 units   | Extremely expensive, carefully manage |
 
 ### General Strategy
 

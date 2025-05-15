@@ -1,3 +1,5 @@
+print("[TEST DEBUG] data_collection_fixture.py loaded")
+
 """
 Fixtures for data collection workflow tests.
 Extends the base fixture with data collection specific test methods.

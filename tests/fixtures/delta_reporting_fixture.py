@@ -2,6 +2,7 @@
 Fixtures for delta reporting functionality tests.
 Extends the base fixture with delta reporting specific test methods.
 """
+print("[TEST DEBUG] delta_reporting_fixture.py loaded")
 import pytest
 from unittest.mock import patch
 from tests.fixtures.base_fixture import BaseYouTubeTestFixture

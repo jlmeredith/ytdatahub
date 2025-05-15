@@ -12,7 +12,7 @@ from src.api.youtube.base import YouTubeBaseClient
 class CommentClient(YouTubeBaseClient):
     """YouTube Data API client focused on comment operations"""
     
-    def get_video_comments(self, channel_info: Dict[str, Any], max_comments_per_video: int = 10) -> Optional[Dict[str, Any]]:
+    def get_video_comments(self, channel_info: Dict[str, Any], max_comments_per_video: int = 10, page_token: str = None) -> Optional[Dict[str, Any]]:
         """
         Get comments for each video in the channel with optimal quota usage.
         
@@ -26,6 +26,7 @@ class CommentClient(YouTubeBaseClient):
         Args:
             channel_info: Dictionary containing channel information with videos
             max_comments_per_video: Maximum number of comments to fetch per video (0 to skip)
+            page_token: Token for pagination support across multiple calls
             
         Returns:
             Updated channel_info dictionary with comment data or None if failed
@@ -80,7 +81,11 @@ class CommentClient(YouTubeBaseClient):
                 
                 if cached_comments is not None:
                     debug_log(f"COMMENT DEBUG: Using cached comments for video: {video_id}")
-                    video['comments'] = cached_comments
+                    # Initialize comments array if it doesn't exist
+                    if 'comments' not in video:
+                        video['comments'] = []
+                    # Extend existing comments with cached ones
+                    video['comments'].extend(cached_comments)
                     debug_log(f"COMMENT DEBUG: Retrieved {len(cached_comments)} comments from cache for '{video_title}'")
                     comments_fetched_total += len(cached_comments)
                     if len(cached_comments) > 0:
@@ -127,8 +132,35 @@ class CommentClient(YouTubeBaseClient):
                     
                     # Now retrieve comments with pagination to get up to max_comments_per_video
                     comments = []
+                    # First check if this video already has a nextPageToken from a previous call
+                    # This is important for continuing pagination where we left off
                     next_page_token = None
+                    
+                    # Option 1: Check if the video has a nextPageToken property directly
+                    if 'nextPageToken' in video:
+                        next_page_token = video.get('nextPageToken')
+                        debug_log(f"COMMENT DEBUG: Found video-specific nextPageToken: {next_page_token}")
+                    
+                    # Option 2: If no token in the video object, use the provided page_token parameter 
+                    # This is from the service-level pagination
+                    if not next_page_token and page_token:
+                        next_page_token = page_token
+                        debug_log(f"COMMENT DEBUG: Using service-provided page_token: {next_page_token}")
+                        
+                    # Store the page token on the video object to ensure it's preserved across calls
+                    if next_page_token:
+                        video['nextPageToken'] = next_page_token
+                        
                     comments_to_fetch = max_comments_per_video
+                    
+                    # If this video already has comments (from previous pagination), include them in our count
+                    if 'comments' in video and isinstance(video['comments'], list) and len(video['comments']) > 0:
+                        current_comments = len(video['comments'])
+                        debug_log(f"COMMENT DEBUG: Video already has {current_comments} comments from previous pagination")
+                        # Adjust our fetch count based on existing comments
+                        if max_comments_per_video > 0:  # Only adjust if we have a limit
+                            comments_to_fetch = max(0, max_comments_per_video - current_comments)
+                            debug_log(f"COMMENT DEBUG: Adjusted comments_to_fetch to {comments_to_fetch}")
                     
                     # Check if we have an ETag for this video's comments
                     etag_key = f"etag_comments_{video_id}"
@@ -140,17 +172,20 @@ class CommentClient(YouTubeBaseClient):
                         current_fetch_count = min(100, comments_to_fetch)
                         
                         # Create base request
-                        comments_request = self.youtube.commentThreads().list(
-                            part="snippet,replies",  # Get both top-level comments and their replies
-                            videoId=video_id,
-                            maxResults=current_fetch_count,
-                            textFormat="plainText",   
-                            order="relevance"         
-                        )
+                        request_params = {
+                            "part": "snippet,replies",  # Get both top-level comments and their replies
+                            "videoId": video_id,
+                            "maxResults": current_fetch_count,
+                            "textFormat": "plainText",   
+                            "order": "relevance"
+                        }
                         
                         # Add page token if we're paginating
                         if next_page_token:
-                            comments_request.uri = comments_request.uri + "&pageToken=" + next_page_token
+                            request_params["pageToken"] = next_page_token
+                            debug_log(f"COMMENT DEBUG: Using page token {next_page_token} for pagination")
+                            
+                        comments_request = self.youtube.commentThreads().list(**request_params)
                         
                         # Add ETag for conditional request if available
                         if etag:
@@ -213,14 +248,23 @@ class CommentClient(YouTubeBaseClient):
                         # Check if there are more pages of comments
                         if 'nextPageToken' in comments_response and comments_to_fetch > 0:
                             next_page_token = comments_response['nextPageToken']
-                            debug_log(f"COMMENT DEBUG: More comments available, using pageToken: {next_page_token}")
+                            # Store the next page token on the video for subsequent pagination
+                            video['nextPageToken'] = next_page_token
+                            debug_log(f"COMMENT DEBUG: More comments available, storing pageToken on video: {next_page_token}")
                         else:
+                            # Clear the nextPageToken if we've reached the end
+                            if 'nextPageToken' in video:
+                                del video['nextPageToken']
                             debug_log(f"COMMENT DEBUG: No more comment pages or reached max limit for video '{video_title}'")
                             break
                     
-                    # Add comments to the video
-                    video['comments'] = comments
-                    debug_log(f"COMMENT DEBUG: Added {len(comments)} comments to video '{video_title}'")
+                    # Add comments to the video - if there are already comments, append to them
+                    if 'comments' not in video:
+                        video['comments'] = []  # Initialize to empty list first
+                    # Always extend with comments from this page
+                    video['comments'].extend(comments)
+                    
+                    debug_log(f"COMMENT DEBUG: Added/Updated to total of {len(video['comments'])} comments for video '{video_title}'")
                     
                     # Update statistics
                     comments_fetched_total += len(comments)
@@ -248,9 +292,7 @@ class CommentClient(YouTubeBaseClient):
             
             # Clear progress indicators
             status_text.empty()
-            progress_bar.empty()
-            
-            # Final debug summary
+            progress_bar.empty()                    # Final debug summary
             debug_log(f"COMMENT DEBUG: ===== COMMENT FETCHING SUMMARY =====")
             debug_log(f"COMMENT DEBUG: Total videos processed: {total_videos}")
             debug_log(f"COMMENT DEBUG: Videos with comments: {videos_with_comments}")
@@ -259,13 +301,30 @@ class CommentClient(YouTubeBaseClient):
             debug_log(f"COMMENT DEBUG: Total comments fetched: {comments_fetched_total}")
             debug_log(f"COMMENT DEBUG: Average comments per video: {comments_fetched_total/total_videos if total_videos > 0 else 0:.2f}")
             
+            # Check if any videos have nextPageToken and need more pagination
+            has_more_comments = False
+            for video in videos:
+                if video.get('nextPageToken'):
+                    has_more_comments = True
+                    debug_log(f"COMMENT DEBUG: Video {video.get('video_id')} has more comments available via nextPageToken: {video.get('nextPageToken')}")
+            
             # Add summary to channel_info for easy access
             channel_info['comment_stats'] = {
                 'total_comments': comments_fetched_total,
                 'videos_with_comments': videos_with_comments,
                 'videos_with_disabled_comments': videos_with_disabled_comments,
-                'videos_with_errors': videos_with_errors
+                'videos_with_errors': videos_with_errors,
+                'has_more_comments': has_more_comments
             }
+            
+            # If we have more comments to fetch in a subsequent call, ensure that's reflected in response
+            if has_more_comments:
+                # Find a video with a nextPageToken to use as the main response nextPageToken
+                for video in videos:
+                    if video.get('nextPageToken'):
+                        channel_info['nextPageToken'] = video.get('nextPageToken')
+                        debug_log(f"COMMENT DEBUG: Setting channel_info nextPageToken to {channel_info['nextPageToken']}")
+                        break
             
             # Show summary to user
             if comments_fetched_total > 0:

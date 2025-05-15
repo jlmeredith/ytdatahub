@@ -969,6 +969,21 @@ class SQLiteDatabase:
             debug_log(f"Error connecting to database: {str(e)}")
             return None
 
+    def get_channel_id_by_title(self, title):
+        """Get the YouTube channel ID for a given channel title."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT youtube_id FROM channels WHERE title = ?", (title,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return row[0]
+            return None
+        except Exception as e:
+            debug_log(f"Exception in get_channel_id_by_title: {str(e)}", e)
+            return None
+
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():
     # Use default path from config
