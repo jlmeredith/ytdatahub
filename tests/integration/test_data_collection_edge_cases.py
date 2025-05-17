@@ -9,7 +9,7 @@ import logging
 from src.services.youtube_service import YouTubeService
 from src.api.youtube_api import YouTubeAPI
 from src.database.sqlite import SQLiteDatabase
-from tests.integration.test_data_collection_workflow import BaseYouTubeTestCase
+from tests.fixtures.base_youtube_test_case import BaseYouTubeTestCase
 
 
 class TestChannelEdgeCases(BaseYouTubeTestCase):

@@ -104,68 +104,74 @@ class TestPaginationBehavior(BaseYouTubeTestCase):
             ]
         }
         
-        # Create paginated comment responses - each page has comments with specific IDs
+        # Create comment batches for testing
         page1_comments = self._create_comment_batch('video_with_many_comments', 1, 100)
         page2_comments = self._create_comment_batch('video_with_many_comments', 101, 200)
         page3_comments = self._create_comment_batch('video_with_many_comments', 201, 300)
         
-        # Simpler approach: create a closure for the mock with its own state
-        mock_page_number = [0]  # Use a list to store state that can be modified
+        # Create a properly behaving mock for pagination
+        # Use a counter to track the number of calls and avoid infinite recursion
+        call_count = [0]
         
         def mock_comments_api(channel_info, max_comments_per_video=None, page_token=None):
-            """Improved mock that returns pages sequentially and handles state properly"""
-            # Use page token if provided
-            if page_token == 'comments_page2_token':
-                mock_page_number[0] = 1
-                print("[MOCK] Using token to return page 2")
-            elif page_token == 'comments_page3_token':
-                mock_page_number[0] = 2
-                print("[MOCK] Using token to return page 3") 
+            """Mock implementation that properly handles pagination with call tracking"""
+            call_count[0] += 1
+            print(f"[DEBUG TEST] mock_comments_api call #{call_count[0]} with page_token={page_token}")
             
-            # Get current page number and increment for next call
-            current_page = mock_page_number[0]
-            mock_page_number[0] = min(2, current_page + 1)  # Cap at page 2 (3rd page)
+            # If we've made too many calls, break the potential infinite loop
+            if call_count[0] > 5:
+                print("[DEBUG TEST] Too many calls to mock_comments_api, breaking potential infinite loop")
+                return {
+                    'video_id': [],
+                    'nextPageToken': None,
+                    'comment_stats': {'total_comments': 0, 'videos_with_comments': 0}
+                }
             
-            if current_page == 0:
-                # First page
+            # First call (no page token) returns first page
+            if page_token is None:
                 return {
                     'video_id': [
                         {
                             'video_id': 'video_with_many_comments',
                             'comments': page1_comments,
-                            'nextPageToken': 'comments_page2_token'
+                            'nextPageToken': 'page2_token'
                         }
                     ],
-                    'nextPageToken': 'comments_page2_token',
-                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1}
+                    'nextPageToken': 'page2_token',
+                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1, 'has_more_comments': True}
                 }
-            elif current_page == 1:
-                # Second page
+            # Second page
+            elif page_token == 'page2_token':
                 return {
                     'video_id': [
                         {
                             'video_id': 'video_with_many_comments',
-                            'comments': page2_comments, 
-                            'nextPageToken': 'comments_page3_token'
+                            'comments': page2_comments,
+                            'nextPageToken': 'page3_token'
                         }
                     ],
-                    'nextPageToken': 'comments_page3_token',
-                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1}
+                    'nextPageToken': 'page3_token',
+                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1, 'has_more_comments': True}
                 }
-            else:
-                # Third page (final)
-                # Reset for next test if needed
-                mock_page_number[0] = 0
+            # Final page
+            elif page_token == 'page3_token':
                 return {
                     'video_id': [
                         {
                             'video_id': 'video_with_many_comments',
                             'comments': page3_comments,
-                            'nextPageToken': None  # No more pages
+                            'nextPageToken': None
                         }
                     ],
                     'nextPageToken': None,
-                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1}
+                    'comment_stats': {'total_comments': 100, 'videos_with_comments': 1, 'has_more_comments': False}
+                }
+            # Any other token (safety fallback)
+            else:
+                return {
+                    'video_id': [],
+                    'nextPageToken': None,
+                    'comment_stats': {'total_comments': 0, 'videos_with_comments': 0}
                 }
                 
         # Use our simplified mock
@@ -179,47 +185,41 @@ class TestPaginationBehavior(BaseYouTubeTestCase):
             'max_comments_per_video': 300  # Fetch all 300 comments
         }
         
-        # Add debug prints for API call tracking
-        print("[DEBUG TEST] Setting up mock API for comment pagination test")
+        print("[DEBUG TEST] Running test_comment_pagination with simplified mock")
         
+        # Execute the collection
         result = service.collect_channel_data('UC_test_channel', options, existing_data=channel_with_video)
         
-        # Debug the API calls made
-        print(f"[DEBUG TEST] API call count: {mock_api.get_video_comments.call_count}")
-        print(f"[DEBUG TEST] API call args: {mock_api.get_video_comments.call_args_list}")
-        print(f"[DEBUG TEST] Result structure: {result.keys()}")
-        if 'video_id' in result:
-            print(f"[DEBUG TEST] Video count: {len(result['video_id'])}")
-            for i, video in enumerate(result['video_id']):
-                print(f"[DEBUG TEST] Video {i} keys: {video.keys()}")
-                if 'comments' in video:
-                    print(f"[DEBUG TEST] Comment count: {len(video['comments'])}")
-                    if len(video['comments']) > 0:
-                        print(f"[DEBUG TEST] First comment ID: {video['comments'][0]['comment_id']}")
-                        print(f"[DEBUG TEST] Last comment ID: {video['comments'][-1]['comment_id']}")
-                        # Print additional comment IDs to verify we're getting all pages
-                        print(f"[DEBUG TEST] Comment IDs sample: {[c['comment_id'] for c in video['comments'][:5]]} ... {[c['comment_id'] for c in video['comments'][-5:] if len(video['comments']) >= 5]}")
-                        # Check for specific comment IDs from different pages
-                        expected_ids = ['comment1', 'comment101', 'comment200', 'comment300'] 
-                        for expected_id in expected_ids:
-                            found = expected_id in [c['comment_id'] for c in video['comments']]
-                            print(f"[DEBUG TEST] Expected comment {expected_id}: {'FOUND' if found else 'MISSING'}")
-        
-        # Verify API calls
-        assert mock_api.get_video_comments.call_count >= 1
-        
-        # Verify all comments were collected
+        # Verify the results
         assert result is not None
         assert 'video_id' in result
         assert len(result['video_id']) == 1
-        assert 'comments' in result['video_id'][0]
-        assert len(result['video_id'][0]['comments']) == 300
         
-        # Check for specific comments from different pages
-        comment_ids = [c['comment_id'] for c in result['video_id'][0]['comments']]
-        assert 'comment1' in comment_ids  # From page 1
-        assert 'comment101' in comment_ids  # From page 2
-        assert 'comment300' in comment_ids  # From page 3
+        video = result['video_id'][0]
+        assert 'comments' in video
+        
+        # Verify we got all comments from all "pages"
+        comments = video['comments']
+        assert len(comments) == 300  # 300 total comments (100 per page × 3 pages)
+        
+        # Verify comments from different pages are present
+        comment_ids = [comment['comment_id'] for comment in comments]
+        
+        # Check for comments from each "page"
+        assert "comment1" in comment_ids  # From page 1
+        assert "comment101" in comment_ids  # From page 2
+        assert "comment201" in comment_ids  # From page 3
+        
+        print("[DEBUG TEST] Comment pagination test completed successfully")
+        
+        # Check for specific comment IDs from different pages
+        expected_ids = ['comment1', 'comment101', 'comment200', 'comment300'] 
+        for expected_id in expected_ids:
+            found = expected_id in [c['comment_id'] for c in video['comments']]
+            print(f"[DEBUG TEST] Expected comment {expected_id}: {'FOUND' if found else 'MISSING'}")
+        
+        # Verify API calls
+        assert mock_api.get_video_comments.call_count >= 1
     
     def test_fetch_all_videos_unlimited(self, setup_service_with_mocks):
         """Test fetching all videos without a limit (max_videos=0)"""

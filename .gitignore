@@ -47,3 +47,5 @@ logs/
 instance/
 config.local.py
 documentation/old-to-new-schema.md
+tree.sh
+code_audit_output.txt
