@@ -1,0 +1,26 @@
+"""
+This is the refactored version of the test_error_handling.py file.
+This file now imports the test classes from the error_handling package.
+"""
+# Import all error handling test classes from the modular structure
+from .error_handling import (
+    TestApiErrorHandling,
+    TestConnectionErrorHandling,
+    TestQuotaErrorHandling,
+    TestDataIntegrityErrorHandling,
+    TestRetryMechanisms,
+    TestRecoveryStrategies
+)
+
+# For backward compatibility
+from .error_handling.api_errors import TestApiErrorHandling
+from .error_handling.connection_errors import TestConnectionErrorHandling  
+from .error_handling.quota_errors import TestQuotaErrorHandling
+from .error_handling.data_integrity import TestDataIntegrityErrorHandling
+from .error_handling.retry_mechanisms import TestRetryMechanisms
+from .error_handling.recovery_strategies import TestRecoveryStrategies
+
+# For easier testing from the command line
+if __name__ == '__main__':
+    import pytest
+    pytest.main(['-xvs', __file__])
