@@ -289,6 +289,15 @@ class SQLiteDatabase:
     def get_channel_id_by_title(self, title):
         """Get the YouTube channel ID for a given channel title - delegated to ChannelRepository"""
         return self.channel_repository.get_channel_id_by_title(title)
+        
+    def get_channels(self):
+        """
+        Get a list of all channels in the database - delegates to channel_repository.get_channels_list
+        
+        Returns:
+            list: List of channel IDs/names
+        """
+        return self.channel_repository.get_channels_list()
 
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():

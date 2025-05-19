@@ -25,6 +25,10 @@ from src.utils.formatters import (
     get_location_display
 )
 
+from src.utils.duration_utils import (
+    format_duration_human_friendly
+)
+
 from src.utils.validation import (
     validate_api_key,
     validate_channel_id,

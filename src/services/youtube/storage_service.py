@@ -74,7 +74,7 @@ class StorageService(BaseService):
             list: List of channel IDs/names 
         """
         try:
-            storage = StorageFactory.get_storage(storage_type, config)
+            storage = StorageFactory.get_storage_provider(storage_type, config)
             return storage.get_channels()
         except Exception as e:
             self.logger.error(f"Error retrieving channels list: {str(e)}")
@@ -93,7 +93,7 @@ class StorageService(BaseService):
             dict or None: The channel data or None if retrieval failed
         """
         try:
-            storage = StorageFactory.get_storage(storage_type, config)
+            storage = StorageFactory.get_storage_provider(storage_type, config)
             return storage.get_channel(channel_id_or_name)
         except Exception as e:
             self.logger.error(f"Error retrieving channel data: {str(e)}")
