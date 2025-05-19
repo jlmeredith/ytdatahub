@@ -1,0 +1,9 @@
+fix: cleanup temporary debug and fix files
+
+- Moved all temporary debug scripts to archive/fixes
+- Moved all fix documentation to archive/fixes or archive/test_docs
+- Moved test fix reports to archive/test_docs
+- Kept test_issues_tracking.md as it's a permanent documentation file
+
+All unit tests are now passing (100%).
+
