@@ -41,6 +41,10 @@ class VideoService(BaseService):
             
         Returns:
             dict: Updated channel data with videos
+            
+        Raises:
+            HttpError: If an HTTP error occurs during the API call
+            YouTubeAPIError: If a YouTube API-specific error occurs
         """
         channel_id = channel_data.get('channel_id')
         if not channel_id:
@@ -50,39 +54,68 @@ class VideoService(BaseService):
         debug_log(f"Fetching videos for channel: {channel_id}, max_results: {max_results}, optimize_quota: {optimize_quota}")
         
         try:
-            # Track quota if quota service is provided
+            # Initialize variables for pagination
+            all_videos = []
+            next_page_token = None
+            total_videos_fetched = 0
+            has_more_pages = True
+            
+            # Track quota for initial request if quota service is provided
             if self.quota_service:
                 self.quota_service.track_quota_usage('playlistItems.list')
                 
-            # Request videos from the channel
-            videos_response = self.api.get_channel_videos(channel_data, max_videos=max_results, optimize_quota=optimize_quota)
-            
-            if not videos_response:
-                debug_log("Failed to retrieve videos or channel has no videos")
-                return channel_data
+            # Loop until we have all pages or reach max_results
+            while has_more_pages:
+                # Request videos from the channel with pagination token
+                videos_response = self.api.get_channel_videos(
+                    channel_data, 
+                    max_videos=max_results, 
+                    page_token=next_page_token,
+                    optimize_quota=optimize_quota
+                )
                 
-            # Extract videos from the response
-            if 'video_id' in videos_response:
-                # Check if video_id is a list or another structure
-                if isinstance(videos_response['video_id'], list):
-                    # Direct assignment of the video list
-                    videos_list = videos_response['video_id']
-                    channel_data['video_id'] = videos_list
-                    debug_log(f"Collected {len(videos_list)} videos for channel")
-                else:
-                    # Handle case where video_id might be a dictionary or other structure
-                    debug_log(f"Warning: video_id is not a list, but {type(videos_response['video_id'])}")
-                    # Special handling for tests where video_id might be a special structure
-                    if not channel_data.get('video_id'):
-                        channel_data['video_id'] = []
-                    # Try to extract videos if possible
-                    videos_list = None
-                    if 'video_id' in videos_response:
-                        videos_list = videos_response['video_id']
-                        channel_data['video_id'] = videos_list
-                        debug_log(f"Extracted {len(videos_list) if isinstance(videos_list, list) else 'unknown'} videos from special structure")
-            else:
-                debug_log("No 'video_id' field found in the API response")
+                if not videos_response:
+                    debug_log("Failed to retrieve videos or channel has no videos")
+                    break
+                
+                # Extract videos from the response
+                current_page_videos = []
+                if 'video_id' in videos_response:
+                    if isinstance(videos_response['video_id'], list):
+                        current_page_videos = videos_response['video_id']
+                        debug_log(f"Collected {len(current_page_videos)} videos on this page")
+                    else:
+                        # Handle case where video_id might be a dictionary or other structure
+                        debug_log(f"Warning: video_id is not a list, but {type(videos_response['video_id'])}")
+                        # Try to extract videos if possible
+                        if 'video_id' in videos_response:
+                            current_page_videos = videos_response['video_id']
+                            debug_log(f"Extracted {len(current_page_videos) if isinstance(current_page_videos, list) else 'unknown'} videos from special structure")
+                
+                # Add current page videos to the aggregate list
+                if current_page_videos:
+                    all_videos.extend(current_page_videos)
+                    total_videos_fetched += len(current_page_videos)
+                    debug_log(f"Total videos fetched so far: {total_videos_fetched}")
+                
+                # Get the next page token if it exists
+                next_page_token = videos_response.get('nextPageToken')
+                
+                # Determine if we have more pages to fetch
+                has_more_pages = next_page_token is not None
+                
+                # Check if we've hit our max_results limit (if specified)
+                if max_results > 0 and total_videos_fetched >= max_results:
+                    debug_log(f"Reached max_results limit of {max_results}")
+                    break
+                
+                # Track quota for additional requests if quota service is provided
+                if has_more_pages and self.quota_service:
+                    self.quota_service.track_quota_usage('playlistItems.list')
+            
+            # Update channel_data with all collected videos
+            channel_data['video_id'] = all_videos
+            debug_log(f"Final video count: {len(all_videos)}")
                 
             # Preserve videos_unavailable field if present in response
             if 'videos_unavailable' in videos_response:
@@ -91,8 +124,8 @@ class VideoService(BaseService):
                 
             # Also preserve videos_fetched field if present
             if 'videos_fetched' in videos_response:
-                channel_data['videos_fetched'] = videos_response['videos_fetched']
-                debug_log(f"Preserved videos_fetched count: {videos_response['videos_fetched']}")
+                channel_data['videos_fetched'] = total_videos_fetched
+                debug_log(f"Total videos fetched across all pages: {total_videos_fetched}")
                 
             # Process videos that might have errors (like unavailable videos)
             self._process_video_details(channel_data)
@@ -104,17 +137,13 @@ class VideoService(BaseService):
             if e.status_code == 403 and getattr(e, 'error_type', '') == 'quotaExceeded':
                 channel_data['error_videos'] = f"Quota exceeded: {str(e)}"
                 debug_log(f"Quota exceeded error handled gracefully: {channel_id}")
+                return channel_data
             else:
-                # Handle other errors
+                # Handle other API errors but re-raise
                 debug_log(f"Error collecting videos: {str(e)}")
-                channel_data['error_videos'] = f"Error: {str(e)}"
-            
-            return channel_data
-            
-        except Exception as e:
-            debug_log(f"Unexpected error collecting videos: {str(e)}")
-            channel_data['error_videos'] = f"Unexpected error: {str(e)}"
-            return channel_data
+                raise
+        
+        # Note: We're letting HttpError propagate through to parent for proper test behavior
             
     def _process_video_details(self, channel_data: Dict) -> None:
         """
@@ -195,7 +224,7 @@ class VideoService(BaseService):
                 if isinstance(video, dict) and 'video_id' in video:
                     all_video_ids.append(video['video_id'])
                     
-            # Process in batches of 50 (YouTube API limit)
+                        # Process in batches of 50 (YouTube API limit)
             batch_size = 50
             for i in range(0, len(all_video_ids), batch_size):
                 batch = all_video_ids[i:i + batch_size]

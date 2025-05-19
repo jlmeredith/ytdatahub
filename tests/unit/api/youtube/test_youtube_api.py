@@ -402,7 +402,8 @@ class TestYouTubeCommentMethods:
             assert result['video_id'][0]['statistics']['commentCount'] == '10'
             
             # Verify the client method was called with correct parameters
-            mock_comment_client.get_video_comments.assert_called_once_with(channel_info, 5)
+            # Note: We need to check for page_token parameter which was added for pagination support
+            mock_comment_client.get_video_comments.assert_called_once_with(channel_info, 5, page_token=None)
 
 
 if __name__ == '__main__':

@@ -4,7 +4,6 @@ This package contains modules for handling CSV imports of channel IDs and API da
 """
 
 from .logger import update_debug_log
+from .render import render_bulk_import_tab
 
-# Import and re-export the render_bulk_import_tab function from the parent module
-from .. import bulk_import
-from ..bulk_import import render_bulk_import_tab
+# Export the render_bulk_import_tab function for use in the application

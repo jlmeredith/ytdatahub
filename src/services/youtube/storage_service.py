@@ -49,8 +49,14 @@ class StorageService(BaseService):
             bool: True if data was saved successfully, False otherwise
         """
         try:
-            storage = StorageFactory.get_storage(storage_type, config)
-            result = storage.save_channel(channel_data)
+            storage = StorageFactory.get_storage_provider(storage_type, config)
+            result = storage.store_channel_data(channel_data)
+            
+            # Remove from the queue tracker if saved successfully
+            if result and 'channel_id' in channel_data:
+                from src.utils.queue_tracker import remove_from_queue
+                remove_from_queue('channels', channel_data['channel_id'])
+                
             return result
         except Exception as e:
             self.logger.error(f"Error saving channel data: {str(e)}")

@@ -147,6 +147,17 @@ class VideoRepository(BaseRepository):
             
             # Insert or update video data with all new fields
             try:
+                # First check if the video already exists to avoid unique constraint errors
+                cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
+                existing_video = cursor.fetchone()
+                
+                # Log for debugging
+                if existing_video:
+                    debug_log(f"Video {youtube_id} already exists with ID {existing_video[0]}, updating")
+                else:
+                    debug_log(f"Video {youtube_id} is new, inserting")
+                
+                # Use INSERT OR REPLACE to handle both new videos and updates
                 cursor.execute('''
                 INSERT OR REPLACE INTO videos (
                     youtube_id, channel_id, title, description, published_at,
@@ -168,9 +179,10 @@ class VideoRepository(BaseRepository):
                     tags, category_id, live_broadcast_content,
                     video_fetched_at, updated_at
                 ))
+                conn.commit()  # Commit after insert but before selecting the ID
                 debug_log("SQL execution successful")
             except Exception as sql_e:
-                debug_log(f"SQL error: {sql_e}")
+                debug_log(f"SQL error: {sql_e}", sql_e)  # Log with exception for more details
                 conn.rollback()
                 conn.close()
                 return None
@@ -182,22 +194,46 @@ class VideoRepository(BaseRepository):
                 if result:
                     video_db_id = result[0]
                     debug_log(f"Video ID in database: {video_db_id}")
+                    
+                    # DEBUG - Verify the video is actually there
+                    cursor.execute("SELECT COUNT(*) FROM videos WHERE id = ?", (video_db_id,))
+                    count = cursor.fetchone()[0]
+                    debug_log(f"Video record count with ID {video_db_id}: {count}")
+                    
+                    # Close connection
+                    conn.close()
+                    return video_db_id
                 else:
                     debug_log(f"Video with youtube_id {youtube_id} not found after insert")
+                    # Try to insert directly
+                    try:
+                        debug_log("Attempting direct insert for video")
+                        cursor.execute('''
+                            INSERT INTO videos (youtube_id, channel_id, title) 
+                            VALUES (?, ?, ?)
+                        ''', (youtube_id, channel_db_id, title))
+                        conn.commit()
+                        
+                        # Get the ID again
+                        cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
+                        result = cursor.fetchone()
+                        if result:
+                            video_db_id = result[0]
+                            debug_log(f"Video ID after direct insert: {video_db_id}")
+                            conn.close()
+                            return video_db_id
+                    except Exception as direct_insert_e:
+                        debug_log(f"Direct insert failed: {direct_insert_e}", direct_insert_e)
+                    
+                    # If we get here, both attempts failed
                     conn.rollback()
                     conn.close()
                     return None
             except Exception as select_e:
-                debug_log(f"Error selecting video ID: {select_e}")
+                debug_log(f"Error selecting video ID: {select_e}", select_e)
                 conn.rollback()
                 conn.close()
                 return None
-            
-            # Commit changes
-            conn.commit()
-            conn.close()
-            
-            return video_db_id
         except Exception as e:
             debug_log(f"Error storing video data: {str(e)}", e)
             return None
@@ -214,7 +250,66 @@ class VideoRepository(BaseRepository):
         Returns:
             bool: True if successful, False otherwise
         """
-        return self.comment_repository.store_comments(comments, video_db_id, fetched_at)
+        debug_log(f"VideoRepository: Delegating {len(comments)} comments to CommentRepository for video_db_id={video_db_id}")
+        
+        # First check if the video exists in the database
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM videos WHERE id = ?", (video_db_id,))
+        video_exists = cursor.fetchone() is not None
+        conn.close()
+        
+        if not video_exists:
+            debug_log(f"VideoRepository: ERROR - Video ID {video_db_id} does not exist in database!")
+            return False
+        
+        # Ensure we have a list of comments
+        if not isinstance(comments, list):
+            debug_log(f"VideoRepository: ERROR - Comments is not a list: {type(comments)}")
+            return False
+        
+        # Validate and transform comments to ensure they have all required fields
+        processed_comments = []
+        
+        for i, comment in enumerate(comments):
+            processed_comment = comment.copy()  # Create a copy to avoid modifying original
+            
+            # Ensure comment_id exists - crucial for database storage
+            if 'comment_id' not in processed_comment:
+                debug_log(f"VideoRepository: Adding missing comment_id for comment {i}")
+                processed_comment['comment_id'] = f"generated_id_{video_db_id}_{i}_{hash(str(comment))}"
+            
+            # Ensure text field exists
+            if 'text' not in processed_comment and 'comment_text' in processed_comment:
+                processed_comment['text'] = processed_comment['comment_text']
+            elif 'text' not in processed_comment and 'comment_text' not in processed_comment:
+                processed_comment['text'] = f"[No text content for comment {i}]"
+                
+            # Ensure author field exists
+            if 'author_display_name' not in processed_comment and 'comment_author' in processed_comment:
+                processed_comment['author_display_name'] = processed_comment['comment_author']
+                
+            # Ensure published_at field exists
+            if 'published_at' not in processed_comment and 'comment_published_at' in processed_comment:
+                processed_comment['published_at'] = processed_comment['comment_published_at']
+                
+            processed_comments.append(processed_comment)
+        
+        if processed_comments and len(processed_comments) > 0:
+            debug_log(f"VideoRepository: Comment sample after validation: {processed_comments[0]}")
+            
+        result = self.comment_repository.store_comments(processed_comments, video_db_id, fetched_at)
+        debug_log(f"VideoRepository: Comment storage result: {result}")
+        
+        # Verify comments were stored
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM comments WHERE video_id = ?", (video_db_id,))
+        count = cursor.fetchone()[0]
+        debug_log(f"VideoRepository: Verification shows {count} comments stored for video_db_id={video_db_id}")
+        conn.close()
+        
+        return result
             
     def store_video_locations(self, locations: List[Dict[str, Any]], video_db_id: int) -> bool:
         """
@@ -244,6 +339,11 @@ class VideoRepository(BaseRepository):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # First check if videos exist for this channel
+            cursor.execute("SELECT COUNT(*) FROM videos WHERE channel_id = ?", (channel_db_id,))
+            count = cursor.fetchone()[0]
+            debug_log(f"Found {count} videos with channel_id = {channel_db_id}")
+            
             # Get videos for this channel
             cursor.execute("""
                 SELECT id, youtube_id, title, description, published_at, view_count, 
@@ -253,6 +353,20 @@ class VideoRepository(BaseRepository):
             """, (channel_db_id,))
             
             videos_rows = cursor.fetchall()
+            debug_log(f"Fetched {len(videos_rows)} video rows from database")
+            
+            # Check if ANY videos exist in the database
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            total_count = cursor.fetchone()[0]
+            debug_log(f"Total videos in database: {total_count}")
+            
+            # If no videos for this channel but we have videos in the db, list some examples
+            if count == 0 and total_count > 0:
+                cursor.execute("SELECT id, youtube_id, channel_id FROM videos LIMIT 3")
+                examples = cursor.fetchall()
+                debug_log("Example videos in database:")
+                for ex in examples:
+                    debug_log(f"  ID: {ex[0]}, YouTube ID: {ex[1]}, Channel ID: {ex[2]}")
             
             videos = []
             for video_row in videos_rows:

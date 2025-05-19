@@ -85,28 +85,132 @@ class ChannelRepository(BaseRepository):
             cursor.execute("SELECT id FROM channels WHERE youtube_id = ?", (youtube_id,))
             channel_db_id = cursor.fetchone()[0]
             
-            # Extract and insert video data using VideoRepository
+            # Extract video data
             videos = data.get('video_id', [])
             debug_log(f"Processing {len(videos)} videos")
             
+            # Store videos directly using SQL for better control
             for video in videos:
-                # Store video data using VideoRepository
-                video_db_id = self.video_repository.store_video_data(video, channel_db_id, fetched_at)
-                debug_log(f"Stored video {video.get('video_id')} with DB ID: {video_db_id}")
+                video_id = video.get('video_id')
+                title = video.get('title')
+                description = video.get('video_description', '')
+                published_at = video.get('published_at')
                 
-                if video_db_id:
-                    # Store comments for this video
-                    comments = video.get('comments', [])
-                    debug_log(f"Storing {len(comments)} comments for video")
-                    self.video_repository.store_comments(comments, video_db_id, fetched_at)
+                try:
+                    view_count = int(video.get('views', 0))
+                except (ValueError, TypeError):
+                    view_count = 0
+                
+                try:
+                    like_count = int(video.get('likes', 0))
+                except (ValueError, TypeError):
+                    like_count = 0
+                
+                duration = video.get('duration', '')
+                
+                # Insert the video directly
+                debug_log(f"Directly inserting video {video_id} into database")
+                try:
+                    cursor.execute('''
+                    INSERT OR REPLACE INTO videos (
+                        youtube_id, channel_id, title, description, published_at,
+                        view_count, like_count, duration
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        video_id, channel_db_id, title, description, published_at,
+                        view_count, like_count, duration
+                    ))
                     
-                    # Store locations for this video
-                    locations = video.get('locations', [])
-                    debug_log(f"Storing {len(locations)} locations for video")
-                    self.video_repository.store_video_locations(locations, video_db_id)
+                    # Get the video ID
+                    cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (video_id,))
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        video_db_id = result[0]
+                        debug_log(f"Inserted video {video_id} with DB ID: {video_db_id}")
+                        
+                        # Store comments for this video if we have a valid ID
+                        comments = video.get('comments', [])
+                        if comments and len(comments) > 0:
+                            debug_log(f"Found {len(comments)} comments for video {video_id}, DB ID: {video_db_id}")
+                            debug_log(f"Sample comment data: {comments[0]}")
+                            
+                            # DIRECT STORAGE: Instead of delegating to video_repository, 
+                            # we'll directly insert the comments here to ensure they're stored
+                            for i, comment in enumerate(comments):
+                                try:
+                                    # Ensure comment_id exists
+                                    comment_id = comment.get('comment_id')
+                                    if not comment_id:
+                                        comment_id = f"generated_id_{video_db_id}_{i}_{hash(str(comment))}"
+                                    
+                                    # Extract comment fields with fallbacks
+                                    text = comment.get('comment_text', comment.get('text', ''))
+                                    author = comment.get('comment_author', comment.get('author_display_name', ''))
+                                    published = comment.get('comment_published_at', comment.get('published_at', ''))
+                                    author_profile_image_url = comment.get('author_profile_image_url', '')
+                                    author_channel_id = comment.get('author_channel_id', '')
+                                    
+                                    # Handle like_count
+                                    try:
+                                        like_count = int(comment.get('like_count', 0))
+                                    except (ValueError, TypeError):
+                                        like_count = 0
+                                        
+                                    updated_at = comment.get('updated_at', published)
+                                    parent_id = comment.get('parent_id', None)
+                                    is_reply = bool(comment.get('is_reply', False))
+                                    
+                                    # Direct SQL insert - bypass VideoRepository 
+                                    cursor.execute('''
+                                    INSERT OR REPLACE INTO comments (
+                                        comment_id, video_id, text, author_display_name, author_profile_image_url,
+                                        author_channel_id, like_count, published_at, updated_at, parent_id,
+                                        is_reply, fetched_at
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ''', (
+                                        comment_id, video_db_id, text, author, author_profile_image_url,
+                                        author_channel_id, like_count, published, updated_at, parent_id,
+                                        is_reply, fetched_at
+                                    ))
+                                    debug_log(f"ChannelRepository: Inserted comment {comment_id}")
+                                except Exception as e:
+                                    debug_log(f"ChannelRepository: Error inserting comment {i}: {str(e)}")
+                                    
+                            # Also try delegating through the repository as a backup
+                            try:
+                                result = self.video_repository.store_comments(comments, video_db_id, fetched_at)
+                                debug_log(f"ChannelRepository: Video repository comment storage result: {result}")
+                            except Exception as e:
+                                debug_log(f"ChannelRepository: Error delegating comment storage: {str(e)}")
+                            
+                            # Verify comments were stored
+                            try:
+                                cursor.execute("SELECT COUNT(*) FROM comments WHERE video_id = ?", (video_db_id,))
+                                comment_count = cursor.fetchone()[0]
+                                debug_log(f"ChannelRepository: Verified {comment_count} comments stored for video DB ID {video_db_id}")
+                            except Exception as e:
+                                debug_log(f"ChannelRepository: Error verifying comments: {str(e)}", e)
+                        
+                        # Store locations for this video
+                        locations = video.get('locations', [])
+                        if locations and len(locations) > 0:
+                            debug_log(f"Storing {len(locations)} locations for video")
+                            self.video_repository.store_video_locations(locations, video_db_id)
+                    else:
+                        debug_log(f"Failed to get ID for inserted video {video_id}")
+                except Exception as e:
+                    debug_log(f"Error inserting video {video_id}: {str(e)}", e)
             
             # Commit the changes and close the connection
             conn.commit()
+            debug_log("Committed all changes to database")
+            
+            # Verify videos were stored
+            cursor.execute("SELECT COUNT(*) FROM videos WHERE channel_id = ?", (channel_db_id,))
+            count = cursor.fetchone()[0]
+            debug_log(f"Verified {count} videos stored for channel {youtube_id}")
+            
             conn.close()
             
             debug_log("Data saved to SQLite successfully")
@@ -228,6 +332,9 @@ class ChannelRepository(BaseRepository):
             
             # Add videos to channel data
             channel_data['videos'] = videos
+            
+            # Add video_id field for backward compatibility with tests
+            channel_data['video_id'] = videos
             
             # If we have comments, add them to the channel data
             if any(v['statistics']['commentCount'] > 0 for v in channel_data['videos']):

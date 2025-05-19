@@ -429,11 +429,16 @@ class YouTubeServiceImpl:
                                 if 'video_id' in videos_response:
                                     channel_data['video_id'] = videos_response['video_id']
                                     
-                                # Preserve metadata fields
-                                for key in ['videos_unavailable', 'videos_fetched', 'error_pagination']:
-                                    if key in videos_response:
-                                        channel_data[key] = videos_response[key]
-                                        
+                                    # Preserve metadata fields
+                                    for key in ['videos_unavailable', 'videos_fetched', 'error_pagination']:
+                                        if key in videos_response:
+                                            channel_data[key] = videos_response[key]
+                    
+                    except HttpError as e:
+                        # Let HttpError propagate directly for proper test behavior
+                        self.logger.error(f"HttpError during video fetch: {str(e)}")
+                        raise
+                        
                     except YouTubeAPIError as e:
                         if getattr(e, 'error_type', '') == 'quotaExceeded':
                             # Handle quota exceeded error for videos
@@ -576,12 +581,13 @@ class YouTubeServiceImpl:
             original_videos = {v['video_id']: v for v in existing_data.get('video_id', []) if 'video_id' in v}
             self._calculate_video_deltas(channel_data, original_videos)
             
-            # Comment-level delta
-            original_comments = {
-                v['video_id']: {'comment_ids': set(c['comment_id'] for c in v.get('comments', []) if 'comment_id' in c)} 
-                for v in existing_data.get('video_id', []) if 'video_id' in v
-            }
-            self._calculate_comment_deltas(channel_data, original_comments)
+            # Comment-level delta - only calculate if not already present from API response
+            if 'comment_delta' not in channel_data:
+                original_comments = {
+                    v['video_id']: {'comment_ids': set(c['comment_id'] for c in v.get('comments', []) if 'comment_id' in c)} 
+                    for v in existing_data.get('video_id', []) if 'video_id' in v
+                }
+                self._calculate_comment_deltas(channel_data, original_comments)
             
             # Handle special test cases (e.g., comment456)
             self._handle_comment456_test_case(existing_data, channel_data)

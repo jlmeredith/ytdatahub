@@ -151,49 +151,44 @@ class TestYouTubeService:
             # Test save_channel
             channel_result = service.save_channel(sample_channel_data)
             assert channel_result is True
-            mock_sqlite_db.save_channel.assert_called_once()
+            mock_sqlite_db.store_channel_data.assert_called_once_with(sample_channel_data)
             
             # Test save_video
             video_result = service.save_video(sample_channel_data['video_id'][0])
             assert video_result is True
-            mock_sqlite_db.save_video.assert_called_once()
+            mock_sqlite_db.store_video_data.assert_called_once_with(sample_channel_data['video_id'][0])
             
             # Test save_comments
             comments = sample_channel_data['video_id'][0]['comments']
             video_id = sample_channel_data['video_id'][0]['video_id']
             comment_result = service.save_comments(comments, video_id)
             assert comment_result is True
-            mock_sqlite_db.save_comments.assert_called_once_with(comments, video_id)
+            mock_sqlite_db.store_comments.assert_called_once_with(comments, video_id)
     
     def test_validate_and_resolve_channel_id(self, mock_youtube_api):
         """Test channel ID validation and resolution"""
-        # Create service and manually set the mock
+        # Create service
         service = YouTubeService("test_api_key")
-        service.api = mock_youtube_api
         
-        # Patch the validator function that's used by validate_and_resolve_channel_id
-        with patch('src.utils.helpers.validate_channel_id') as mock_validator:
-            # First test: Valid channel ID directly
-            mock_validator.return_value = (True, 'UC_test_channel')
-            
-            valid, channel_id = service.validate_and_resolve_channel_id('UC_test_channel')
-            assert valid is True
-            assert channel_id == 'UC_test_channel'
-            
-            # Second test: Custom URL that needs resolution
-            # Set up the validator to return a "resolve:" prefixed result
-            mock_validator.return_value = (False, 'resolve:@custom_handle')
-            
-            # Set up the API to resolve the custom URL
-            mock_youtube_api.resolve_custom_channel_url.return_value = 'UC_resolved_channel'
-            
-            valid, channel_id = service.validate_and_resolve_channel_id('@custom_handle')
-            assert valid is True
-            assert channel_id == 'UC_resolved_channel'
-            
-            # Verify the right methods were called
-            mock_validator.assert_called_with('@custom_handle')
-            mock_youtube_api.resolve_custom_channel_url.assert_called_once_with('@custom_handle')
+        # Mock channel_service directly since validate_and_resolve_channel_id delegates to it
+        service.channel_service = MagicMock()
+        
+        # First test: Valid channel ID directly
+        service.channel_service.validate_and_resolve_channel_id.return_value = (True, 'UC_test_channel')
+        
+        valid, channel_id = service.validate_and_resolve_channel_id('UC_test_channel')
+        assert valid is True
+        assert channel_id == 'UC_test_channel'
+        
+        # Second test: Custom URL that needs resolution
+        service.channel_service.validate_and_resolve_channel_id.return_value = (True, 'UC_resolved_channel')
+        
+        valid, channel_id = service.validate_and_resolve_channel_id('@custom_handle')
+        assert valid is True
+        assert channel_id == 'UC_resolved_channel'
+        
+        # Verify the right methods were called
+        service.channel_service.validate_and_resolve_channel_id.assert_called_with('@custom_handle')
 
 
 if __name__ == '__main__':

@@ -173,7 +173,30 @@ class SQLiteDatabase:
     
     def store_channel_data(self, data):
         """Save channel data to SQLite database - delegated to ChannelRepository"""
-        return self.channel_repository.store_channel_data(data)
+        debug_log("SQLiteDatabase: Delegating store_channel_data to ChannelRepository")
+        # Check if data contains comments before delegating
+        videos = data.get('video_id', [])
+        comment_count = 0
+        for video in videos:
+            comments = video.get('comments', [])
+            comment_count += len(comments)
+        debug_log(f"SQLiteDatabase: Data contains {len(videos)} videos with {comment_count} total comments")
+        
+        # Add debugging log to trace data flow
+        result = self.channel_repository.store_channel_data(data)
+        
+        # Verify comments were stored
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM comments")
+            stored_comments = cursor.fetchone()[0]
+            debug_log(f"SQLiteDatabase: After storage, database contains {stored_comments} comments")
+            conn.close()
+        except Exception as e:
+            debug_log(f"SQLiteDatabase: Error checking comment count: {str(e)}")
+            
+        return result
     
     def get_channels_list(self):
         """Get a list of all channel names from the database - delegated to ChannelRepository"""
