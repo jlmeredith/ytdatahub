@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Union
 import pandas as pd
+from src.utils.log_level_helper import get_log_level_int
 
 # Configure logging with detailed format and set to WARNING level to reduce output
 logging.basicConfig(
@@ -63,8 +64,11 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             if mock_session_state:
                 mock_session_state.performance_timers[tag] = time.time()
             
+            # Convert log_level to integer using the helper
+            log_level_int = get_log_level_int(log_level)
+            
             # Only log if debug mode is on
-            if debug_mode and log_level <= logging.DEBUG:
+            if debug_mode and log_level_int <= logging.DEBUG:
                 logging.debug(f"⏱️ START TIMER [{tag}]: {message}")
             return
         elif performance_tag and performance_tag.startswith('end_'):
@@ -95,13 +99,14 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
                         logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - CRITICAL PERFORMANCE ISSUE")
                     elif elapsed >= 1.0:  # Warning
                         logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - PERFORMANCE WARNING")
-                    elif debug_mode and log_level <= logging.DEBUG:  # Normal
+                    elif debug_mode and get_log_level_int(log_level) <= logging.DEBUG:  # Normal
                         logging.debug(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s)")
             
             return
         
         # Standard logging for tests
-        if debug_mode and log_level <= logging.DEBUG:
+        log_level_int = get_log_level_int(log_level)
+        if debug_mode and log_level_int <= logging.DEBUG:
             if data is not None:
                 logging.debug(f"{message}: {data}")
             else:
@@ -161,7 +166,8 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             else:
                 indicator = "🟢"  # Green circle for good
                 # Only log in debug mode and if log level allows it
-                if st.session_state.debug_mode and st.session_state.log_level <= logging.DEBUG:
+                log_level_int = get_log_level_int(st.session_state.log_level)
+                if st.session_state.debug_mode and log_level_int <= logging.DEBUG:
                     logging.debug(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s)")
             
             # Add UI blocking analysis
@@ -190,7 +196,8 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             return
         else:
             # Timer not found, just log as a regular message if in debug mode
-            if st.session_state.debug_mode and st.session_state.log_level <= logging.DEBUG:
+            log_level_int = get_log_level_int(st.session_state.log_level)
+            if st.session_state.debug_mode and log_level_int <= logging.DEBUG:
                 logging.debug(f"⚠️ TIMER [{tag}] not found: {message}")
             return
             
@@ -199,7 +206,8 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
         return
     
     # Standard log - only if debug mode is on
-    if debug_mode and log_level <= logging.DEBUG:
+    log_level_int = get_log_level_int(log_level)
+    if debug_mode and log_level_int <= logging.DEBUG:
         if data is not None:
             # Format data for display
             if isinstance(data, dict) or isinstance(data, list):

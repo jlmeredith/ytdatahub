@@ -113,18 +113,17 @@ def test_ui_displays_views_in_video_table(mock_dataframe, mock_success, mock_spi
                                           mock_subheader, mock_title, mock_youtube_service):
     """Test that the UI correctly displays video views in video table"""
     # Configure session state
-    if 'refresh_workflow_step' not in st.session_state:
-        st.session_state['refresh_workflow_step'] = 3  # Video collection step
     st.session_state['existing_channel_id'] = "UC12345"
     st.session_state['videos_data'] = SAMPLE_VIDEOS
     st.session_state['videos_fetched'] = True
     
-    # Mock the format_number function to return the same string
-    with patch('src.ui.data_collection.channel_refresh_ui.format_number', 
-               side_effect=lambda x: x):
+    # Mock the format_number function to return plain numbers as strings
+    with patch('src.ui.data_collection.channel_refresh.video_section.format_number',
+                   side_effect=lambda x: str(x)):
         
-        # Run the channel refresh section
-        channel_refresh_section(mock_youtube_service)
+        # Test the video section directly instead of going through the workflow
+        from src.ui.data_collection.channel_refresh.video_section import render_video_section
+        render_video_section(SAMPLE_VIDEOS, mock_youtube_service, "UC12345")
         
         # Check that dataframe was called
         mock_dataframe.assert_called()

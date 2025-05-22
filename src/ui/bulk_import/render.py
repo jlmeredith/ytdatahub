@@ -98,7 +98,7 @@ def render_bulk_import_tab():
                         st.session_state.import_should_stop = False
                         
                         # Rerun to update UI
-                        st.experimental_rerun()
+                        st.rerun()
                 else:
                     if st.button("Stop Import"):
                         st.session_state.import_should_stop = True

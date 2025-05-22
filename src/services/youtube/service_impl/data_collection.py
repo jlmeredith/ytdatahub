@@ -135,18 +135,23 @@ class DataCollectionMixin:
             
         # Main collection process
         error_encountered = False
-        retry_attempts = options.get('retry_attempts', 0)
+        retry_attempts = options.get('retry_attempts', 3)  # Default to 3 retries
+        max_wait_time = 10  # Cap wait time to 10 seconds
         current_attempt = 0
         
         while current_attempt <= retry_attempts:
+            self.logger.debug(f"Retry logic: Attempt {current_attempt}/{retry_attempts}")
+            self.logger.debug(f"Entering retry loop: Attempt {current_attempt}/{retry_attempts}")
             try:
                 # STEP 1: Fetch channel info if requested
                 if options.get('fetch_channel_data', True):
+                    self.logger.debug(f"fetch_channel_data option: {options.get('fetch_channel_data', True)}")
                     try:
                         # Track quota usage for channels.list operation
                         self.track_quota_usage('channels.list')
                         
                         # Get channel info from specialized service
+                        self.logger.debug(f"Calling channel_service.get_channel_info for channel: {resolved_channel_id}")
                         channel_info = self.channel_service.get_channel_info(resolved_channel_id)
                         
                         # Check for malformed response
@@ -157,9 +162,8 @@ class DataCollectionMixin:
                             # Retry if we have attempts left
                             if current_attempt < retry_attempts:
                                 current_attempt += 1
-                                # Exponential backoff
-                                wait_time = 1 * (2 ** current_attempt)
-                                self.logger.info(f"Retrying after malformed response (attempt {current_attempt}/{retry_attempts}) with wait time {wait_time}s")
+                                wait_time = min(1 * (2 ** current_attempt), max_wait_time)  # Cap wait time
+                                self.logger.debug(f"Waiting for {wait_time}s before retrying (attempt {current_attempt})")
                                 time.sleep(wait_time)
                                 continue
                             
@@ -172,19 +176,19 @@ class DataCollectionMixin:
                         # Update channel_data with channel info
                         for key, value in channel_info.items():
                             channel_data[key] = value
-                            
+                        
                     except YouTubeAPIError as e:
                         # Special handling for authentication errors
                         if (e.status_code == 400 and getattr(e, 'error_type', '') == 'authError') or (e.status_code == 401):
                             self.logger.error(f"Authentication error: {str(e)}")
                             channel_data['error'] = f"Authentication error: {str(e)}"
                             return channel_data
-                            
+                        
                         # Special handling for channel not found errors
                         elif (e.status_code == 404 and getattr(e, 'error_type', '') == 'notFound'):
                             self.logger.error(f"Error fetching channel data: {str(e)}")
                             raise e
-                            
+                        
                         # Handle other error codes that shouldn't be retried
                         elif (e.status_code == 400 and getattr(e, 'error_type', '') == 'invalidRequest') or \
                              (e.status_code == 403 and getattr(e, 'error_type', '') == 'quotaExceeded') or \
@@ -192,21 +196,22 @@ class DataCollectionMixin:
                             self.logger.error(f"Error fetching channel data: {str(e)}")
                             channel_data['error'] = f"Error: {str(e)}"
                             return channel_data
-                            
+                        
                         elif e.status_code >= 500 and current_attempt < retry_attempts:
                             # For server errors, retry with exponential backoff
                             self.logger.warning(f"Network error on attempt {current_attempt + 1}/{retry_attempts + 1}: {str(e)}. Retrying...")
                             current_attempt += 1
                             # Calculate backoff time - starts at 1 second and doubles each retry
                             backoff_time = 2 ** (current_attempt - 1)
+                            self.logger.debug(f"Backoff time: {backoff_time}s")
                             time.sleep(backoff_time)
                             continue
-                            
+                        
                         else:
                             # For errors during channel fetch, re-raise
                             self.logger.error(f"Error fetching channel data: {str(e)}")
                             raise
-                            
+                        
                     except HttpError as e:
                         # Let HttpError propagate for proper test behavior
                         self.logger.error(f"Error fetching channel data: {str(e)}")
@@ -443,28 +448,5 @@ class DataCollectionMixin:
         Args:
             resolved_channel_id (str): The resolved channel ID
             options (dict): Collection options
-            channel_data (dict): The channel data being built
-            
-        Returns:
-            None
+            channel_data (dict): The channel data being processed
         """
-        # Use execute_api_request to properly track API calls for the test
-        if options.get('fetch_channel_data', True):
-            self.api.execute_api_request('channels.list', id=resolved_channel_id)
-        
-        # Also handle the video fetching case
-        if options.get('fetch_videos', True):
-            # First playlistItems.list call to get the uploads playlist
-            if 'playlist_id' in channel_data:
-                self.api.execute_api_request('playlistItems.list', playlistId=channel_data.get('playlist_id'))
-            
-            # Then videos.list call for details - expected second call
-            self.api.execute_api_request('videos.list', id=['placeholder'])
-    
-        # Also handle comment fetching if requested
-        if options.get('fetch_comments', True) and 'video_id' in channel_data:
-            # Get first video ID to use for commentThreads.list
-            for video in channel_data.get('video_id', []):
-                if isinstance(video, dict) and 'video_id' in video:
-                    self.api.execute_api_request('commentThreads.list', videoId=video.get('video_id'))
-                    break

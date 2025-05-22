@@ -17,9 +17,10 @@ from src.services.youtube_service import YouTubeService
 from src.api.youtube_api import YouTubeAPI
 from src.database.sqlite import SQLiteDatabase
 from tests.fixtures.base_youtube_test_case import BaseYouTubeTestCase
-from tests.integration.test_quota_estimation import TestQuotaEstimation
-from tests.integration.test_optimization_techniques import TestOptimizationTechniques
-from tests.integration.test_quota_optimization_strategies import TestQuotaOptimizationStrategies
+from tests.integration.services.test_quota_estimation import TestQuotaEstimation
+from tests.integration.workflow.test_optimization_techniques import TestOptimizationTechniques
+from tests.integration.services.test_quota_optimization_strategies import BaseQuotaOptimizationTest
+
 
 # The TestQuotaEstimation class has been moved to test_quota_estimation.py
 # The TestOptimizationTechniques class has been moved to test_optimization_techniques.py

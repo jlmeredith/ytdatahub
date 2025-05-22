@@ -14,10 +14,10 @@ import pytest
 from unittest.mock import MagicMock
 
 # Import all the classes from the refactored files
-from tests.ui.test_data_conversion import TestDataConversion
-from tests.ui.test_channel_selection_ui import TestChannelSelectionUI
-from tests.ui.test_channel_refresh import TestChannelRefresh
-from tests.ui.test_comparison_view import TestComparisonView
+from tests.ui.pages.test_data_conversion import TestDataConversion
+from tests.ui.pages.test_channel_selection_ui import TestChannelSelectionUI
+from tests.ui.pages.test_channel_refresh import TestChannelRefresh
+from tests.ui.pages.test_comparison_view import TestComparisonView
 
 # For backward compatibility, also define the original class name
 class TestChannelSelectionWorkflow(TestChannelSelectionUI):

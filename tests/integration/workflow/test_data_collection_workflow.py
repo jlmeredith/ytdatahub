@@ -29,12 +29,12 @@ from src.utils.helpers import debug_log
 
 # Import the base test case and test classes from their new locations
 from tests.fixtures.base_youtube_test_case import BaseYouTubeTestCase
-from tests.integration.test_data_collection_workflow_steps import TestDataCollectionWorkflow
-from tests.integration.test_slider_quota_management import TestSliderAndQuotaManagement
-from tests.integration.test_queue_management import TestQueueManagement 
-from tests.integration.test_delta_reporting import TestDeltaReporting
-from tests.integration.test_end_to_end_workflow import TestEndToEndWorkflow
-from tests.integration.test_api_db_comparison_view import TestApiDbComparisonView
+from tests.integration.workflow.test_data_collection_workflow_steps import TestDataCollectionWorkflow
+from tests.integration.services.test_slider_quota_management import TestSliderAndQuotaManagement
+from tests.integration.services.test_queue_management import TestQueueManagement 
+from tests.integration.database.test_delta_reporting import TestDeltaReporting
+from tests.integration.workflow.test_end_to_end_workflow import TestEndToEndWorkflow
+from tests.integration.api.test_api_db_comparison_view import TestApiDbComparisonView
 
 # This file is now just a stub that imports all the tests from their new locations
 # The actual test classes are maintained in their respective files

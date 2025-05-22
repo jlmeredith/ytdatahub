@@ -268,6 +268,9 @@ def main():
     # Process URL parameters
     process_url_params()
     
+    # Render queue status in sidebar
+    render_queue_status_sidebar()
+    
     # Create sidebar
     create_sidebar()
     

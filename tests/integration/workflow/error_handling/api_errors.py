@@ -7,7 +7,7 @@ import logging
 from googleapiclient.errors import HttpError
 
 from src.services.youtube_service import YouTubeService
-from src.api.youtube_api import YouTubeAPI
+from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
 from src.database.sqlite import SQLiteDatabase
 from tests.integration.workflow.test_data_collection_workflow import BaseYouTubeTestCase
 
@@ -73,7 +73,7 @@ class TestApiErrorHandling(BaseYouTubeTestCase):
             })
         
         # Verify error was logged with key details
-        assert "API error" in caplog.text
+        assert "Error fetching channel data" in caplog.text
         assert "500" in caplog.text
         assert "Backend Error" in caplog.text
     
@@ -93,9 +93,11 @@ class TestApiErrorHandling(BaseYouTubeTestCase):
         ]
         
         for code, error_type, should_retry in error_code_tests:
+            # Debug logging to trace the loop
+            print(f"Testing error code: {code}, error type: {error_type}, should retry: {should_retry}")
             # Reset mocks
-            mock_api.get_channel_info.reset_mock()
-            mock_api.get_channel_info.side_effect = None
+            mock_api.reset_mock()
+            mock_db.reset_mock()
             
             # Configure error for this test case
             error = YouTubeAPIError(
@@ -126,3 +128,28 @@ class TestApiErrorHandling(BaseYouTubeTestCase):
                     # Should have failed with error
                     assert 'error' in result
                     assert mock_api.get_channel_info.call_count == 1
+
+    def test_rate_limit_retry(self):
+        """Test retry logic for rateLimitExceeded (429) error code."""
+        service, mock_api, mock_db = self.setup_mock_api_and_service()
+
+        # Configure mock API to simulate rate limit exceeded and successful retry
+        mock_api.get_channel_info.side_effect = [
+            Exception("Rate limit exceeded"),  # First attempt fails
+            {"channel_id": "UC_test_channel"}  # Second attempt succeeds
+        ]
+
+        # Add debug logs to trace execution
+        self.logger.debug("Starting test_rate_limit_retry")
+        self.logger.debug("Configuring mock API side_effect for rate limit exceeded")
+
+        # Call the method under test
+        try:
+            self.logger.debug("Calling collect_channel_data with retry_attempts=3")
+            service.collect_channel_data("UC_test_channel", options={"retry_attempts": 3})
+        except Exception as e:
+            self.logger.error(f"Test failed with exception: {e}")
+
+        # Verify the mock API was called twice
+        self.logger.debug(f"Mock API call count: {mock_api.get_channel_info.call_count}")
+        assert mock_api.get_channel_info.call_count == 2, "Mock API should be called twice for retry."

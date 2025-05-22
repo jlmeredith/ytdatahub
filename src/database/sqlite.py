@@ -299,6 +299,20 @@ class SQLiteDatabase:
         """
         return self.channel_repository.get_channels_list()
 
+    def get_channel(self, channel_identifier):
+        """
+        Get channel data by ID or title - delegated to ChannelRepository.get_channel_data
+        
+        Args:
+            channel_identifier (str): Either a YouTube channel ID (UC...) or a channel title
+            
+        Returns:
+            dict or None: Channel data or None if not found
+        """
+        debug_log(f"SQLiteDatabase: get_channel called with identifier: {channel_identifier}")
+        # This is an alias for get_channel_data to maintain compatibility with the API
+        return self.get_channel_data(channel_identifier)
+
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():
     # Use default path from config

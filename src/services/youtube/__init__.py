@@ -11,7 +11,6 @@ from src.services.youtube.video_service import VideoService
 from src.services.youtube.comment_service import CommentService
 from src.services.youtube.delta_service import DeltaService
 from src.services.youtube.youtube_service_impl import YouTubeServiceImpl
-from src.services.youtube.youtube_service_patched import YouTubeService
 
 __all__ = [
     'BaseService',

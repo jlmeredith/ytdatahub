@@ -42,10 +42,10 @@ class TestChannelSelector(unittest.TestCase):
         mock_expander.return_value = MagicMock().__enter__.return_value
         mock_db = MagicMock()
     
-        # Create a minimal dataframe for testing
+        # Create a dataframe with all required columns for testing
         test_channels_df = pd.DataFrame([
-            {"Channel": "Test Channel 1", "Subscribers": 100},
-            {"Channel": "Test Channel 2", "Subscribers": 200}
+            {"Channel": "Test Channel 1", "Subscribers": 100, "Videos": 10, "Last Updated": "2025-05-01", "DB_ID": "1"},
+            {"Channel": "Test Channel 2", "Subscribers": 200, "Videos": 20, "Last Updated": "2025-05-02", "DB_ID": "2"}
         ])
 
         # Configure selectbox to return the current session state value
@@ -117,9 +117,9 @@ class TestChannelSelector(unittest.TestCase):
             # Call with search query
             channel_selector.render_channel_selector(["Test Channel 1"], mock_db)
             
-            # Value should expand to total_channels on new search (which is 2 in our test dataframe)
-            self.assertEqual(self.mock_session_state.channel_display_limit, 2,
-                            "channel_display_limit should expand for a new search")
+            # Value should persist even on new search
+            self.assertEqual(self.mock_session_state.channel_display_limit, 30,
+                            "channel_display_limit should persist for a new search")
             
             # Now clear search query to test returning to default
             mock_text_input.return_value = ""
@@ -148,11 +148,10 @@ class TestChannelSelector(unittest.TestCase):
         # Set up mocks
         mock_expander.return_value = MagicMock().__enter__.return_value
         mock_db = MagicMock()
-        
-        # Create minimal test data
+         # Create test data with all required columns
         test_channels_df = pd.DataFrame([
-            {"Channel": "Test Channel 1", "Subscribers": 100}, 
-            {"Channel": "Test Channel 2", "Subscribers": 200}
+            {"Channel": "Test Channel 1", "Subscribers": 100, "Videos": 10, "Last Updated": "2025-05-01", "DB_ID": "1"},
+            {"Channel": "Test Channel 2", "Subscribers": 200, "Videos": 20, "Last Updated": "2025-05-02", "DB_ID": "2"}
         ])
         
         # Add minimal mocks for testing

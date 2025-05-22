@@ -12,9 +12,12 @@ from src.config import SQLITE_DB_PATH
 from .state_management import initialize_session_state, toggle_debug_mode
 from .steps_ui import render_collection_steps
 from .comparison_ui import render_comparison_view
-from .channel_refresh_ui import channel_refresh_section
 from .queue_ui import render_queue_status
 from .debug_ui import render_debug_panel
+
+# Import workflow components (these will replace channel_refresh_section)
+from .workflow_base import BaseCollectionWorkflow
+from .workflow_factory import create_workflow
 
 def render_data_collection_tab():
     """
@@ -95,11 +98,17 @@ def render_data_collection_tab():
             
             # Tab 1: New Collection
             with tabs[0]:
+                # Set collection mode to new_channel
+                st.session_state['collection_mode'] = "new_channel"
+                
                 if ('channel_info_temp' in st.session_state and 
                     st.session_state.get('channel_info_temp') is not None and 
                     st.session_state.channel_data_fetched):
-                    # Render the collection steps if channel data is already fetched
-                    render_collection_steps(st.session_state.channel_input, youtube_service)
+                    # Use our new workflow system to render the collection steps
+                    from .workflow_factory import create_workflow
+                    workflow = create_workflow(youtube_service, "new_channel")
+                    workflow.initialize_workflow(st.session_state.channel_input)
+                    workflow.render_current_step()
                 else:
                     # Channel input form
                     st.subheader("Channel Data Collection")
@@ -211,13 +220,23 @@ def render_data_collection_tab():
             
             # Tab 2: Update Channel (Refresh)
             with tabs[1]:
+                # Set collection mode to refresh_channel
+                st.session_state['collection_mode'] = "refresh_channel"
+                
                 # When entering the Update Channel tab, reset any leftover comparison view flag
                 if not st.session_state.get('update_tab_initialized', False):
                     if 'compare_data_view' in st.session_state:
                         st.session_state.compare_data_view = False
                     st.session_state.update_tab_initialized = True
                 
-                channel_refresh_section(youtube_service)
+                # Use our new workflow system for the refresh workflow
+                from .workflow_factory import create_workflow
+                workflow = create_workflow(youtube_service, "refresh_channel")
+                
+                # Get the channel ID from session state if available
+                channel_id = st.session_state.get('existing_channel_id', None)
+                workflow.initialize_workflow(channel_id)
+                workflow.render_current_step()
             
             # Tab 3: Queue Status
             with tabs[2]:

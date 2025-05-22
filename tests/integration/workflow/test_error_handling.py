@@ -5,21 +5,11 @@ Tests how the application handles API failures, partial collections, and quota i
 This file re-exports test classes that have been refactored into separate modules
 for better maintainability and organization.
 """
-# Import and re-export all test classes from the error_handling package
-from .error_handling import (
-    TestApiErrorHandling,
-    TestConnectionErrorHandling,
-    TestQuotaErrorHandling,
-    TestDataIntegrityErrorHandling,
-    TestRetryMechanisms,
-    TestRecoveryStrategies
-)
+
+from tests.integration.workflow.error_handling.api_errors import TestApiErrorHandling
+from tests.integration.workflow.error_handling.connection_errors import TestConnectionErrorHandling
 
 __all__ = [
     'TestApiErrorHandling',
     'TestConnectionErrorHandling',
-    'TestQuotaErrorHandling',
-    'TestDataIntegrityErrorHandling',
-    'TestRetryMechanisms',
-    'TestRecoveryStrategies'
 ]

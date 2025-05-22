@@ -83,14 +83,14 @@ def refresh_channel_data(channel_id, youtube_service, options):
                 debug_log("User selected 'Yes' to continue iteration")
                 st.session_state['iteration_choice'] = True
                 st.session_state['show_iteration_prompt'] = False
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if st.button("No", key="iter_no"):
                 debug_log("User selected 'No' to stop iteration")
                 st.session_state['iteration_choice'] = False
                 st.session_state['show_iteration_prompt'] = False
                 st.session_state['iteration_complete'] = True
-                st.experimental_rerun()
+                st.rerun()
         
         # Show progress message while waiting for user input
         st.info("Waiting for your decision to continue data collection...")

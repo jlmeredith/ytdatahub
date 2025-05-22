@@ -10,7 +10,7 @@ def display_comparison_results(db_data, api_data):
     st.subheader("Data Comparison")
     
     if not db_data or not api_data:
-        st.warning("Missing data for comparison")
+        # Skip showing the warning here since it's already shown in the workflow
         return
     
     # Extract channel info data

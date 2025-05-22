@@ -13,6 +13,50 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from src.database.sqlite import SQLiteDatabase
 from src.services.youtube_service import YouTubeService
 
+# Helper function to fix session state in tests
+def fix_session_state():
+    """Fix session state in tests to handle attribute access"""
+    if "session_state" not in st.__dict__:
+        # Create a dictionary-like object that allows attribute access
+        class SessionStateDict(dict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._dict = {}  # Add an internal dict for storing attributes
+            
+            def __getattr__(self, name):
+                # First try to get it from the internal dict
+                if name in self._dict:
+                    return self._dict[name]
+                # Then try to get it from self as a dict key
+                if name in self:
+                    return self[name]
+                # Otherwise initialize it
+                self[name] = None
+                return self[name]
+                
+            def __setattr__(self, name, value):
+                if name == '_dict':
+                    # Allow setting _dict attribute during initialization
+                    super().__setattr__(name, value)
+                else:
+                    # Store other attributes in the dict
+                    self[name] = value
+                
+            def __getitem__(self, key):
+                if key not in self:
+                    self[key] = None
+                return super().__getitem__(key)
+        
+        # Initialize with common default values
+        session_state = SessionStateDict()
+        session_state['debug_mode'] = True
+        session_state['log_level'] = 'INFO'
+        
+        st.session_state = session_state
+        return session_state
+    
+    return st.session_state
+
 
 class TestChannelRefresh:
     """Tests for the channel data refresh functionality."""
@@ -109,8 +153,7 @@ class TestChannelRefresh:
         mock_service.collect_channel_data.return_value = updated_api_data
         
         # Set up session state to simulate an existing channel
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         # Set session state as if we're in existing channel mode and have selected a channel
         previous_data = {
@@ -170,8 +213,7 @@ class TestChannelRefresh:
         mock_service.collect_channel_data.return_value = None
         
         # Set up session state to simulate an existing channel
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         # Set session state as if we're in existing channel mode and have selected a channel
         previous_data = {
@@ -233,8 +275,7 @@ class TestChannelRefresh:
         mock_service.collect_channel_data.return_value = updated_api_data
         
         # Set up session state
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         st.session_state.collection_mode = "existing_channel"
         st.session_state.existing_channel_id = "UC_test_channel"
@@ -264,8 +305,7 @@ class TestChannelRefresh:
         mock_sqlite_db.get_channel_data.return_value = mock_channel_data
         
         # Set up session state
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         st.session_state.collection_mode = "existing_channel"
         st.session_state.existing_channel_id = "UC_test_channel"
@@ -321,8 +361,7 @@ class TestChannelRefresh:
         mock_service.collect_channel_data.return_value = api_data
         
         # Set up session state for testing
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         # Test implementation would be here
         pass
@@ -343,8 +382,7 @@ class TestChannelRefresh:
         mock_service.collect_channel_data.return_value = {}
         
         # Set up session state
-        if "session_state" not in st.__dict__:
-            st.session_state = {}
+        fix_session_state()
         
         st.session_state.collection_mode = "existing_channel"
         st.session_state.existing_channel_id = "UC_test_channel"

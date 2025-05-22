@@ -8,7 +8,7 @@ This file re-exports test classes that have been refactored into separate module
 for better maintainability and organization.
 """
 # Import and re-export all test classes from the quota_optimization package
-from .quota_optimization import (
+from src.services.quota_optimization import (
     BaseQuotaOptimizationTest,
     TestBatchRequestStrategy,
     TestResourcePrioritization,

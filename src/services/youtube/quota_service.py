@@ -53,6 +53,10 @@ class QuotaService(BaseService):
         
         # Update cumulative quota usage
         self._quota_used += cost
+
+        self.logger.debug(f"Tracking quota usage for operation: {operation}, cost: {cost}")
+        self.logger.debug(f"Quota usage tracked: operation={operation}, cost={cost}, total_quota_used={self._quota_used}")
+        
         return cost
     
     def get_current_quota_usage(self) -> int:

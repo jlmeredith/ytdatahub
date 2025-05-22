@@ -139,6 +139,7 @@ class ChannelService(BaseService):
             dict or None: Channel information or None if not found
         """
         try:
+            self.logger.debug(f"track_quota: {track_quota}, quota_service available: {self.quota_service is not None}")
             # Track quota usage if requested
             if track_quota and self.quota_service:
                 self.quota_service.track_quota_usage('channels.list')

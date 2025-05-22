@@ -30,6 +30,9 @@ class YouTubeServiceImpl(QuotaManagementMixin, DataCollectionMixin,
         Args:
             api_key (str): YouTube Data API key
         """
+        # Initialize logger first
+        self.logger = logging.getLogger(__name__)
+        
         self.api = YouTubeAPI(api_key)
         
         # Initialize specialized services
@@ -38,6 +41,9 @@ class YouTubeServiceImpl(QuotaManagementMixin, DataCollectionMixin,
         self.channel_service = ChannelService(api_key, api_client=self.api, quota_service=self.quota_service)
         self.video_service = VideoService(api_key, api_client=self.api, quota_service=self.quota_service)
         self.comment_service = CommentService(api_key, api_client=self.api, quota_service=self.quota_service)
+        
+        # Debug logging for QuotaService initialization
+        self.logger.debug(f"QuotaService initialized with API key: {api_key}")
         
         # Add reference to quota attributes for backward compatibility
         self._quota_used = self.quota_service._quota_used
@@ -51,9 +57,6 @@ class YouTubeServiceImpl(QuotaManagementMixin, DataCollectionMixin,
         
         # Track channels saved to DB
         self._db_channel_saved = {}
-        
-        # Set up logging
-        self.logger = logging.getLogger(__name__)
         
         # Integrate delta service functionality
         integrate_delta_service(self)

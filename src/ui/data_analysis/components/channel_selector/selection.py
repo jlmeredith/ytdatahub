@@ -26,7 +26,7 @@ def handle_channel_selection(selected_channels):
         # Provide option to clear selection
         if st.button("Clear Selection"):
             st.session_state.selected_channels = []
-            st.experimental_rerun()
+            st.rerun()
         
         # Option to save comparison set
         if len(selected_channels) > 1:
@@ -51,12 +51,12 @@ def handle_channel_selection(selected_channels):
                 with col2:
                     if st.button(f"Load", key=f"load_{name}"):
                         st.session_state.selected_channels = channels.copy()
-                        st.experimental_rerun()
+                        st.rerun()
                 
                 with col3:
                     if st.button(f"Delete", key=f"delete_{name}"):
                         del st.session_state.saved_comparisons[name]
-                        st.experimental_rerun()
+                        st.rerun()
     
     return proceed
 

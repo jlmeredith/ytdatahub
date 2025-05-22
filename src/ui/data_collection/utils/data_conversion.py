@@ -152,17 +152,26 @@ def convert_db_to_api_format(db_data):
         
     return api_format
 
-def format_number(num):
+def format_number(num, short=False):
     """
-    Format a number with thousands separators.
+    Format a number with thousands separators or short form (e.g., 1K, 1.2M).
     
     Args:
         num (int or float): Number to format
+        short (bool): If True, use short form (e.g., 1K, 1.2M)
         
     Returns:
         str: Formatted number string
     """
     try:
-        return f"{int(num):,}"
+        n = int(num)
+        if short:
+            if n >= 1_000_000_000:
+                return f"{n/1_000_000_000:.1f}B".rstrip("0.") + "B"
+            elif n >= 1_000_000:
+                return f"{n/1_000_000:.1f}M".rstrip("0.") + "M"
+            elif n >= 1_000:
+                return f"{n/1_000:.0f}K"
+        return f"{n:,}"
     except (ValueError, TypeError):
         return str(num)

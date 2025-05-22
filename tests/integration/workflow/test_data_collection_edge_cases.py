@@ -6,9 +6,9 @@ This file re-exports test classes that have been refactored into separate module
 for better maintainability and organization.
 """
 # Import and re-export all test classes from the edge_cases package
-from .edge_cases import (
+from tests.integration.workflow.edge_cases import (
     TestChannelEdgeCases,
-    TestVideoEdgeCases, 
+    TestVideoEdgeCases,
     TestCommentEdgeCases,
     TestMetadataEdgeCases
 )
@@ -18,5 +18,4 @@ __all__ = [
     'TestVideoEdgeCases',
     'TestCommentEdgeCases',
     'TestMetadataEdgeCases'
-]
 ]

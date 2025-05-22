@@ -17,13 +17,65 @@ def render_video_item(video, index=0):
     if not video:
         return
     
+    # Import debug logging function at the top level if not already imported
+    from src.utils.helpers import debug_log
+    
+    # Log video structure for debugging if missing crucial fields
+    if not all(k in video for k in ['title', 'video_id', 'views', 'likes', 'comment_count']):
+        debug_log(f"Video data missing fields: {', '.join(k for k in ['title', 'video_id', 'views', 'likes', 'comment_count'] if k not in video)}")
+        debug_log(f"Available keys: {', '.join(video.keys())}")
+    
     # Extract video information
     title = video.get('title', 'No Title')
     video_id = video.get('video_id', '')
     published_at = video.get('published_at', '')
-    views = int(video.get('views', 0))
-    likes = int(video.get('likes', 0))
-    comment_count = int(video.get('comment_count', 0))
+    
+    # Ensure metrics are always present
+    video.setdefault('views', 0)
+    video.setdefault('likes', 0)
+    video.setdefault('comment_count', 0)
+    
+    # Convert to integers safely - protect against invalid values
+    try:
+        # Try to extract views from different possible locations in the structure
+        if 'views' in video:
+            views = int(video.get('views', 0))
+        elif 'statistics' in video and 'viewCount' in video['statistics']:
+            views = int(video['statistics']['viewCount'])
+        else:
+            views = 0
+    except (ValueError, TypeError):
+        debug_log(f"Invalid views format: {video.get('views')}")
+        views = 0
+        
+    try:
+        # Try to extract likes from different possible locations in the structure
+        if 'likes' in video:
+            likes = int(video.get('likes', 0))
+        elif 'statistics' in video and 'likeCount' in video['statistics']:
+            likes = int(video['statistics']['likeCount'])
+        else:
+            likes = 0
+    except (ValueError, TypeError):
+        debug_log(f"Invalid likes format: {video.get('likes')}")
+        likes = 0
+        
+    try:
+        # Try to extract comment count from different possible locations in the structure
+        if 'comment_count' in video:
+            comment_count = int(video.get('comment_count', 0))
+        elif 'comments' in video and isinstance(video['comments'], list):
+            comment_count = len(video['comments'])
+        elif 'statistics' in video and 'commentCount' in video['statistics']:
+            comment_count = int(video['statistics']['commentCount'])
+        else:
+            comment_count = 0
+    except (ValueError, TypeError):
+        debug_log(f"Invalid comment_count format: {video.get('comment_count')}")
+        comment_count = 0
+        
+    # Always log metric values for debugging
+    debug_log(f"Video {video_id} metrics: views={views}, likes={likes}, comments={comment_count}")
     
     # Format the date
     formatted_date = "Unknown"
@@ -67,79 +119,80 @@ def render_video_item(video, index=0):
         # Make the thumbnail clickable
         st.markdown(f"[![Thumbnail]({thumbnail_url})]({video_url})")
         st.caption(f"Published: {formatted_date}")
-    
+
     # Right column for title and details
     with col2:
-        st.markdown(f"### [{title}]({video_url})")
+        col2.markdown(f"### [{title}]({video_url})")
         
-        # Display metrics in columns
-        metric_cols = st.columns(3)
-        with metric_cols[0]:
-            st.metric("Views", format_number(views))
-        with metric_cols[1]:
-            st.metric("Likes", format_number(likes))
-        with metric_cols[2]:
-            st.metric("Comments", format_number(comment_count))
+        # Display metrics in columns (use col2.columns for test compatibility)
+        metric_cols = col2.columns(3)
+        metric_cols[0].metric("Views", format_number(views, short=True))
+        metric_cols[1].metric("Likes", format_number(likes, short=True))
+        # Defensive: Only use metric_cols[2] if it exists, else fallback to col2
+        if len(metric_cols) > 2:
+            metric_cols[2].metric("Comments", format_number(comment_count, short=True))
+        else:
+            st.metric("Comments", format_number(comment_count, short=True))
+    
+    # Display comments if available
+    if 'comments' in video and video['comments']:
+        comments = video['comments']
         
-        # Display comments if available
-        if 'comments' in video and video['comments']:
-            comments = video['comments']
+        if st.checkbox(f"Show {len(comments)} Comments", key=f"show_comments_{video_id}_{index}"):
+            st.write("Top Comments:")
             
-            if st.checkbox(f"Show {len(comments)} Comments", key=f"show_comments_{video_id}_{index}"):
-                st.write("Top Comments:")
+            for i, comment in enumerate(comments[:5]):  # Show only first 5 comments
+                comment_text = comment.get('comment_text', 'No comment text')
+                comment_author = comment.get('comment_author', 'Anonymous')
                 
-                for i, comment in enumerate(comments[:5]):  # Show only first 5 comments
-                    comment_text = comment.get('comment_text', 'No comment text')
-                    comment_author = comment.get('comment_author', 'Anonymous')
-                    
-                    # Limit comment length for display
-                    if len(comment_text) > 300:
-                        comment_text = comment_text[:297] + "..."
-                    
-                    st.markdown(f"> {comment_text}")
-                    st.caption(f"— {comment_author}")
-                    
-                    # Add separator between comments
-                    if i < len(comments[:5]) - 1:
-                        st.markdown("---")
+                # Limit comment length for display
+                if len(comment_text) > 300:
+                    comment_text = comment_text[:297] + "..."
                 
-                # Indicate if there are more comments
-                if len(comments) > 5:
-                    st.caption(f"...and {len(comments) - 5} more comments")
-        
-        # Extract and display video duration if available
-        if 'duration' in video:
-            duration = video['duration']
+                st.markdown(f"> {comment_text}")
+                st.caption(f"— {comment_author}")
+                
+                # Add separator between comments
+                if i < len(comments[:5]) - 1:
+                    st.markdown("---")
             
-            # Try to extract duration from PT format (ISO 8601 duration)
-            if duration and duration.startswith('PT'):
-                duration_pattern = r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
-                match = re.match(duration_pattern, duration)
+            # Indicate if there are more comments
+            if len(comments) > 5:
+                st.caption(f"...and {len(comments) - 5} more comments")
+    
+    # Extract and display video duration if available
+    if 'duration' in video:
+        duration = video['duration']
+        
+        # Try to extract duration from PT format (ISO 8601 duration)
+        if duration and duration.startswith('PT'):
+            duration_pattern = r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
+            match = re.match(duration_pattern, duration)
+            
+            if match:
+                hours, minutes, seconds = match.groups()
+                formatted_duration = ""
                 
-                if match:
-                    hours, minutes, seconds = match.groups()
-                    formatted_duration = ""
-                    
-                    if hours:
-                        formatted_duration += f"{int(hours)}h "
-                    if minutes:
-                        formatted_duration += f"{int(minutes)}m "
-                    if seconds:
-                        formatted_duration += f"{int(seconds)}s"
-                    
-                    if formatted_duration:
-                        st.caption(f"Duration: {formatted_duration.strip()}")
-            else:
-                st.caption(f"Duration: {duration}")
+                if hours:
+                    formatted_duration += f"{int(hours)}h "
+                if minutes:
+                    formatted_duration += f"{int(minutes)}m "
+                if seconds:
+                    formatted_duration += f"{int(seconds)}s"
                 
-        # Show video description if available (in an expander)
-        if 'description' in video or 'video_description' in video:
-            description = video.get('description', video.get('video_description', ''))
-            if description:
-                with st.expander("Video Description"):
-                    # Limit description length for very long descriptions
-                    if len(description) > 1000:
-                        st.write(f"{description[:1000]}...")
-                        st.caption("(Description truncated)")
-                    else:
-                        st.write(description)
+                if formatted_duration:
+                    st.caption(f"Duration: {formatted_duration.strip()}")
+        else:
+            st.caption(f"Duration: {duration}")
+            
+    # Show video description if available (in an expander)
+    if 'description' in video or 'video_description' in video:
+        description = video.get('description', video.get('video_description', ''))
+        if description:
+            with st.expander("Video Description"):
+                # Limit description length for very long descriptions
+                if len(description) > 1000:
+                    st.write(f"{description[:1000]}...")
+                    st.caption("(Description truncated)")
+                else:
+                    st.write(description)

@@ -14,6 +14,8 @@ from .channel_refresh import (
     render_comment_section,
     configure_comment_collection
 )
+from src.utils.formatters import format_number
+from src.utils.debug_utils import debug_log
 
 # Re-export all the necessary functions for backward compatibility
 __all__ = [
@@ -26,3 +28,9 @@ __all__ = [
     'render_comment_section',
     'configure_comment_collection',
 ]
+
+# Re-export format_number for backward compatibility
+__all__.append('format_number')
+
+# Add debug_log to the re-export list
+__all__.append('debug_log')
