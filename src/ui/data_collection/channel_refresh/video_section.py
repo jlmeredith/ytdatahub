@@ -141,6 +141,11 @@ def render_video_section(videos_data, youtube_service, channel_id):
     # Display a sample of videos
     st.subheader("Recently Published Videos")
     
+    # Determine if any video has delta fields
+    has_deltas = any(
+        any(f in v for f in ("view_delta", "like_delta", "comment_delta")) for v in videos_data
+    )
+
     # Create a dataframe for videos
     video_data_for_display = []
     for i, video in enumerate(videos_data[:10]):  # Show up to 10 videos
@@ -159,13 +164,19 @@ def render_video_section(videos_data, youtube_service, channel_id):
         # Format comment count
         formatted_comment_count = format_number(comment_count) if comment_count else '0'
         
-        video_data_for_display.append({
+        row = {
             "Video ID": video_id,
             "Title": title,
             "Published Date": published,
             "Views": views,
             "Comments": formatted_comment_count
-        })
+        }
+        if has_deltas:
+            row["View Δ"] = video.get("view_delta", "")
+            row["Like Δ"] = video.get("like_delta", "")
+            row["Comment Δ"] = video.get("comment_delta", "")
+        
+        video_data_for_display.append(row)
     
     if video_data_for_display:
         # Add pagination for videos
@@ -222,12 +233,18 @@ def render_video_section(videos_data, youtube_service, channel_id):
             
             debug_log(f"Video {video_id} views for pagination: {views}")
             
-            video_data_for_current_page.append({
+            row = {
                 "Video ID": video_id,
                 "Title": title,
                 "Published Date": published,
                 "Views": views
-            })
+            }
+            if has_deltas:
+                row["View Δ"] = video.get("view_delta", "")
+                row["Like Δ"] = video.get("like_delta", "")
+                row["Comment Δ"] = video.get("comment_delta", "")
+            
+            video_data_for_current_page.append(row)
         
         video_df = pd.DataFrame(video_data_for_current_page)
         st.dataframe(video_df)

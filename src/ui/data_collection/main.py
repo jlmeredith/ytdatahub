@@ -14,6 +14,7 @@ from .steps_ui import render_collection_steps
 from .comparison_ui import render_comparison_view
 from .queue_ui import render_queue_status_sidebar
 from .debug_ui import render_debug_panel
+from .utils.delta_reporting import render_delta_report
 
 # Import workflow components (these will replace channel_refresh_section)
 from .workflow_base import BaseCollectionWorkflow
@@ -157,6 +158,21 @@ def render_data_collection_tab():
                                                     st.session_state.channel_info_temp = channel_info
                                                     st.session_state.current_channel_data = channel_info
                                                     st.session_state.channel_data_fetched = True
+                                                    # Attach debug logs and response data to session state for debug panel
+                                                    if 'debug_logs' in channel_info:
+                                                        st.session_state['debug_logs'] = channel_info['debug_logs']
+                                                    if 'response_data' in channel_info:
+                                                        st.session_state['response_data'] = channel_info['response_data']
+                                                    # Show delta info if present
+                                                    if any(f in channel_info for f in ("view_delta", "like_delta", "comment_delta", "delta")):
+                                                        st.subheader("Detailed Change Report")
+                                                        # Use delta reporting utility if available
+                                                        previous_data = st.session_state.get('previous_channel_data')
+                                                        updated_data = channel_info
+                                                        render_delta_report(previous_data, updated_data, data_type="channel")
+                                                    # Show actual video count if present
+                                                    if 'actual_video_count' in channel_info:
+                                                        st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
                                                     st.rerun()
                                                 else:
                                                     st.error("Could not fetch latest channel data from YouTube API.")
@@ -176,6 +192,21 @@ def render_data_collection_tab():
                                                     st.session_state.channel_info_temp = channel_info
                                                     st.session_state.current_channel_data = channel_info
                                                     st.session_state.channel_data_fetched = True
+                                                    # Attach debug logs and response data to session state for debug panel
+                                                    if 'debug_logs' in channel_info:
+                                                        st.session_state['debug_logs'] = channel_info['debug_logs']
+                                                    if 'response_data' in channel_info:
+                                                        st.session_state['response_data'] = channel_info['response_data']
+                                                    # Show delta info if present
+                                                    if any(f in channel_info for f in ("view_delta", "like_delta", "comment_delta", "delta")):
+                                                        st.subheader("Detailed Change Report")
+                                                        # Use delta reporting utility if available
+                                                        previous_data = st.session_state.get('previous_channel_data')
+                                                        updated_data = channel_info
+                                                        render_delta_report(previous_data, updated_data, data_type="channel")
+                                                    # Show actual video count if present
+                                                    if 'actual_video_count' in channel_info:
+                                                        st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
                                                     st.rerun()
                                                 else:
                                                     st.error("Could not fetch channel data from YouTube API.")
@@ -253,6 +284,10 @@ def render_data_collection_tab():
         
         # When debug mode is enabled, show debug information
         if st.session_state.debug_mode:
-            render_debug_panel()
+            render_debug_panel(
+                logs=st.session_state.get('debug_logs', []),
+                response_data=st.session_state.get('response_data', {}),
+                session_state=st.session_state
+            )
     else:
         st.error("Please enter a YouTube API Key")

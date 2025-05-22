@@ -1,34 +1,32 @@
-# YTDataHub Documentation Index
+# YTDataHub Documentation
 
-This document serves as the main entry point for all YTDataHub documentation. Each link below provides detailed information on different aspects of the application.
+Welcome to the YTDataHub documentation. This documentation is organized into several sections to help you find the information you need.
 
-## User Documentation
+## Documentation Sections
 
-- [Quick Start Guide](../README.md#quick-start-guide) - Get up and running quickly
-- [Setup and Installation](../README.md#setup-and-installation) - Detailed installation instructions
-- [Using YTDataHub](../README.md#using-ytdatahub-overview) - Overview of usage workflow
-- [Troubleshooting Guide](troubleshooting.md) - Solutions for common issues and problems
+- [Getting Started](getting-started/index.md) - Quick start guide and installation instructions
+- [User Guide](user-guide/index.md) - Detailed information about features and usage
+- [Technical Reference](reference/index.md) - Technical information about architecture and API
+- [Troubleshooting](troubleshooting/index.md) - Solutions for common issues and problems
 
-## Feature Documentation
+## Quick Links
 
-- [Analytics Features](analytics-features.md) - Detailed overview of analytics capabilities and architecture
-- [Data Collection Workflow](data-collection-workflow.md) - Step-by-step guide for collecting YouTube data
-- [Bulk Import](bulk-import.md) - How to import multiple channels at once
-- [Delta Reporting](delta-reporting.md) - How change tracking works between data refreshes
-- [UI Features](ui-features.md) - Overview of the user interface components
+### User Documentation
 
-## YouTube API Documentation
+- [Data Collection Workflow](getting-started/data-collection-workflow.md) - Step-by-step guide for collecting data
+- [Bulk Import Guide](user-guide/bulk-import.md) - How to import multiple channels at once
+- [Analytics Features](user-guide/analytics-features.md) - Overview of analytics capabilities
+- [Troubleshooting Guide](troubleshooting/troubleshooting.md) - Solutions for common issues
 
-- [YouTube API Guide](youtube-api-guide.md) - Comprehensive guide on working with the YouTube API
-- [YouTube API Quota Guide](youtube-api-quota-guide.md) - Detailed information on API quota management
-- [YouTube API Architecture](youtube-api-architecture.md) - Structure of the YouTube API client
+### Technical Documentation
 
-## Technical Documentation
+- [Architecture](reference/architecture.md) - System design and component relationships
+- [Project Structure](reference/project-structure.md) - Codebase organization
+- [YouTube API Guide](reference/youtube-api-guide.md) - Working with the YouTube API
+- [YouTube API Quota Guide](reference/youtube-api-quota-guide.md) - Detailed information on API quota management
+- [Database Operations](reference/database-operations.md) - How data is stored and retrieved
 
-- [Architecture Overview](architecture.md) - System architecture and component organization
-- [Project Structure](project-structure.md) - Detailed overview of the codebase organization
-- [Database Operations](database-operations.md) - How data is stored and retrieved
-- [API Implementation Guide](api-implementation-guide.md) - Notes on the API implementation
+
 
 ## Screenshots and Visuals
 
@@ -44,4 +42,4 @@ This document serves as the main entry point for all YTDataHub documentation. Ea
 
 ---
 
-Can't find what you need? The main [README.md](../README.md) file contains a comprehensive overview of the entire application.
+Can't find what you need? See our [README.md](../README.md) for a concise overview of YTDataHub.

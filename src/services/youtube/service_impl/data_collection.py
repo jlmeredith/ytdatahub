@@ -22,56 +22,76 @@ class DataCollectionMixin:
     def collect_channel_data(self, channel_id, options=None, existing_data=None):
         """Collect channel data including videos and comments"""
         try:
-            # Initialize channel data
-            channel_data = existing_data or {}
+            debug_logs = []
+            def log(msg):
+                debug_logs.append(msg)
+            # Deep copy existing_data to avoid mutation
+            channel_data = copy.deepcopy(existing_data) if existing_data else {}
             channel_data['channel_id'] = channel_id
+            log(f"Starting data collection for channel: {channel_id}")
             
             # Get channel info
             channel_info = self.api.get_channel_info(channel_id)
             if not channel_info:
+                log("Failed to fetch channel info")
+                channel_data['debug_logs'] = debug_logs
                 return {'error': 'Failed to fetch channel info'}
             
             # Update channel data with info
             channel_data.update(channel_info)
+            log(f"Fetched channel info: {channel_info}")
             
             # Fetch videos if requested
             if options.get('fetch_videos'):
                 try:
                     video_response = self.video_service.collect_channel_videos(channel_data)
+                    log(f"Video service response: {video_response}")
                     if 'error_videos' in video_response:
                         channel_data['error_videos'] = video_response['error_videos']
+                        log(f"Error fetching videos: {video_response['error_videos']}")
                     else:
                         channel_data['video_id'] = video_response['video_id']
                         channel_data['video_id'] = fix_missing_views(channel_data['video_id'])
-                        # Calculate deltas if we have existing data
+                        log(f"Fixed missing views for videos. Count: {len(channel_data['video_id'])}")
                         if existing_data and 'video_id' in existing_data:
-                            # Deep copy to avoid mutating test input
-                            existing_videos_fixed = fix_missing_views(copy.deepcopy(existing_data['video_id']))
+                            existing_videos_copy = copy.deepcopy(existing_data['video_id'])
+                            for v in existing_videos_copy:
+                                if 'statistics' in v:
+                                    del v['statistics']
+                            existing_videos_fixed = fix_missing_views(existing_videos_copy)
                             for video in channel_data['video_id']:
                                 existing_video = next((v for v in existing_videos_fixed if v['video_id'] == video['video_id']), None)
                                 if existing_video:
-                                    print(f"DELTA DEBUG: video_id={video['video_id']} new_views={video['views']} old_views={existing_video.get('views', '0')}", file=sys.stderr)
                                     video['view_delta'] = int(video['views']) - int(existing_video.get('views', '0'))
                                     video['like_delta'] = int(video['likes']) - int(existing_video.get('likes', '0'))
                                     video['comment_delta'] = int(video['comment_count']) - int(existing_video.get('comment_count', '0'))
+                                    log(f"Delta for video {video['video_id']}: view_delta={video['view_delta']}, like_delta={video['like_delta']}, comment_delta={video['comment_delta']}")
                         channel_data['quota_used'] = video_response.get('quota_used', 0)
                         channel_data['videos_fetched'] = video_response.get('videos_fetched', 0)
+                        channel_data['actual_video_count'] = len(channel_data['video_id'])
                 except Exception as e:
                     channel_data['error_videos'] = str(e)
+                    log(f"Exception during video fetch: {str(e)}")
             
             # Fetch comments if requested
             if options.get('fetch_comments') and 'video_id' in channel_data:
                 try:
                     comment_response = self.comment_service.collect_video_comments(channel_data)
+                    log(f"Comment service response: {comment_response}")
                     if 'error_comments' in comment_response:
                         channel_data['error_comments'] = comment_response['error_comments']
+                        log(f"Error fetching comments: {comment_response['error_comments']}")
                     else:
                         channel_data['comments'] = comment_response['comments']
                         channel_data['quota_used'] = channel_data.get('quota_used', 0) + comment_response.get('quota_used', 0)
                         channel_data['comments_fetched'] = comment_response.get('comments_fetched', 0)
                 except Exception as e:
                     channel_data['error_comments'] = str(e)
+                    log(f"Exception during comment fetch: {str(e)}")
             
+            # Attach debug logs and full response for frontend
+            channel_data['debug_logs'] = debug_logs
+            channel_data['response_data'] = copy.deepcopy(channel_data)
             return channel_data
             
         except Exception as e:
