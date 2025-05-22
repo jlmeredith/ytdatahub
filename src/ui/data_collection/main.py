@@ -12,7 +12,7 @@ from src.config import SQLITE_DB_PATH
 from .state_management import initialize_session_state, toggle_debug_mode
 from .steps_ui import render_collection_steps
 from .comparison_ui import render_comparison_view
-from .queue_ui import render_queue_status
+from .queue_ui import render_queue_status_sidebar
 from .debug_ui import render_debug_panel
 
 # Import workflow components (these will replace channel_refresh_section)
@@ -244,7 +244,7 @@ def render_data_collection_tab():
                 if st.session_state.get('update_tab_initialized', False):
                     st.session_state.update_tab_initialized = False
                 
-                render_queue_status()
+                render_queue_status_sidebar()
         
         # Debug mode toggle at the bottom
         st.divider()

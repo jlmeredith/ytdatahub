@@ -144,3 +144,21 @@ def estimate_quota_usage(fetch_channel=None, fetch_videos=None, fetch_comments=N
     """
     from src.utils.quota_estimation import estimate_quota_usage as _estimate_quota_usage
     return _estimate_quota_usage(fetch_channel, fetch_videos, fetch_comments, video_count, comments_count)
+
+# Function has been moved to src.utils.validation
+# This placeholder is kept for backward compatibility
+def clean_channel_id(channel_identifier: str) -> str:
+    """
+    Clean and validate a channel identifier (ID, URL, or handle).
+    
+    This function has been moved to src.utils.validation.
+    This placeholder is kept for backward compatibility.
+    
+    Args:
+        channel_identifier: The channel ID, URL, or handle to clean.
+    
+    Returns:
+        str: The cleaned channel ID.
+    """
+    from src.utils.validation import validate_channel_id
+    return validate_channel_id(channel_identifier)[1]

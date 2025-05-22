@@ -2,6 +2,7 @@
 Helper functions for formatting and fixing video data
 """
 from src.utils.helpers import debug_log
+import json
 
 def ensure_views_data(video_data):
     """
@@ -56,10 +57,18 @@ def ensure_views_data(video_data):
         
         # Additional step: Check for comment_count in statistics and make sure it's copied to the base level
         # This ensures consistency between the new channel and refresh flows
-        if 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
-            if 'comment_count' not in video or not video['comment_count']:
-                video['comment_count'] = video['statistics']['commentCount']
-                debug_log(f"Setting comment_count from statistics.commentCount: {video['statistics']['commentCount']}")
+        if 'statistics' in video and isinstance(video['statistics'], dict):
+            # Handle comment count
+            if 'commentCount' in video['statistics']:
+                if 'comment_count' not in video or not video['comment_count']:
+                    video['comment_count'] = video['statistics']['commentCount']
+                    debug_log(f"Setting comment_count from statistics.commentCount: {video['statistics']['commentCount']}")
+            
+            # Handle likes
+            if 'likeCount' in video['statistics']:
+                if 'likes' not in video or not video['likes']:
+                    video['likes'] = video['statistics']['likeCount']
+                    debug_log(f"Setting likes from statistics.likeCount: {video['statistics']['likeCount']}")
         
         # Clean up temporary field
         if 'original_views' in video:
@@ -116,7 +125,6 @@ def extract_video_views(video, format_func=None):
         # Path 2: Check if statistics is a string (API sometimes returns serialized JSON)
         if not views and 'statistics' in video and isinstance(video['statistics'], str):
             try:
-                import json
                 stats_dict = json.loads(video['statistics'])
                 if 'viewCount' in stats_dict:
                     views = str(stats_dict['viewCount']).strip()
@@ -189,146 +197,37 @@ def extract_video_views(video, format_func=None):
         debug_log(f"Error extracting views for video {video_id}: {str(e)}")
         return '0'
 
-def fix_missing_views(videos_data):
-    """
-    Advanced function to diagnose and fix missing view data in videos
-    Also handles extracting comment counts from statistics.
-    
-    Args:
-        videos_data (list): List of video dictionaries
-        
-    Returns:
-        list: The same list with updated view data and comment counts
-    """
-    if not videos_data or not isinstance(videos_data, list):
-        return videos_data
-    
-    # First - process all videos specifically for comment counts
-    # We need to do this first, separate from the view count processing
-    for video in videos_data:
-        if isinstance(video, dict) and 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
-            video['comment_count'] = video['statistics']['commentCount']
-            debug_log(f"Preprocess: Added comment_count from statistics: {video['statistics']['commentCount']}")
-            
-    debug_log(f"Running fix_missing_views on {len(videos_data)} videos")
-    
-    for i, video in enumerate(videos_data):
-        if not isinstance(video, dict):
-            continue
-            
-        video_id = video.get('video_id', f"video_{i}")
-        
-        # Check if this video has valid views
-        has_valid_views = ('views' in video and video['views'] and str(video['views']) != '0')
-        
-        # Skip videos that already have valid view data
-        if has_valid_views:
-            debug_log(f"Video {video_id} already has valid views: {video['views']}")
-            continue
-            
-        debug_log(f"Attempting to fix missing views for video {video_id}")
-        
-        # Always check for comment count regardless of view count status
-        if 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
-            video['comment_count'] = video['statistics']['commentCount']
-            debug_log(f"Added comment_count from statistics.commentCount: {video['statistics']['commentCount']} for video {video_id}")
-                
-        # First try direct access to statistics.viewCount
-        # This is the most common location in the YouTube API
-        if 'statistics' in video:
-            stats = video['statistics']
-            if isinstance(stats, dict):
-                # Handle empty statistics dictionary
-                if not stats:
-                    debug_log(f"Video {video_id} has empty statistics dictionary, using '0'")
-                    video['views'] = '0'
-                    continue
-                elif 'viewCount' in stats:
-                    video['views'] = stats['viewCount']
-                    debug_log(f"Fixed views for {video_id} from statistics.viewCount: {stats['viewCount']}")
-                    continue
-                
-        # Next, attempt to parse from raw API response
-        # Sometimes the API returns statistics as a string or in different nested structures
-        raw_video_str = str(video)
-        import re
-        
-        # Look for viewCount in raw string using regex
-        viewcount_pattern = r'"viewCount":\s*"?(\d+)"?'
-        match = re.search(viewcount_pattern, raw_video_str)
-        if match:
-            view_count = match.group(1)
-            video['views'] = view_count
-            debug_log(f"Extracted views for {video_id} using regex: {view_count}")
-            
-            # Also look for commentCount while we're at it
-            commentcount_pattern = r'"commentCount":\s*"?(\d+)"?'
-            comment_match = re.search(commentcount_pattern, raw_video_str)
-            if comment_match and ('comment_count' not in video or not video['comment_count']):
-                comment_count = comment_match.group(1)
-                video['comment_count'] = comment_count
-                debug_log(f"Extracted comment_count for {video_id} using regex: {comment_count}")
-            
-            continue
-            
-        # If we still don't have views, try additional locations
-        # Check contentDetails.statistics.viewCount
-        if 'contentDetails' in video and isinstance(video['contentDetails'], dict):
-            if 'statistics' in video['contentDetails'] and isinstance(video['contentDetails']['statistics'], dict):
-                if 'viewCount' in video['contentDetails']['statistics']:
-                    video['views'] = video['contentDetails']['statistics']['viewCount']
-                    debug_log(f"Fixed views for {video_id} from contentDetails.statistics.viewCount")
-                if 'commentCount' in video['contentDetails']['statistics'] and ('comment_count' not in video or not video['comment_count']):
-                    video['comment_count'] = video['contentDetails']['statistics']['commentCount']
-                    debug_log(f"Fixed comment_count for {video_id} from contentDetails.statistics.commentCount")
-                continue
-        
-        # Look for any field containing 'view' in its name (case insensitive)
-        view_related_fields = [k for k in video.keys() if 'view' in k.lower() and k.lower() != 'preview']
-        for field in view_related_fields:
-            if video[field] and str(video[field]) != '0':
-                video['views'] = str(video[field])
-                debug_log(f"Found view data in field '{field}' for {video_id}: {video['views']}")
-                continue
-        
-        # As a last resort, examine all properties for viewCount
-        for key, value in video.items():
-            if isinstance(value, dict) and 'viewCount' in value:
-                video['views'] = value['viewCount']
-                debug_log(f"Found viewCount in property {key} for {video_id}")
-                # Also look for commentCount in the same property
-                if 'commentCount' in value and ('comment_count' not in video or not video['comment_count']):
-                    video['comment_count'] = value['commentCount']
-                    debug_log(f"Found commentCount in property {key} for {video_id}")
-                continue
-            
-            # Look in dict values for anything containing view-related keywords 
-            if isinstance(value, dict):
-                for k, v in value.items():
-                    if 'view' in k.lower() and str(v) != '0':
-                        video['views'] = str(v)
-                        debug_log(f"Found view data in nested property {key}.{k} for {video_id}: {v}")
-                        continue
-        
-        # If we still don't have views, set to '0'
-        # All YouTube videos should have at least one view from the uploader
-        if not has_valid_views:
+def fix_missing_views(videos):
+    """Fix missing views data in video list"""
+    if not videos:
+        return videos
+    for video in videos:
+        # Only set default if missing
+        if 'views' not in video:
             video['views'] = '0'
-            # Remove views_display if it exists, we want to use '0' consistently
-            if 'views_display' in video:
-                video.pop('views_display', None)
-            debug_log(f"Could not find any view data for {video_id}, using '0'")
-    
-    # Count how many videos were fixed
-    fixed_count = 0
-    comment_count = 0
-    for video in videos_data:
-        if isinstance(video, dict) and 'views' in video and video['views'] and str(video['views']) != '0':
-            fixed_count += 1
-        if isinstance(video, dict) and 'comment_count' in video and video['comment_count']:
-            comment_count += 1
-            
-    debug_log(f"Views extraction complete: {fixed_count}/{len(videos_data)} videos have valid view counts")
-    debug_log(f"Comment count extraction complete: {comment_count}/{len(videos_data)} videos have valid comment counts")
-    
-    return videos_data
+        if 'likes' not in video:
+            video['likes'] = '0'
+        if 'comment_count' not in video:
+            video['comment_count'] = '0'
+        # Try to get statistics from various locations
+        stats = None
+        if isinstance(video.get('statistics'), dict):
+            stats = video['statistics']
+        elif isinstance(video.get('statistics'), str):
+            try:
+                stats = json.loads(video['statistics'])
+            except:
+                pass
+        elif isinstance(video.get('contentDetails', {}).get('statistics'), dict):
+            stats = video['contentDetails']['statistics']
+        elif isinstance(video.get('snippet', {}).get('statistics'), dict):
+            stats = video['snippet']['statistics']
+        if stats:
+            # Only set if not already present or is '0'
+            if ('views' not in video or video['views'] == '0') and 'viewCount' in stats:
+                video['views'] = str(stats.get('viewCount', '0'))
+            if ('likes' not in video or video['likes'] == '0') and 'likeCount' in stats:
+                video['likes'] = str(stats.get('likeCount', '0'))
+            if ('comment_count' not in video or video['comment_count'] == '0') and 'commentCount' in stats:
+                video['comment_count'] = str(stats.get('commentCount', '0'))
+    return videos

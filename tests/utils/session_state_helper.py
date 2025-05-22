@@ -19,8 +19,14 @@ def fix_session_state_for_tests():
                 self._dict = {}  # Add an internal dict for storing attributes
             
             def __getattr__(self, name):
+                # Handle special Python name lookups like __func__, __self__, etc.
                 if name.startswith('__') and name.endswith('__'):
-                    raise AttributeError(f"SessionStateDict has no attribute '{name}'")
+                    # This is important: delegate to dict's __getattribute__ for internal methods
+                    try:
+                        return super().__getattribute__(name)
+                    except AttributeError:
+                        raise AttributeError(f"SessionStateDict has no attribute '{name}'")
+                
                 # First try to get it from the internal dict
                 if name in self._dict:
                     return self._dict[name]
@@ -40,8 +46,16 @@ def fix_session_state_for_tests():
                     self[name] = value
                 
             def __getitem__(self, key):
+                # Special handling for magic methods accessed as dictionary keys
                 if isinstance(key, str) and key.startswith('__') and key.endswith('__'):
-                    raise AttributeError(f"SessionStateDict has no key '{key}'")
+                    try:
+                        # First try to get it as a real attribute
+                        return getattr(self.__class__, key)
+                    except (AttributeError, KeyError):
+                        # If not found, initialize it
+                        self[key] = None
+                        return self[key]
+                
                 if key not in self:
                     self[key] = None
                 return super().__getitem__(key)

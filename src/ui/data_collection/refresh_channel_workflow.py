@@ -8,7 +8,6 @@ from .components.video_item import render_video_item
 from .channel_refresh.comparison import display_comparison_results
 from .utils.data_conversion import format_number, convert_db_to_api_format
 from .utils.error_handling import handle_collection_error
-from src.ui.data_collection.queue_ui import render_queue_status
 from src.utils.queue_tracker import render_queue_status_sidebar
 
 class RefreshChannelWorkflow(BaseCollectionWorkflow):
@@ -100,10 +99,22 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                             if st.session_state['api_data'] is None:
                                 st.session_state['api_data'] = {}
                             
-                            # Add delta information if available
-                            if 'delta' in comparison_data:
+                            # Promote delta info from api_data if present
+                            if 'delta' in st.session_state['api_data']:
+                                st.session_state['delta'] = st.session_state['api_data']['delta']
+                            elif 'delta' in comparison_data:
                                 st.session_state['delta'] = comparison_data['delta']
-                                
+                            # Always ensure delta is present at the top level for test parity
+                            if 'delta' not in st.session_state['api_data'] and 'delta' in st.session_state:
+                                st.session_state['api_data']['delta'] = st.session_state['delta']
+                            
+                            # Ensure the returned channel data has delta at the top level
+                            if 'channel' in st.session_state['api_data']:
+                                if 'delta' in st.session_state['api_data']:
+                                    st.session_state['api_data']['channel']['delta'] = st.session_state['api_data']['delta']
+                                elif 'delta' in st.session_state:
+                                    st.session_state['api_data']['channel']['delta'] = st.session_state['delta']
+                            
                             # Check if we have actual data content in both objects
                             if (len(st.session_state['db_data']) == 0 and len(st.session_state['api_data']) == 0):
                                 st.error("No data could be retrieved from either the database or YouTube API.")

@@ -90,11 +90,9 @@ class CommentAnalyzer(BaseAnalyzer):
     def _process_comments_data(self, channel_data, comments):
         """Process and flatten the nested comment structure."""
         data = []
-        
         for video_id, video_comments in comments.items():
             video_title = "Unknown"
             video_publish_date = None
-            
             # Try to find the video title and publish date
             if 'videos' in channel_data:
                 for video in channel_data['videos']:
@@ -102,32 +100,26 @@ class CommentAnalyzer(BaseAnalyzer):
                         video_title = video.get('snippet', {}).get('title', "Unknown")
                         video_publish_date = video.get('snippet', {}).get('publishedAt', '')
                         break
-            
             for comment in video_comments:
                 # Get top-level comment data
                 comment_snippet = comment.get('snippet', {}).get('topLevelComment', {}).get('snippet', {})
-                
                 # Determine if it's a thread parent or a reply
                 is_reply = False
                 parent_id = None
                 reply_level = 0
-                
                 # Check comment ID format for reply pattern
                 comment_id = comment.get('comment_id', comment.get('id', 'Unknown'))
-                
                 # If this is a reply based on the comment_id structure (contains a dot)
                 if '.' in comment_id:
                     is_reply = True
                     # Extract parent_id as everything before the dot
                     parent_id = comment_id.split('.')[0]
                     reply_level = 1
-                
                 # Additional checks from previous implementation
                 elif 'parent_id' in comment:
                     is_reply = True
                     parent_id = comment.get('parent_id')
                     reply_level = 1
-                
                 # For replies marked with [REPLY] in text (from our API)
                 elif isinstance(comment.get('comment_text', ''), str) and comment.get('comment_text', '').startswith('[REPLY]'):
                     is_reply = True
@@ -135,30 +127,41 @@ class CommentAnalyzer(BaseAnalyzer):
                     if not parent_id and 'parent_id' in comment:
                         parent_id = comment.get('parent_id')
                     reply_level = 1
-                
                 # Get author and text from either structure
                 if 'comment_author' in comment:
-                    author = comment.get('comment_author', 'Unknown')
-                    text = comment.get('comment_text', 'Unknown')
-                    published = comment.get('comment_published_at', '')
+                    author = str(comment.get('comment_author', 'Unknown'))
+                    text = str(comment.get('comment_text', 'Unknown'))
+                    published = comment.get('comment_published_at', '') or ''
                     likes = self.safe_int_value(comment.get('like_count', 0))
                     comment_id = comment.get('comment_id', 'Unknown')
                 else:
-                    author = comment_snippet.get('authorDisplayName', 'Unknown')
-                    text = comment_snippet.get('textDisplay', 'Unknown')
-                    published = comment_snippet.get('publishedAt', '')
+                    author = str(comment_snippet.get('authorDisplayName', 'Unknown'))
+                    text = str(comment_snippet.get('textDisplay', 'Unknown'))
+                    published = comment_snippet.get('publishedAt', '') or ''
                     likes = self.safe_int_value(comment_snippet.get('likeCount', 0))
                     comment_id = comment.get('id', 'Unknown')
-                
                 # Remove [REPLY] prefix if present in text
                 if is_reply and text.startswith('[REPLY] '):
                     text = text[8:]  # Remove the prefix
-                
+                # Defensive: ensure all fields are valid types
+                if not isinstance(likes, int):
+                    try:
+                        likes = int(likes)
+                    except Exception:
+                        likes = 0
+                if not isinstance(text, str):
+                    text = str(text) if text is not None else 'Unknown'
+                if not isinstance(author, str):
+                    author = str(author) if author is not None else 'Unknown'
+                if published is None:
+                    published = ''
+                if not isinstance(comment_id, str):
+                    comment_id = str(comment_id) if comment_id is not None else 'Unknown'
                 # Create the row
                 row = {
                     'Video ID': video_id,
                     'Video': video_title,
-                    'Video Published': video_publish_date, 
+                    'Video Published': video_publish_date,
                     'Comment ID': comment_id,
                     'Author': author,
                     'Text': text,
@@ -170,28 +173,34 @@ class CommentAnalyzer(BaseAnalyzer):
                     'Text Length': len(text) if text else 0
                 }
                 data.append(row)
-                
         # Create DataFrame
         df = pd.DataFrame(data) if data else pd.DataFrame()
-        
         # Clean dates
         if not df.empty and 'Published' in df.columns:
             try:
-                df['Published'] = pd.to_datetime(df['Published']).dt.date
-            except:
+                df['Published'] = pd.to_datetime(df['Published'], errors='coerce')
+            except Exception:
                 pass
-            
+        # Ensure Likes is always int and fill NaN with 0
+        if not df.empty and 'Likes' in df.columns:
+            df['Likes'] = pd.to_numeric(df['Likes'], errors='coerce').fillna(0).astype(int)
+        # Ensure Text Length is always int and fill NaN with 0
+        if not df.empty and 'Text Length' in df.columns:
+            df['Text Length'] = pd.to_numeric(df['Text Length'], errors='coerce').fillna(0).astype(int)
+        # Ensure Author and Text are always str
+        if not df.empty and 'Author' in df.columns:
+            df['Author'] = df['Author'].astype(str)
+        if not df.empty and 'Text' in df.columns:
+            df['Text'] = df['Text'].astype(str)
         return df
 
     def _analyze_temporal_data(self, df):
         """Analyze temporal patterns in comments."""
         if df.empty:
             return None
-            
         try:
             # Convert string dates to datetime objects for analysis
-            df['Published_DateTime'] = pd.to_datetime(df['Published'])
-            
+            df['Published_DateTime'] = pd.to_datetime(df['Published'], errors='coerce')
             # Extract time components
             df['Date'] = df['Published_DateTime'].dt.date
             df['Year'] = df['Published_DateTime'].dt.year
@@ -200,35 +209,32 @@ class CommentAnalyzer(BaseAnalyzer):
             df['Day'] = df['Published_DateTime'].dt.day
             df['Weekday'] = df['Published_DateTime'].dt.day_name()
             df['Hour'] = df['Published_DateTime'].dt.hour
-            
             # Comments by day
             daily_comments = df.groupby('Date').size().reset_index(name='Count')
             daily_comments = daily_comments.sort_values('Date')
-            
             # Comments by month
             monthly_comments = df.groupby(['Year', 'Month', 'Month_Name']).size().reset_index(name='Count')
             monthly_comments['YearMonth'] = monthly_comments['Year'].astype(str) + '-' + monthly_comments['Month_Name']
             monthly_comments = monthly_comments.sort_values(['Year', 'Month'])
-            
             # Comments by hour of day
             hourly_comments = df.groupby('Hour').size().reset_index(name='Count')
-            
             # Comments by day of week
             dow_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
             weekday_comments = df.groupby('Weekday').size().reset_index(name='Count')
             weekday_comments['Weekday'] = pd.Categorical(weekday_comments['Weekday'], categories=dow_order, ordered=True)
             weekday_comments = weekday_comments.sort_values('Weekday')
             weekday_comments = weekday_comments.rename(columns={'Weekday': 'Day'})
-            
             temporal_data = {
                 'daily': daily_comments,
                 'monthly': monthly_comments,
                 'hourly': hourly_comments,
                 'day_of_week': weekday_comments
             }
-            
             return temporal_data
-        except Exception:
+        except Exception as e:
+            print('Exception in _analyze_temporal_data:', e)
+            import traceback
+            traceback.print_exc()
             return None
 
     def _analyze_thread_data(self, df):

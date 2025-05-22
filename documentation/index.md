@@ -30,13 +30,6 @@ This document serves as the main entry point for all YTDataHub documentation. Ea
 - [Database Operations](database-operations.md) - How data is stored and retrieved
 - [API Implementation Guide](api-implementation-guide.md) - Notes on the API implementation
 
-## Developer Documentation
-
-- [Testing Guide](testing-guide.md) - Information about the test suite
-- [Test Suite Coverage](test-suite-coverage.md) - Comprehensive overview of test coverage
-- [Test Coverage Gaps](test-coverage-gaps.md) - Areas that need additional testing
-- [Schema Migration](old-to-new-schema.md) - Database schema evolution documentation
-
 ## Screenshots and Visuals
 
 - [Homepage](homepage.png) - Application homepage
@@ -48,8 +41,6 @@ This document serves as the main entry point for all YTDataHub documentation. Ea
 ## Development Resources
 
 - [Change Log](../CHANGELOG.md) - Complete history of changes and improvements
-- [Documentation Plan](DOCUMENTATION_PLAN.md) - Guide for documentation structure
-- [Documentation Maintenance](documentation-maintenance.md) - Best practices for updating documentation
 
 ---
 

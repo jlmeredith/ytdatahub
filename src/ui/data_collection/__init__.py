@@ -7,7 +7,7 @@ from .steps_ui import render_collection_steps
 from .comparison_ui import render_comparison_view, render_api_db_comparison
 from .channel_refresh_ui import channel_refresh_section
 from .debug_ui import render_debug_panel, render_debug_logs
-from .queue_ui import render_queue_status, get_queue_stats
+from .queue_ui import render_queue_status_sidebar, get_queue_stats
 from .state_management import initialize_session_state, toggle_debug_mode
 from .utils.data_conversion import convert_db_to_api_format, format_number
 from .utils.delta_reporting import render_delta_report
@@ -22,7 +22,7 @@ __all__ = [
     'channel_refresh_section',
     'render_debug_panel',
     'render_debug_logs',
-    'render_queue_status',
+    'render_queue_status_sidebar',
     'get_queue_stats',
     'initialize_session_state',
     'toggle_debug_mode',

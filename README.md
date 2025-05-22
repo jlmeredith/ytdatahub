@@ -290,5 +290,3 @@ For more details about the project architecture, technical implementation, and f
 ## Testing
 
 YTDataHub includes a comprehensive test suite to ensure functionality and reliability across all components. Tests cover utility functions, database operations, UI components, and integration workflows.
-
-For detailed information about testing, including test organization, coverage, and execution, see the [Test Suite Coverage Documentation](documentation/test-suite-coverage.md).

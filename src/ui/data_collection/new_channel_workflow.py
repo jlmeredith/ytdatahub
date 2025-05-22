@@ -7,7 +7,6 @@ from src.ui.data_collection.workflow_base import BaseCollectionWorkflow
 from .components.video_item import render_video_item
 from .utils.data_conversion import format_number
 from .utils.error_handling import handle_collection_error
-from src.ui.data_collection.queue_ui import render_queue_status
 from src.utils.queue_tracker import render_queue_status_sidebar
 
 class NewChannelWorkflow(BaseCollectionWorkflow):

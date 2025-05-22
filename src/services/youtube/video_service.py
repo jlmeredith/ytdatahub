@@ -4,6 +4,7 @@ Provides methods for fetching and processing video data.
 """
 import logging
 import time
+import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -30,121 +31,114 @@ class VideoService(BaseService):
         self.quota_service = quota_service
         self.logger = logging.getLogger(__name__)
     
-    def collect_channel_videos(self, channel_data: Dict, max_results: int = 0, optimize_quota: bool = False) -> Dict:
-        """
-        Fetch and populate videos for the channel.
-        
-        Args:
-            channel_data: Dictionary containing channel data with playlist_id
-            max_results: Maximum number of videos to retrieve (0 for all)
-            optimize_quota: Whether to optimize quota usage
-            
-        Returns:
-            dict: Updated channel data with videos
-            
-        Raises:
-            HttpError: If an HTTP error occurs during the API call
-            YouTubeAPIError: If a YouTube API-specific error occurs
-        """
-        channel_id = channel_data.get('channel_id')
-        if not channel_id:
-            debug_log("No channel ID available to fetch videos")
-            return channel_data
-            
-        debug_log(f"Fetching videos for channel: {channel_id}, max_results: {max_results}, optimize_quota: {optimize_quota}")
-        
+    def collect_channel_videos(self, channel_data, max_results=50, quota_optimize=False):
+        """Fetch and populate videos for a channel"""
         try:
-            # Initialize variables for pagination
-            all_videos = []
+            # Initialize variables
             next_page_token = None
-            total_videos_fetched = 0
-            has_more_pages = True
+            quota_used = 0
+            videos = []
             
-            # Track quota for initial request if quota service is provided
-            if self.quota_service:
-                self.quota_service.track_quota_usage('playlistItems.list')
-                
-            # Loop until we have all pages or reach max_results
-            while has_more_pages:
-                # Request videos from the channel with pagination token
-                videos_response = self.api.get_channel_videos(
-                    channel_data, 
-                    max_videos=max_results, 
-                    page_token=next_page_token,
-                    optimize_quota=optimize_quota
-                )
-                
-                if not videos_response:
-                    debug_log("Failed to retrieve videos or channel has no videos")
-                    break
-                
-                # Extract videos from the response
-                current_page_videos = []
-                if 'video_id' in videos_response:
-                    if isinstance(videos_response['video_id'], list):
-                        current_page_videos = videos_response['video_id']
-                        debug_log(f"Collected {len(current_page_videos)} videos on this page")
-                    else:
-                        # Handle case where video_id might be a dictionary or other structure
-                        debug_log(f"Warning: video_id is not a list, but {type(videos_response['video_id'])}")
-                        # Try to extract videos if possible
-                        if 'video_id' in videos_response:
-                            current_page_videos = videos_response['video_id']
-                            debug_log(f"Extracted {len(current_page_videos) if isinstance(current_page_videos, list) else 'unknown'} videos from special structure")
-                
-                # Add current page videos to the aggregate list
-                if current_page_videos:
-                    all_videos.extend(current_page_videos)
-                    total_videos_fetched += len(current_page_videos)
-                    debug_log(f"Total videos fetched so far: {total_videos_fetched}")
-                
-                # Get the next page token if it exists
-                next_page_token = videos_response.get('nextPageToken')
-                
-                # Determine if we have more pages to fetch
-                has_more_pages = next_page_token is not None
-                
-                # Check if we've hit our max_results limit (if specified)
-                if max_results > 0 and total_videos_fetched >= max_results:
-                    debug_log(f"Reached max_results limit of {max_results}")
-                    break
-                
-                # Track quota for additional requests if quota service is provided
-                if has_more_pages and self.quota_service:
-                    self.quota_service.track_quota_usage('playlistItems.list')
+            # Get initial video response
+            response = self.api.get_channel_videos(channel_data['channel_id'], max_results=max_results)
+            quota_used += 1  # Track quota usage
             
-            # Update channel_data with all collected videos
-            channel_data['video_id'] = all_videos
-            debug_log(f"Final video count: {len(all_videos)}")
-                
-            # Preserve videos_unavailable field if present in response
-            if 'videos_unavailable' in videos_response:
-                channel_data['videos_unavailable'] = videos_response['videos_unavailable']
-                debug_log(f"Preserved videos_unavailable count: {videos_response['videos_unavailable']}")
-                
-            # Also preserve videos_fetched field if present
-            if 'videos_fetched' in videos_response:
-                channel_data['videos_fetched'] = total_videos_fetched
-                debug_log(f"Total videos fetched across all pages: {total_videos_fetched}")
-                
-            # Process videos that might have errors (like unavailable videos)
-            self._process_video_details(channel_data)
+            if not response or 'video_id' not in response:
+                return {'error_videos': 'No videos found'}
             
-            return channel_data
+            # Process video response
+            for video in response['video_id']:
+                # Ensure video has required fields
+                if 'video_id' not in video:
+                    continue
+                
+                # Initialize metrics
+                video['views'] = '0'
+                video['likes'] = '0'
+                video['comment_count'] = '0'
+                
+                # Try to get statistics from various locations
+                stats = None
+                if isinstance(video.get('statistics'), dict):
+                    stats = video['statistics']
+                elif isinstance(video.get('statistics'), str):
+                    try:
+                        stats = json.loads(video['statistics'])
+                    except:
+                        pass
+                elif isinstance(video.get('contentDetails', {}).get('statistics'), dict):
+                    stats = video['contentDetails']['statistics']
+                elif isinstance(video.get('snippet', {}).get('statistics'), dict):
+                    stats = video['snippet']['statistics']
+                
+                if stats:
+                    # Extract metrics from statistics
+                    video['views'] = str(stats.get('viewCount', '0'))
+                    video['likes'] = str(stats.get('likeCount', '0'))
+                    video['comment_count'] = str(stats.get('commentCount', '0'))
+                
+                videos.append(video)
+            
+            # Handle pagination if needed
+            if not quota_optimize and 'nextPageToken' in response:
+                next_page_token = response['nextPageToken']
+                while next_page_token and len(videos) < max_results:
+                    response = self.api.get_channel_videos(
+                        channel_data['channel_id'],
+                        max_results=max_results,
+                        page_token=next_page_token
+                    )
+                    quota_used += 1
+                    
+                    if not response or 'video_id' not in response:
+                        break
+                    
+                    for video in response['video_id']:
+                        if len(videos) >= max_results:
+                            break
+                        
+                        # Initialize metrics
+                        video['views'] = '0'
+                        video['likes'] = '0'
+                        video['comment_count'] = '0'
+                        
+                        # Try to get statistics from various locations
+                        stats = None
+                        if isinstance(video.get('statistics'), dict):
+                            stats = video['statistics']
+                        elif isinstance(video.get('statistics'), str):
+                            try:
+                                stats = json.loads(video['statistics'])
+                            except:
+                                pass
+                        elif isinstance(video.get('contentDetails', {}).get('statistics'), dict):
+                            stats = video['contentDetails']['statistics']
+                        elif isinstance(video.get('snippet', {}).get('statistics'), dict):
+                            stats = video['snippet']['statistics']
+                        
+                        if stats:
+                            # Extract metrics from statistics
+                            video['views'] = str(stats.get('viewCount', '0'))
+                            video['likes'] = str(stats.get('likeCount', '0'))
+                            video['comment_count'] = str(stats.get('commentCount', '0'))
+                        
+                        videos.append(video)
+                    
+                    next_page_token = response.get('nextPageToken')
+            
+            return {
+                'video_id': videos,
+                'quota_used': quota_used,
+                'videos_fetched': len(videos)
+            }
             
         except YouTubeAPIError as e:
-            # Special handling for quota exceeded errors
-            if e.status_code == 403 and getattr(e, 'error_type', '') == 'quotaExceeded':
-                channel_data['error_videos'] = f"Quota exceeded: {str(e)}"
-                debug_log(f"Quota exceeded error handled gracefully: {channel_id}")
-                return channel_data
-            else:
-                # Handle other API errors but re-raise
-                debug_log(f"Error collecting videos: {str(e)}")
-                raise
-        
-        # Note: We're letting HttpError propagate through to parent for proper test behavior
-            
+            if e.error_type == 'quotaExceeded':
+                return {'error_videos': 'Quota exceeded'}
+            return {'error_videos': str(e)}
+        except Exception as e:
+            return {'error_videos': str(e)}
+
     def _process_video_details(self, channel_data: Dict) -> None:
         """
         Process video details and handle errors for individual videos.

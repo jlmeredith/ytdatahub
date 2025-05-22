@@ -119,6 +119,45 @@ def test_add_vs_refresh_channel_data_parity():
     assert isinstance(malformed_video['views'], (int, float)), f"Malformed 'views' not handled: {malformed_video['views']}"
     assert isinstance(malformed_video['comment_count'], (int, float)), f"Malformed 'comment_count' not handled: {malformed_video['comment_count']}"
 
+    # --- Delta Info Checks ---
+    # For refresh/update, ensure delta info is present and correct
+    refresh_channel_data = refresh_results['channel']
+    assert 'delta' in refresh_channel_data, "Delta info missing in refresh workflow channel data"
+    delta = refresh_channel_data['delta']
+    assert isinstance(delta, dict), "Delta info is not a dict"
+    for key in ['subscribers', 'views', 'total_videos']:
+        assert key in delta, f"Delta missing key: {key}"
+        assert isinstance(delta[key], (int, float)), f"Delta value for {key} is not numeric"
+
+    # Video delta
+    if 'video_delta' in refresh_channel_data:
+        video_delta = refresh_channel_data['video_delta']
+        assert 'new_videos' in video_delta
+        assert 'updated_videos' in video_delta
+        assert isinstance(video_delta['new_videos'], list)
+        assert isinstance(video_delta['updated_videos'], list)
+
+    # Comment delta
+    if 'comment_delta' in refresh_channel_data:
+        comment_delta = refresh_channel_data['comment_delta']
+        assert 'new_comments' in comment_delta
+        assert 'videos_with_new_comments' in comment_delta
+
+    # --- Session State Consistency Checks ---
+    # (Assume session state is available via service or mock, or add a placeholder for now)
+    # For TDD, we can assert that the returned data structures are the same for both workflows
+    add_channel_data = add_results['channel']
+    for key in ['channel_id', 'channel_name', 'subscribers', 'views', 'total_videos']:
+        assert key in add_channel_data, f"Missing {key} in add workflow channel data"
+        assert key in refresh_channel_data, f"Missing {key} in refresh workflow channel data"
+    # Videos and comments structure
+    add_videos = add_results['videos']['video_id']
+    refresh_videos = refresh_results['videos']['video_id']
+    for v_add, v_refresh in zip(add_videos, refresh_videos):
+        for key in ['video_id', 'views', 'comment_count']:
+            assert key in v_add, f"Missing {key} in add workflow video data"
+            assert key in v_refresh, f"Missing {key} in refresh workflow video data"
+
     print("[TEST DEBUG] test_add_vs_refresh_channel_data_parity finished")
 
 if __name__ == "__main__":

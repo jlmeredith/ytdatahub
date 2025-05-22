@@ -129,76 +129,70 @@ class QueueTracker:
                 all_items.extend(st.session_state.db_queue[queue_type])
             return all_items
 
+def _ss_set(ss, key, value):
+    if isinstance(ss, dict):
+        ss[key] = value
+    else:
+        setattr(ss, key, value)
+
+def _ss_get(ss, key, default=None):
+    if isinstance(ss, dict):
+        return ss.get(key, default)
+    else:
+        return getattr(ss, key, default)
+
 def initialize_queue_state():
     """
     Initialize the session state variables for queue tracking
     """
-    if _TEST_MODE:
-        return
-        
-    if 'db_queue' not in st.session_state:
-        st.session_state.db_queue = {
+    ss = st.session_state
+    if _ss_get(ss, 'db_queue') is None:
+        _ss_set(ss, 'db_queue', {
             'channels': [],
             'videos': [],
             'comments': [],
             'analytics': []
-        }
-        
-    if 'queue_stats' not in st.session_state:
-        st.session_state.queue_stats = {
+        })
+    if _ss_get(ss, 'queue_stats') is None:
+        _ss_set(ss, 'queue_stats', {
             'last_updated': None,
             'total_items': 0,
             'channels_count': 0,
             'videos_count': 0,
             'comments_count': 0,
             'analytics_count': 0
-        }
+        })
 
 def add_to_queue(item_type, item_data, identifier=None):
     """
     Add an item to the tracked queue
-    
-    Args:
-        item_type (str): Type of item ('channels', 'videos', 'comments', 'analytics')
-        item_data (dict): The data being queued
-        identifier (str, optional): Unique identifier for the item (e.g., video_id)
     """
-    # Call test hook if set
     if _add_to_queue_hook is not None:
         _add_to_queue_hook(item_type, item_data, identifier)
     
     if _TEST_MODE:
-        # Add the timestamp
         queue_item = {
             'data': item_data,
             'added_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'id': identifier or f"{item_type}_{len(_test_queue[item_type])}"
         }
-        
-        # Add to the appropriate queue
         if item_type in _test_queue:
             _test_queue[item_type].append(queue_item)
-            
-        # Update stats
         update_queue_stats()
         return
-    
+        
+    ss = st.session_state
     initialize_queue_state()
-    
-    # Add the timestamp
+    db_queue = _ss_get(ss, 'db_queue')
     queue_item = {
         'data': item_data,
         'added_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'id': identifier or f"{item_type}_{len(st.session_state.db_queue[item_type])}"
+        'id': identifier or f"{item_type}_{len(db_queue[item_type])}"
     }
-    
-    # Add to the appropriate queue
-    if item_type in st.session_state.db_queue:
-        st.session_state.db_queue[item_type].append(queue_item)
-        
-    # Update stats
+    if item_type in db_queue:
+        db_queue[item_type].append(queue_item)
     update_queue_stats()
-    
+
 def remove_from_queue(item_type, identifier):
     """
     Remove an item from the tracked queue
@@ -282,32 +276,32 @@ def update_queue_stats():
         )
         return
         
+    ss = st.session_state
     initialize_queue_state()
-    
-    st.session_state.queue_stats['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    st.session_state.queue_stats['channels_count'] = len(st.session_state.db_queue['channels'])
-    st.session_state.queue_stats['videos_count'] = len(st.session_state.db_queue['videos'])
-    st.session_state.queue_stats['comments_count'] = len(st.session_state.db_queue['comments'])
-    st.session_state.queue_stats['analytics_count'] = len(st.session_state.db_queue['analytics'])
-    st.session_state.queue_stats['total_items'] = (
-        st.session_state.queue_stats['channels_count'] +
-        st.session_state.queue_stats['videos_count'] +
-        st.session_state.queue_stats['comments_count'] +
-        st.session_state.queue_stats['analytics_count']
+    queue_stats = _ss_get(ss, 'queue_stats')
+    db_queue = _ss_get(ss, 'db_queue')
+    queue_stats['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    queue_stats['channels_count'] = len(db_queue['channels'])
+    queue_stats['videos_count'] = len(db_queue['videos'])
+    queue_stats['comments_count'] = len(db_queue['comments'])
+    queue_stats['analytics_count'] = len(db_queue['analytics'])
+    queue_stats['total_items'] = (
+        queue_stats['channels_count'] +
+        queue_stats['videos_count'] +
+        queue_stats['comments_count'] +
+        queue_stats['analytics_count']
     )
 
 def get_queue_stats():
     """
     Get current queue statistics
-    
-    Returns:
-        dict: The current queue statistics
     """
     if _TEST_MODE:
         return _test_queue_stats
         
+    ss = st.session_state
     initialize_queue_state()
-    return st.session_state.queue_stats
+    return _ss_get(ss, 'queue_stats')
 
 def render_queue_status_sidebar():
     """

@@ -216,7 +216,7 @@ class YouTubeChannelClient(YouTubeBaseClient):
             # Process the results
             channels = []
             for item in response.get('items', []):
-                channel_id = item['snippet']['channelId']
+                channel_id = item['id']['channelId']
                 
                 # Get detailed channel info for each result
                 channel_info = self.get_channel_info(channel_id)

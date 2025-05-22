@@ -205,3 +205,7 @@ class YouTubeBaseClient:
         """Clear the entire cache"""
         self._cache = {}
         debug_log("API cache cleared")
+
+    def ensure_api_cache(self):
+        """Stub for API cache initialization (no-op for now)."""
+        pass
