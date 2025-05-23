@@ -5,7 +5,7 @@ import streamlit as st
 from src.utils.helpers import debug_log
 from src.ui.data_collection.workflow_base import BaseCollectionWorkflow
 from .components.video_item import render_video_item
-from .channel_refresh.comparison import display_comparison_results
+from .channel_refresh.comparison import display_comparison_results, compare_data
 from .utils.data_conversion import format_number, convert_db_to_api_format
 from .utils.error_handling import handle_collection_error
 from src.utils.queue_tracker import render_queue_status_sidebar
@@ -69,15 +69,11 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                 st.session_state['channel_input'] = channel_id
                 st.session_state['api_initialized'] = True
                 st.session_state['api_client_initialized'] = True
-                
                 with st.spinner("Retrieving data for comparison..."):
                     debug_log(f"Getting comparison data for channel: {channel_id}")
-                    
-                    # Set flag to track comparison attempt
                     st.session_state['comparison_attempted'] = True
-                    
+                    import datetime
                     try:
-                        # Default options - channel data only
                         options = {
                             'fetch_channel_data': True,
                             'fetch_videos': False,
@@ -85,48 +81,37 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                             'max_videos': 0,
                             'max_comments_per_video': 0
                         }
-                        
                         comparison_data = self.youtube_service.update_channel_data(channel_id, options, interactive=False, existing_data=None)
-                        
-                        # Store data in session state for step 2
+                        st.session_state['last_api_call'] = datetime.datetime.now().isoformat()
                         if comparison_data and isinstance(comparison_data, dict):
                             st.session_state['db_data'] = comparison_data.get('db_data', {})
                             st.session_state['api_data'] = comparison_data.get('api_data', {})
-                            
-                            # Ensure we have valid data dictionaries, not None
                             if st.session_state['db_data'] is None:
                                 st.session_state['db_data'] = {}
                             if st.session_state['api_data'] is None:
                                 st.session_state['api_data'] = {}
-                            
                             # Promote delta info from api_data if present
                             if 'delta' in st.session_state['api_data']:
                                 st.session_state['delta'] = st.session_state['api_data']['delta']
                             elif 'delta' in comparison_data:
                                 st.session_state['delta'] = comparison_data['delta']
-                            # Always ensure delta is present at the top level for test parity
                             if 'delta' not in st.session_state['api_data'] and 'delta' in st.session_state:
                                 st.session_state['api_data']['delta'] = st.session_state['delta']
-                            
-                            # Ensure the returned channel data has delta at the top level
                             if 'channel' in st.session_state['api_data']:
                                 if 'delta' in st.session_state['api_data']:
                                     st.session_state['api_data']['channel']['delta'] = st.session_state['api_data']['delta']
                                 elif 'delta' in st.session_state:
                                     st.session_state['api_data']['channel']['delta'] = st.session_state['delta']
-                            
-                            # Check if we have actual data content in both objects
+                            # Store debug logs and response data if present
+                            if 'debug_logs' in comparison_data:
+                                st.session_state['debug_logs'] = comparison_data['debug_logs']
+                            if 'response_data' in comparison_data:
+                                st.session_state['response_data'] = comparison_data['response_data']
                             if (len(st.session_state['db_data']) == 0 and len(st.session_state['api_data']) == 0):
                                 st.error("No data could be retrieved from either the database or YouTube API.")
                                 return
-                                
-                            # Set the channel ID in session state
                             st.session_state['existing_channel_id'] = channel_id
-                            
-                            # Set the collection mode to refresh_channel
                             st.session_state['collection_mode'] = "refresh_channel"
-                            
-                            # Move to step 2 (review data)
                             st.session_state['refresh_workflow_step'] = 2
                             st.rerun()
                         else:
@@ -141,292 +126,215 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
     def render_step_1_channel_data(self):
         """Render step 2 (in refresh workflow): Review and update channel data."""
         st.subheader("Step 2: Review and Update Channel Data")
-        
-        # Get data from session state
         channel_id = st.session_state.get('existing_channel_id')
         db_data = st.session_state.get('db_data', {})
         api_data = st.session_state.get('api_data', {})
-        
-        if not channel_id:
-            st.warning("No channel selected. Please go back to Step 1.")
-            if st.button("Go back to Step 1"):
-                st.session_state['refresh_workflow_step'] = 1
+        debug_logs = st.session_state.get('debug_logs', [])
+        # Only fetch and compare channel info at this step
+        if st.button("Refresh Channel Info from API"):
+            with st.spinner("Fetching channel info from YouTube API..."):
+                options = {
+                    'fetch_channel_data': True,
+                    'fetch_videos': False,
+                    'fetch_comments': False,
+                    'max_videos': 0,
+                    'max_comments_per_video': 0
+                }
+                # Fetch channel info from API
+                channel_info_response = self.youtube_service.update_channel_data(
+                    channel_id,
+                    options,
+                    interactive=False
+                )
+                # Mark API as initialized and log the call
+                st.session_state['api_initialized'] = True
+                debug_logs.append(f"API call made to fetch channel info for {channel_id}")
+                st.session_state['debug_logs'] = debug_logs
+                st.session_state['last_api_call'] = channel_info_response.get('last_api_call')
+                # Store API data and debug info for this step only
+                if channel_info_response and isinstance(channel_info_response, dict):
+                    st.session_state['api_data'] = channel_info_response.get('api_data', {})
+                    st.session_state['response_data'] = channel_info_response.get('response_data', {})
+                    # Compare and store channel-level delta
+                    from src.ui.data_collection.channel_refresh.comparison import compare_data
+                    delta = compare_data(db_data, st.session_state['api_data'])
+                    st.session_state['delta'] = delta
+                    # Store a summary delta for UI display
+                    summary = []
+                    if 'subscribers' in delta:
+                        diff = delta['subscribers']['new'] - delta['subscribers']['old']
+                        arrow = '⬆️' if diff > 0 else ('⬇️' if diff < 0 else '')
+                        summary.append(f"Subscribers: {delta['subscribers']['old']} → {delta['subscribers']['new']} {arrow}")
+                    if 'views' in delta:
+                        diff = delta['views']['new'] - delta['views']['old']
+                        arrow = '⬆️' if diff > 0 else ('⬇️' if diff < 0 else '')
+                        summary.append(f"Views: {delta['views']['old']} → {delta['views']['new']} {arrow}")
+                    if 'videos' in delta:
+                        diff = delta['videos']['new'] - delta['videos']['old']
+                        arrow = '⬆️' if diff > 0 else ('⬇️' if diff < 0 else '')
+                        summary.append(f"Videos: {delta['videos']['old']} → {delta['videos']['new']} {arrow}")
+                    st.session_state['delta_summary'] = summary
+                    st.success("Channel info refreshed from API.")
+                else:
+                    st.error("Failed to fetch channel info from API.")
                 st.rerun()
-            return
-        
-        # Handle completely missing data
-        if db_data is None or api_data is None or (not db_data and not api_data):
-            st.warning("Missing data for comparison. Please try the comparison again.")
-            if st.button("Retry Comparison"):
-                # Get fresh data for the channel
-                with st.spinner("Retrying data comparison..."):
+
+        # Display channel information in a modern, readable format
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Channel", api_data.get('channel_name', 'Unknown'))
+            channel_url = f"https://www.youtube.com/channel/{api_data.get('channel_id')}"
+            st.markdown(f"[View Channel on YouTube]({channel_url})")
+        with col2:
+            st.metric("Subscribers", format_number(int(api_data.get('subscribers', 0))))
+        with col3:
+            st.metric("Total Videos", format_number(int(api_data.get('total_videos', 0))))
+
+        # Show additional channel details in an expander
+        with st.expander("Channel Details"):
+            st.write("**Description:**", api_data.get('channel_description', 'No description available'))
+            st.write("**Total Views:**", format_number(int(api_data.get('views', 0))))
+            st.write("**Channel ID:**", api_data.get('channel_id', 'Unknown'))
+
+        # Buttons for save or continue
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Save Channel Data"):
+                with st.spinner("Saving channel data..."):
                     try:
-                        # Fetch channel data again with same options
-                        options = {
-                            'fetch_channel_data': True,
-                            'fetch_videos': False,
-                            'fetch_comments': False,
-                            'max_videos': 0,
-                            'max_comments_per_video': 0
-                        }
-                        comparison_data = self.youtube_service.update_channel_data(channel_id, options, interactive=False, existing_data=None)
-                        
-                        # Update session state with new data
-                        if comparison_data and isinstance(comparison_data, dict):
-                            st.session_state['db_data'] = comparison_data.get('db_data', {})
-                            st.session_state['api_data'] = comparison_data.get('api_data', {})
-                            st.rerun()
+                        channel_data = st.session_state.get('api_data', {})
+                        success = self.youtube_service.save_channel_data(channel_data, "sqlite")
+                        if success:
+                            st.session_state['channel_data_saved'] = True
+                            st.success("Channel data saved successfully!")
                         else:
-                            st.error("Failed to retrieve channel data. Please try again later.")
+                            st.error("Failed to save data.")
                     except Exception as e:
-                        st.error(f"Error retrying comparison: {str(e)}")
-            
-            if st.button("Go Back"):
-                st.session_state['refresh_workflow_step'] = 1
-                st.rerun()
-            return
-            
-        # Display data comparison
-        display_comparison_results(db_data, api_data)
-        
-        # Define workflow steps to guide the user through data collection
-        st.subheader("Action Steps")
-        st.write("Please select your next action:")
-        
-        cols = st.columns(2)
-        with cols[0]:
-            # Button to update database with API data
-            if st.button("Update Channel Data"):
-                with st.spinner("Updating channel data..."):
-                    # Save API data to the database only - this is a partial save
-                    success = self.youtube_service.save_channel_data(api_data, "sqlite")
-                    if success:
-                        st.success("Channel data updated successfully!")
-                        # Update session state to reflect that we saved this partial data
-                        st.session_state['channel_data_saved'] = True
-                    else:
-                        st.error("Failed to update channel data.")
-            
-            # Button to proceed to video collection step
-            if st.button("Proceed to Video Collection"):
-                with st.spinner("Preparing video collection..."):
-                    # Set up the session state for video collection
-                    st.session_state['refresh_workflow_step'] = 3  # Move to step 3 in refresh workflow
-                    
-                    # Initialize video page number for pagination
-                    st.session_state['video_page_number'] = 0
-                    
-                    # Create options for just videos - initial fetch with default settings
-                    options = {
-                        'fetch_channel_data': False,
-                        'fetch_videos': True,
-                        'fetch_comments': False,
-                        'max_videos': 50  # Initial reasonable number of videos to fetch
-                    }
-                    
-                    try:
-                        # Update data with videos
-                        video_data = self.youtube_service.update_channel_data(
-                            channel_id,
-                            options,
-                            interactive=False,
-                            existing_data=None
-                        )
-                        
-                        if video_data and isinstance(video_data, dict):
-                            # Store video data for next step
-                            st.session_state['videos_data'] = video_data.get('api_data', {}).get('video_id', [])
-                            st.session_state['videos_fetched'] = True
-                            st.success(f"Successfully collected {len(st.session_state['videos_data'])} videos!")
-                        else:
-                            st.warning("No video data was retrieved. You can still continue.")
-                    except Exception as e:
-                        st.error(f"Error collecting video data: {str(e)}")
-                        debug_log(f"Exception during video data collection: {str(e)}")
-                    
-                    st.rerun()
-        
-        with cols[1]:
-            # Button to go back to channel selection
-            if st.button("Back to Channel Selection"):
-                st.session_state['refresh_workflow_step'] = 1
-                
-                # Clear data from session state
-                if 'db_data' in st.session_state:
-                    del st.session_state['db_data']
-                if 'api_data' in st.session_state:
-                    del st.session_state['api_data']
-                if 'comparison_attempted' in st.session_state:
-                    del st.session_state['comparison_attempted']
-                
+                        st.error(f"Error saving data: {str(e)}")
+                        debug_log(f"Error saving channel data: {str(e)}")
+        with col2:
+            if st.button("Continue to Videos Data"):
+                st.session_state['refresh_workflow_step'] = 3
                 st.rerun()
     
     def render_step_2_video_collection(self):
         """Render step 3 (in refresh workflow): Collect and display video data."""
         st.subheader("Step 3: Video Collection")
         render_queue_status_sidebar()  # Show queue in sidebar
-        
-        # Get channel info from session state
         channel_id = st.session_state.get('existing_channel_id', '')
+        db_data = st.session_state.get('db_data', {})
         videos_data = st.session_state.get('videos_data', [])
-        
-        # Check if we have videos data
+        debug_logs = st.session_state.get('debug_logs', [])
+        # Only fetch and compare video data at this step
+        if st.button("Fetch Videos from API"):
+            with st.spinner("Fetching videos from YouTube API..."):
+                max_videos = 50  # Or get from user input if available
+                options = {
+                    'fetch_channel_data': False,
+                    'fetch_videos': True,
+                    'fetch_comments': False,
+                    'max_videos': max_videos
+                }
+                video_response = self.youtube_service.update_channel_data(
+                    channel_id,
+                    options,
+                    interactive=False
+                )
+                st.session_state['api_initialized'] = True
+                debug_logs.append(f"API call made to fetch videos for {channel_id}")
+                st.session_state['debug_logs'] = debug_logs
+                st.session_state['last_api_call'] = video_response.get('last_api_call')
+                if video_response and isinstance(video_response, dict):
+                    st.session_state['videos_data'] = video_response.get('video_id', [])
+                    st.session_state['response_data'] = video_response.get('response_data', {})
+                    # Compare and store video-level delta summary
+                    db_videos = db_data.get('video_id', [])
+                    api_videos = video_response.get('video_id', [])
+                    video_delta = []
+                    db_video_map = {v.get('video_id'): v for v in db_videos if 'video_id' in v}
+                    summary = []
+                    for video in api_videos:
+                        vid = video.get('video_id')
+                        if vid and vid in db_video_map:
+                            old = db_video_map[vid]
+                            view_diff = int(video.get('views', 0)) - int(old.get('views', 0))
+                            like_diff = int(video.get('likes', 0)) - int(old.get('likes', 0))
+                            comment_diff = int(video.get('comment_count', 0)) - int(old.get('comment_count', 0))
+                            if view_diff != 0 or like_diff != 0 or comment_diff != 0:
+                                video_delta.append({
+                                    'video': video,
+                                    'old_views': old.get('views', 0),
+                                    'new_views': video.get('views', 0),
+                                    'old_likes': old.get('likes', 0),
+                                    'new_likes': video.get('likes', 0),
+                                    'old_comments': old.get('comment_count', 0),
+                                    'new_comments': video.get('comment_count', 0)
+                                })
+                    st.session_state['video_delta'] = video_delta
+                    summary = [f"Videos with changes: {len(video_delta)}"]
+                    st.session_state['delta_summary'] = summary
+                    st.success(f"Successfully fetched {len(api_videos)} videos!")
+                    st.rerun()
+                else:
+                    st.error("Failed to fetch videos. Please try again.")
+
+        # Display video information
         if videos_data:
-            # Ensure all metrics are present
+            st.write(f"Successfully fetched {len(videos_data)} videos.")
             for video in videos_data:
-                video.setdefault('views', 0)
-                video.setdefault('likes', 0)
-                video.setdefault('comment_count', 0)
-            
-            # Display videos count
-            st.write(f"Collected {len(videos_data)} videos.")
-            
-            # Video sorting options
-            sort_options = ["Most Recent", "Most Viewed", "Most Likes", "Most Comments"]
-            sort_col1, sort_col2 = st.columns([2, 3])
-            with sort_col1:
-                selected_sort = st.selectbox("Sort videos by:", sort_options)
-            
-            # Sort the videos based on selection
-            sorted_videos = videos_data.copy()
-            if selected_sort == "Most Viewed":
-                sorted_videos.sort(key=lambda v: int(v.get('views', 0)), reverse=True)
-            elif selected_sort == "Most Likes":
-                sorted_videos.sort(key=lambda v: int(v.get('likes', 0)), reverse=True)
-            elif selected_sort == "Most Comments":
-                sorted_videos.sort(key=lambda v: int(v.get('comment_count', 0)), reverse=True)
-            # No sort for Most Recent as it's the default order
-            
-            # Display videos
-            for idx, video in enumerate(sorted_videos):
-                render_video_item(video, index=idx)
-            
+                with st.container():
+                    cols = st.columns([1, 4, 2, 2, 2])
+                    with cols[0]:
+                        thumb = video.get('thumbnail_url') or video.get('thumbnail', '')
+                        if thumb:
+                            st.image(thumb, width=80)
+                        else:
+                            st.write(":movie_camera:")
+                    with cols[1]:
+                        st.markdown(f"**{video.get('title', 'Untitled')}**")
+                        st.caption(f"ID: {video.get('video_id', 'N/A')}")
+                    with cols[2]:
+                        st.metric("Views", video.get('views', 0))
+                    with cols[3]:
+                        st.metric("Likes", video.get('likes', 0))
+                    with cols[4]:
+                        st.metric("Comments", video.get('comment_count', 0))
+
             # Buttons for save or continue
             col1, col2 = st.columns(2)
             with col1:
-                # Save data at this step
                 if st.button("Save Channel and Videos"):
-                    # Save partial data
                     with st.spinner("Saving channel and video data..."):
                         try:
-                            # Get the API data to save
-                            api_data = st.session_state.get('api_data', {})
-                            
-                            # Update with the video data
-                            api_data['video_id'] = sorted_videos
-                            
-                            # Save to database
-                            success = self.youtube_service.save_channel_data(api_data, "sqlite")
-                            
+                            channel_data = st.session_state.get('api_data', {})
+                            success = self.youtube_service.save_channel_data(channel_data, "sqlite")
                             if success:
                                 st.session_state['videos_data_saved'] = True
                                 st.success("Channel and video data saved successfully!")
                             else:
                                 st.error("Failed to save data.")
                         except Exception as e:
-                            st.error(f"Error saving data: {str(e)}")
-                            debug_log(f"Error saving channel and video data: {str(e)}")
-                            
+                            handle_collection_error(e, "saving channel and video data")
             with col2:
-                # Continue to next step
-                if st.button("Proceed to Comment Collection"):
-                    st.session_state['refresh_workflow_step'] = 4  # Move to step 4 in refresh workflow
+                if st.button("Continue to Comments Data"):
+                    st.session_state['refresh_workflow_step'] = 4
                     st.rerun()
-        else:
-            # Video collection options
-            st.write("Configure video collection options:")
-            
-            # Get DB data for total videos count
-            db_data = st.session_state.get('db_data', {})
-            total_videos = db_data.get('total_videos', 100)
-            
-            # Video collection parameters
-            fetch_all = st.checkbox("Fetch All Videos", value=False)
-            
-            if fetch_all:
-                max_videos = total_videos
-                st.write(f"Will fetch all {max_videos} videos")
-            else:
-                max_videos = st.slider(
-                    "Maximum number of videos to fetch",
-                    min_value=0,
-                    max_value=min(500, total_videos),
-                    value=min(50, total_videos)
-                )
-            
-            # Button to fetch videos
-            if st.button("Fetch Videos"):
-                with st.spinner(f"Fetching up to {max_videos} videos..."):
-                    try:
-                        # Create options
-                        options = {
-                            'fetch_channel_data': False,
-                            'fetch_videos': True,
-                            'fetch_comments': False,
-                            'max_videos': max_videos
-                        }
-                        
-                        # Fetch videos using update_channel_data
-                        video_data = self.youtube_service.update_channel_data(
-                            channel_id,
-                            options,
-                            interactive=False
-                        )
-                        
-                        # Add API status debug info
-                        debug_log(f"API response for videos in refresh flow: success={video_data is not None}, channel={channel_id}")
-                        
-                        if video_data and isinstance(video_data, dict):
-                            # Store video data for next step
-                            videos_data = video_data.get('api_data', {}).get('video_id', [])
-                            st.session_state['videos_data'] = videos_data
-                            st.session_state['videos_fetched'] = True
-                            
-                            # Show more detailed success message with video metrics
-                            video_count = len(videos_data)
-                            video_with_metrics = sum(1 for v in videos_data if all(k in v for k in ['views', 'likes', 'comment_count']))
-                            
-                            st.success(f"Successfully collected {video_count} videos ({video_with_metrics} with complete metrics)!")
-                            st.rerun()
-                        else:
-                            st.error("Failed to fetch videos. Please try again.")
-                    except Exception as e:
-                        st.error(f"Error fetching videos: {str(e)}")
-                        debug_log(f"Error in video collection: {str(e)}")
     
     def render_step_3_comment_collection(self):
         """Render step 4 (in refresh workflow): Collect and display comment data."""
         st.subheader("Step 4: Comment Collection")
         render_queue_status_sidebar()  # Show queue in sidebar
-        
-        # Get channel info and videos from session state
         channel_id = st.session_state.get('existing_channel_id', '')
         videos_data = st.session_state.get('videos_data', [])
-        comments_fetched = st.session_state.get('comments_fetched', False)
-        
-        if comments_fetched:
-            # Calculate stats
-            videos_with_comments = [v for v in videos_data if v.get('comments')]
-            total_comments = sum(len(v.get('comments', [])) for v in videos_data)
-            
-            # Display summary
-            st.write(f"Successfully fetched {total_comments} comments from {len(videos_with_comments)} videos.")
-            
-            # Button to save data
-            if st.button("Complete and Save Data", key="save_data_button_comments"):
-                self.save_data()
-        else:
-            # Comment collection options
-            st.write("Configure comment collection options:")
-            
+        debug_logs = st.session_state.get('debug_logs', [])
+        # Only fetch and compare comment data at this step
+        if not st.session_state.get('comments_fetched', False):
             if not videos_data:
                 st.warning("No videos available for comment collection. Please go back to the video collection step.")
                 if st.button("Back to Video Collection"):
                     st.session_state['refresh_workflow_step'] = 3
                     st.rerun()
                 return
-            
-            # Comment collection parameters
             max_comments = st.slider(
                 "Maximum number of comments to fetch per video",
                 min_value=0,
@@ -434,58 +342,55 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                 value=20,
                 help="Set to 0 to skip comment collection"
             )
-            
-            # Fetch comments button
-            if st.button("Fetch Comments"):
+            if st.button("Fetch Comments from API"):
                 if max_comments == 0:
                     st.info("Comment collection skipped.")
                     st.session_state['comments_fetched'] = True
                     st.rerun()
                 else:
-                    with st.spinner(f"Fetching up to {max_comments} comments per video..."):
-                        try:
-                            # Create options for comment collection only
-                            options = {
-                                'fetch_channel_data': False,
-                                'fetch_videos': False,
-                                'fetch_comments': True,
-                                'max_comments_per_video': max_comments
-                            }
-                            
-                            # Get the API data to update with comments
-                            api_data = st.session_state.get('api_data', {})
-                            
-                            # Add videos to API data for comment collection
-                            api_data['video_id'] = videos_data
-                            
-                            # Fetch comments using update_channel_data - already has existing_data parameter
-                            comment_data = self.youtube_service.update_channel_data(
-                                channel_id,
-                                options,
-                                existing_data=api_data,
-                                interactive=True
-                            )
-                            
-                            # Add API status debug info
-                            debug_log(f"API response for comments in refresh flow: success={comment_data is not None}, channel={channel_id}")
-                            
-                            if comment_data and isinstance(comment_data, dict):
-                                # Update video data with comments
-                                videos_with_comments = comment_data.get('video_id', [])
-                                st.session_state['videos_data'] = videos_with_comments
-                                st.session_state['comments_fetched'] = True
-                                
-                                # Calculate comment statistics
-                                total_comments = sum(len(video.get('comments', [])) for video in videos_with_comments)
-                                videos_with_comments_count = sum(1 for video in videos_with_comments if video.get('comments'))
-                                
-                                st.success(f"Successfully fetched {total_comments} comments from {videos_with_comments_count} videos!")
-                                st.rerun()
-                            else:
-                                st.error("Failed to fetch comments. Please try again.")
-                        except Exception as e:
-                            st.error(f"Error fetching comments: {str(e)}")
-                            debug_log(f"Error in comment collection: {str(e)}")
+                    with st.spinner(f"Fetching up to {max_comments} comments per video from YouTube API..."):
+                        options = {
+                            'fetch_channel_data': False,
+                            'fetch_videos': False,
+                            'fetch_comments': True,
+                            'max_comments_per_video': max_comments
+                        }
+                        comment_response = self.youtube_service.update_channel_data(
+                            channel_id,
+                            options,
+                            interactive=False
+                        )
+                        st.session_state['api_initialized'] = True
+                        debug_logs.append(f"API call made to fetch comments for {channel_id}")
+                        st.session_state['debug_logs'] = debug_logs
+                        st.session_state['last_api_call'] = comment_response.get('last_api_call')
+                        if comment_response and isinstance(comment_response, dict):
+                            st.session_state['videos_data'] = comment_response.get('video_id', [])
+                            st.session_state['response_data'] = comment_response.get('response_data', {})
+                            st.session_state['comments_fetched'] = True
+                            total_comments = sum(len(video.get('comments', [])) for video in st.session_state['videos_data'])
+                            summary = [f"Total comments fetched: {total_comments}"]
+                            st.session_state['delta_summary'] = summary
+                            st.success("Successfully fetched comments!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to fetch comments. Please try again.")
+        else:
+            total_comments = sum(len(video.get('comments', [])) for video in videos_data)
+            videos_with_comments = sum(1 for video in videos_data if video.get('comments'))
+            st.write(f"Successfully fetched {total_comments} comments from {videos_with_comments} videos.")
+            videos_with_comments_list = [v for v in videos_data if v.get('comments')]
+            if videos_with_comments_list:
+                st.write("### Sample Video with Comments Data Structure")
+                st.json(videos_with_comments_list[0])
+            for video in videos_with_comments_list[:5]:
+                st.subheader(f"Video: {video.get('title', 'Unknown Title')}")
+                for comment in video.get('comments', [])[:3]:
+                    st.write(f"**{comment.get('comment_author', 'Unknown')}**: {comment.get('comment_text', 'No text')}")
+                if len(video.get('comments', [])) > 3:
+                    st.write(f"... and {len(video.get('comments', [])) - 3} more comments")
+            if st.button("Complete and Save Data"):
+                self.save_data()
     
     def save_data(self):
         """Save collected data to the database."""
@@ -564,6 +469,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
             channel_id (str): Channel ID for which to collect videos
             max_videos (int): Maximum number of videos to collect
         """
+        import datetime
         try:
             # Create options for video collection only
             options = {
@@ -587,38 +493,27 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
             # Add enhanced API status debug info
             debug_log(f"API response for videos: success={video_data is not None}, channel={channel_id}")
             
+            # Always set last_api_call
+            st.session_state['last_api_call'] = datetime.datetime.now().isoformat()
+            
             if video_data and isinstance(video_data, dict):
-                # Log detailed API response information
-                api_data = video_data.get('api_data', {})
-                api_quota_used = api_data.get('api_quota_used', 'Unknown')
-                api_quota_remaining = api_data.get('api_quota_remaining', 'Unknown')
-                debug_log(f"API quota used: {api_quota_used}, remaining: {api_quota_remaining}")
-                
-                # Show API details if debug mode is enabled
-                if st.session_state.get('show_debug_info', False):
-                    with st.expander("API Response Details"):
-                        st.write("### API Response Information")
-                        st.metric("API Quota Used", api_quota_used)
-                        st.metric("API Quota Remaining", api_quota_remaining)
-                        if 'api_response_time' in api_data:
-                            st.metric("Response Time", f"{api_data['api_response_time']:.2f}s")
-                
-                # Store video data for next step
-                videos = api_data.get('video_id', [])
-                st.session_state['videos_data'] = videos
+                # Store all data in session state
+                st.session_state['videos_data'] = video_data.get('video_id', [])
                 st.session_state['videos_fetched'] = True
                 
-                # Log sample of video data
-                if videos and len(videos) > 0:
-                    first_video = videos[0]
-                    debug_log(f"First video keys: {list(first_video.keys()) if isinstance(first_video, dict) else 'Not a dict'}")
-                    debug_log(f"First video views: {first_video.get('views', 'Not found')}")
-                    debug_log(f"First video likes: {first_video.get('likes', 'Not found')}")
-                    debug_log(f"First video comment_count: {first_video.get('comment_count', 'Not found')}")
+                # Store delta information if present
+                if 'delta' in video_data:
+                    st.session_state['delta'] = video_data['delta']
                 
-                # Count videos with complete metrics
-                videos_with_metrics = sum(1 for v in videos if all(k in v for k in ['views', 'likes', 'comment_count']))
-                st.success(f"Successfully collected {len(videos)} videos ({videos_with_metrics} with complete metrics)!")
+                # Store debug logs and response data
+                if 'debug_logs' in video_data:
+                    st.session_state['debug_logs'] = video_data['debug_logs']
+                if 'response_data' in video_data:
+                    st.session_state['response_data'] = video_data['response_data']
+                
+                # Show success message with video count
+                video_count = len(video_data.get('video_id', []))
+                st.success(f"Successfully collected {video_count} videos!")
                 st.rerun()
             else:
                 st.error("Failed to fetch videos. Please try again.")

@@ -164,12 +164,16 @@ def render_data_collection_tab():
                                                     if 'response_data' in channel_info:
                                                         st.session_state['response_data'] = channel_info['response_data']
                                                     # Show delta info if present
-                                                    if any(f in channel_info for f in ("view_delta", "like_delta", "comment_delta", "delta")):
+                                                    if 'delta' in channel_info:
                                                         st.subheader("Detailed Change Report")
-                                                        # Use delta reporting utility if available
-                                                        previous_data = st.session_state.get('previous_channel_data')
-                                                        updated_data = channel_info
-                                                        render_delta_report(previous_data, updated_data, data_type="channel")
+                                                        delta = channel_info['delta']
+                                                        # Display video deltas if present
+                                                        if 'videos' in delta and delta['videos']:
+                                                            import pandas as pd
+                                                            st.write("Video Metric Changes:")
+                                                            st.dataframe(pd.DataFrame(delta['videos']))
+                                                        else:
+                                                            st.info("No video metric changes detected.")
                                                     # Show actual video count if present
                                                     if 'actual_video_count' in channel_info:
                                                         st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
@@ -198,12 +202,16 @@ def render_data_collection_tab():
                                                     if 'response_data' in channel_info:
                                                         st.session_state['response_data'] = channel_info['response_data']
                                                     # Show delta info if present
-                                                    if any(f in channel_info for f in ("view_delta", "like_delta", "comment_delta", "delta")):
+                                                    if 'delta' in channel_info:
                                                         st.subheader("Detailed Change Report")
-                                                        # Use delta reporting utility if available
-                                                        previous_data = st.session_state.get('previous_channel_data')
-                                                        updated_data = channel_info
-                                                        render_delta_report(previous_data, updated_data, data_type="channel")
+                                                        delta = channel_info['delta']
+                                                        # Display video deltas if present
+                                                        if 'videos' in delta and delta['videos']:
+                                                            import pandas as pd
+                                                            st.write("Video Metric Changes:")
+                                                            st.dataframe(pd.DataFrame(delta['videos']))
+                                                        else:
+                                                            st.info("No video metric changes detected.")
                                                     # Show actual video count if present
                                                     if 'actual_video_count' in channel_info:
                                                         st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
@@ -284,10 +292,6 @@ def render_data_collection_tab():
         
         # When debug mode is enabled, show debug information
         if st.session_state.debug_mode:
-            render_debug_panel(
-                logs=st.session_state.get('debug_logs', []),
-                response_data=st.session_state.get('response_data', {}),
-                session_state=st.session_state
-            )
+            render_debug_panel()
     else:
         st.error("Please enter a YouTube API Key")

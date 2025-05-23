@@ -317,4 +317,105 @@ def test_fetch_videos_returns_videos_and_logs(data_collection, mock_video_servic
     assert 'response_data' in result
     assert isinstance(result['response_data'], dict)
     # Actual video count should be correct
-    assert result.get('actual_video_count', 0) == 2 
+    assert result.get('actual_video_count', 0) == 2
+
+def test_update_channel_response_includes_top_level_delta(data_collection, mock_video_service):
+    """Test that update channel response includes a top-level 'delta' field summarizing video deltas."""
+    # Mock existing data
+    existing_data = {
+        'video_id': [{
+            'video_id': 'vid1',
+            'title': 'Video 1',
+            'views': '80',
+            'likes': '8',
+            'comment_count': '2'
+        }]
+    }
+    # Mock video service response with updated stats
+    mock_video_data = {
+        'video_id': [{
+            'video_id': 'vid1',
+            'title': 'Video 1',
+            'statistics': {
+                'viewCount': '100',
+                'likeCount': '10',
+                'commentCount': '5'
+            }
+        }]
+    }
+    mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
+    # Call as update (with existing_data)
+    result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    # There should be a top-level 'delta' field
+    assert 'delta' in result, "No top-level 'delta' field in response"
+    delta = result['delta']
+    assert isinstance(delta, dict)
+    # It should summarize video deltas
+    assert 'videos' in delta
+    assert isinstance(delta['videos'], list)
+    assert any('view_delta' in v for v in delta['videos'])
+
+def test_update_channel_delta_videos_non_empty(data_collection, mock_video_service):
+    """Test that delta['videos'] is non-empty after an update with multiple videos and changes."""
+    existing_data = {
+        'video_id': [
+            {'video_id': 'vid1', 'title': 'Video 1', 'views': '80', 'likes': '8', 'comment_count': '2'},
+            {'video_id': 'vid2', 'title': 'Video 2', 'views': '50', 'likes': '5', 'comment_count': '1'}
+        ]
+    }
+    mock_video_data = {
+        'video_id': [
+            {'video_id': 'vid1', 'title': 'Video 1', 'statistics': {'viewCount': '100', 'likeCount': '10', 'commentCount': '5'}},
+            {'video_id': 'vid2', 'title': 'Video 2', 'statistics': {'viewCount': '60', 'likeCount': '7', 'commentCount': '2'}},
+            {'video_id': 'vid3', 'title': 'Video 3', 'statistics': {'viewCount': '30', 'likeCount': '3', 'commentCount': '0'}}
+        ]
+    }
+    mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
+    result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    assert 'delta' in result
+    assert 'videos' in result['delta']
+    # Should have at least two entries for updated videos
+    assert len(result['delta']['videos']) >= 2
+    # Check that at least one delta is nonzero
+    assert any(v['view_delta'] != 0 or v['like_delta'] != 0 or v['comment_delta'] != 0 for v in result['delta']['videos'])
+
+def test_fetch_all_videos_returns_all(data_collection, mock_video_service):
+    """Test that all videos are returned when max_videos=0 (fetch all)."""
+    mock_video_data = {
+        'video_id': [
+            {'video_id': f'vid{i}', 'title': f'Video {i}', 'statistics': {'viewCount': str(10*i), 'likeCount': str(i), 'commentCount': str(i//2)}}
+            for i in range(1, 201)
+        ]
+    }
+    mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
+    result = data_collection.collect_channel_data('chan1', {'fetch_videos': True, 'max_videos': 0})
+    assert 'video_id' in result
+    assert len(result['video_id']) == 200
+    assert result.get('actual_video_count', 0) == 200
+
+def test_debug_logs_and_response_data_present(data_collection, mock_video_service):
+    """Test that debug_logs and response_data are present and accessible in the backend response."""
+    mock_video_data = {
+        'video_id': [
+            {'video_id': 'vid1', 'title': 'Video 1', 'statistics': {'viewCount': '100', 'likeCount': '10', 'commentCount': '5'}}
+        ]
+    }
+    mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
+    result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
+    assert 'debug_logs' in result
+    assert isinstance(result['debug_logs'], list)
+    assert 'response_data' in result
+    assert isinstance(result['response_data'], dict)
+
+def test_fetch_videos_returns_non_empty_list(data_collection, mock_video_service):
+    """Test that fetching videos returns a non-empty video list."""
+    mock_video_data = {
+        'video_id': [
+            {'video_id': 'vid1', 'title': 'Video 1', 'statistics': {'viewCount': '100', 'likeCount': '10', 'commentCount': '5'}},
+            {'video_id': 'vid2', 'title': 'Video 2', 'statistics': {'viewCount': '200', 'likeCount': '20', 'commentCount': '10'}}
+        ]
+    }
+    mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
+    result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
+    assert 'video_id' in result
+    assert len(result['video_id']) == 2 

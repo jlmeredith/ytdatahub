@@ -41,6 +41,8 @@ class DataCollectionMixin:
             channel_data.update(channel_info)
             log(f"Fetched channel info: {channel_info}")
             
+            delta = {}
+            
             # Fetch videos if requested
             if options.get('fetch_videos'):
                 try:
@@ -59,6 +61,7 @@ class DataCollectionMixin:
                                 if 'statistics' in v:
                                     del v['statistics']
                             existing_videos_fixed = fix_missing_views(existing_videos_copy)
+                            video_deltas = []
                             for video in channel_data['video_id']:
                                 existing_video = next((v for v in existing_videos_fixed if v['video_id'] == video['video_id']), None)
                                 if existing_video:
@@ -66,6 +69,13 @@ class DataCollectionMixin:
                                     video['like_delta'] = int(video['likes']) - int(existing_video.get('likes', '0'))
                                     video['comment_delta'] = int(video['comment_count']) - int(existing_video.get('comment_count', '0'))
                                     log(f"Delta for video {video['video_id']}: view_delta={video['view_delta']}, like_delta={video['like_delta']}, comment_delta={video['comment_delta']}")
+                                    video_deltas.append({
+                                        'video_id': video['video_id'],
+                                        'view_delta': video['view_delta'],
+                                        'like_delta': video['like_delta'],
+                                        'comment_delta': video['comment_delta']
+                                    })
+                            delta['videos'] = video_deltas
                         channel_data['quota_used'] = video_response.get('quota_used', 0)
                         channel_data['videos_fetched'] = video_response.get('videos_fetched', 0)
                         channel_data['actual_video_count'] = len(channel_data['video_id'])
@@ -92,6 +102,8 @@ class DataCollectionMixin:
             # Attach debug logs and full response for frontend
             channel_data['debug_logs'] = debug_logs
             channel_data['response_data'] = copy.deepcopy(channel_data)
+            if delta:
+                channel_data['delta'] = delta
             return channel_data
             
         except Exception as e:

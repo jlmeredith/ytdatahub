@@ -8,7 +8,28 @@ from src.utils.helpers import debug_log
 def display_comparison_results(db_data, api_data):
     """Displays a comparison between database and API data."""
     st.subheader("Data Comparison")
-    
+    # Show detailed delta report if available (move this up)
+    if 'delta' in st.session_state:
+        st.subheader("Detailed Change Report")
+        delta = st.session_state['delta']
+        # DEBUG: Show the actual delta structure
+        st.info(f"DEBUG: delta = {repr(delta)}")
+        # Process the delta report for display
+        if delta and isinstance(delta, dict):
+            # Format changes for display
+            formatted_changes = []
+            for field, change in delta.items():
+                if isinstance(change, dict) and 'old' in change and 'new' in change:
+                    formatted_changes.append({
+                        'Field': field,
+                        'Previous Value': str(change['old']),
+                        'New Value': str(change['new'])
+                    })
+            if formatted_changes:
+                st.table(pd.DataFrame(formatted_changes))
+                return
+        st.warning("Delta information is not available")
+        return
     if not db_data or not api_data:
         # Skip showing the warning here since it's already shown in the workflow
         return
@@ -60,30 +81,6 @@ def display_comparison_results(db_data, api_data):
             delta=f"{delta_videos:+,}",
             delta_color="normal" if delta_videos >= 0 else "inverse"
         )
-    
-    # Show detailed delta report if available
-    if 'delta' in st.session_state:
-        st.subheader("Detailed Change Report")
-        delta = st.session_state['delta']
-        
-        # Process the delta report for display
-        if delta and isinstance(delta, dict):
-            # Format changes for display
-            formatted_changes = []
-            for field, change in delta.items():
-                if isinstance(change, dict) and 'old' in change and 'new' in change:
-                    formatted_changes.append({
-                        'Field': field,
-                        'Previous Value': str(change['old']),
-                        'New Value': str(change['new'])
-                    })
-            
-            if formatted_changes:
-                st.table(pd.DataFrame(formatted_changes))
-            else:
-                st.info("No changes detected in channel data")
-        else:
-            st.warning("Delta information is not available")
 
 def compare_data(db_data, api_data):
     """
@@ -96,6 +93,7 @@ def compare_data(db_data, api_data):
     Returns:
         dict: A report of differences between the two data sources
     """
+    debug_log(f"compare_data called with db_data={repr(db_data)} api_data={repr(api_data)}")
     # Initialize delta dictionary
     delta = {}
     
@@ -133,4 +131,5 @@ def compare_data(db_data, api_data):
     if db_videos != api_videos:
         delta['videos'] = {'old': db_videos, 'new': api_videos}
     
+    debug_log(f"compare_data returning delta={repr(delta)}")
     return delta

@@ -59,19 +59,30 @@ def render_debug_panel():
         with debug_tabs[0]:
             st.subheader("YouTube API Status")
             
-            # IMPORTANT: Cache these values to ensure consistent display
-            api_initialized = st.session_state.get('api_client_initialized', False)
-            api_call_status = st.session_state.get('api_call_status', 'No API calls made yet')
+            # Check multiple keys for API status
+            api_client_initialized = st.session_state.get('api_client_initialized', False)
+            api_initialized = st.session_state.get('api_initialized', False)
+            last_api_call = st.session_state.get('last_api_call', None)
             api_last_error = st.session_state.get('api_last_error', None)
             
             # Display API initialization status
-            st.metric(
-                label="API Client Status", 
-                value="Initialized" if api_initialized else "Not Initialized"
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    label="API Client Status", 
+                    value="Initialized" if api_client_initialized else "Not Initialized"
+                )
+            with col2:
+                st.metric(
+                    label="API Call Made", 
+                    value="Yes" if api_initialized else "No"
+                )
             
-            # Display last API call status
-            st.info(f"Last API call: {api_call_status}")
+            # Display last API call time
+            if last_api_call:
+                st.info(f"Last API call: {last_api_call}")
+            else:
+                st.info("Last API call: None")
             
             # Display any API errors
             if api_last_error:
@@ -131,21 +142,36 @@ def render_debug_panel():
         with debug_tabs[2]:
             st.subheader("Debug Logs")
             
-            # Display logs from string IO handler
+            # Check for debug logs in session state first
+            debug_logs = st.session_state.get('debug_logs', [])
+            if debug_logs:
+                st.write("**Debug Messages:**")
+                for i, log in enumerate(debug_logs, 1):
+                    st.write(f"{i}. {log}")
+            
+            # Also display logs from string IO handler if available
             if 'debug_log_handler' in st.session_state:
                 log_content = st.session_state.debug_log_handler.getvalue()
                 if log_content:
-                    st.text_area("Log Output", log_content, height=400)
-                else:
-                    st.info("No logs captured yet.")
-            else:
-                st.info("Debug logging not initialized. Toggle debug mode to enable.")
+                    st.write("**System Logs:**")
+                    st.text_area("Log Output", log_content, height=200)
+            
+            # If no logs at all
+            if not debug_logs and not st.session_state.get('debug_log_handler'):
+                st.info("No logs captured yet. Debug logging will appear here during API operations.")
         
         # Response Data Tab
         with debug_tabs[3]:
             st.subheader("API Response Data")
             
-            if 'api_last_response' in st.session_state and st.session_state.api_last_response:
-                st.json(st.session_state.api_last_response)
+            # Check for response data in multiple possible keys
+            response_data = None
+            if 'response_data' in st.session_state and st.session_state.response_data:
+                response_data = st.session_state.response_data
+            elif 'api_last_response' in st.session_state and st.session_state.api_last_response:
+                response_data = st.session_state.api_last_response
+            
+            if response_data:
+                st.json(response_data)
             else:
                 st.info("No API response data captured yet.")

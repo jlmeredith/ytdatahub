@@ -4,6 +4,7 @@ These tests specifically focus on handling mixed data types in the comparison ta
 """
 import pytest
 from unittest.mock import patch, MagicMock
+import pandas as pd
 
 from src.ui.data_collection.channel_refresh_ui import display_comparison_results
 
@@ -60,3 +61,36 @@ def test_none_values_handled_as_strings():
     
     # The fix ensures all values are strings, preventing PyArrow conversion errors
     pass
+
+def test_detailed_change_report_renders_table(monkeypatch):
+    """
+    Test that display_comparison_results renders a table when delta is present in session state.
+    """
+    # Mock Streamlit
+    st_mock = MagicMock()
+    monkeypatch.setattr("src.ui.data_collection.channel_refresh.comparison.st", st_mock)
+
+    # Set up session state with delta
+    st_mock.session_state = {
+        'delta': {
+            'subscribers': {'old': 100, 'new': 120},
+            'views': {'old': 1000, 'new': 1500}
+        }
+    }
+
+    # Import the function under test
+    from src.ui.data_collection.channel_refresh.comparison import display_comparison_results
+
+    # Call the function (db_data and api_data can be minimal, not used for delta)
+    display_comparison_results({}, {})
+
+    # Check that st.table was called with a DataFrame containing the expected changes
+    assert st_mock.table.called, "st.table should be called to display the delta report"
+    # Optionally, check the DataFrame contents
+    df_arg = st_mock.table.call_args[0][0]
+    assert isinstance(df_arg, pd.DataFrame)
+    assert 'Field' in df_arg.columns
+    assert 'Previous Value' in df_arg.columns
+    assert 'New Value' in df_arg.columns
+    assert 'subscribers' in df_arg['Field'].values
+    assert 'views' in df_arg['Field'].values
