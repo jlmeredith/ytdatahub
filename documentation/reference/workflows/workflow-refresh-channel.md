@@ -22,6 +22,9 @@ This document provides a detailed breakdown of the Refresh Channel Workflow for 
 #### Initial Comparison Setup
 1. **Channel Selection**: User selects from dropdown
 2. **Comparison Initiation**: "Compare with YouTube API" button triggers:
+
+**`TODO: Update the compare options to be more verbose, such as making sure to compare all api fields regardess of content.  This is important as we want to be able to query channels daily and then surface significant changes in metrics.  This is particularly important for:  channel take overs, channels that get shutdown, change ownership, shift in message or content density, Changes in channel descriptions that update copyright or disclaimers, increase in usage of certain keywords or phrases.  Additionally, this ensures that our logic is consistant through the full workflow process and that all data is available at all points for compare as needed.`**
+
    ```python
    options = {
        'fetch_channel_data': True,
@@ -52,6 +55,7 @@ st.session_state['refresh_workflow_step'] = 2
    - **Column 3**: Current total video count
 
 2. **Expandable Details**:
+`TODO: Make sure all api details are returned here`
    - Channel description
    - Total view count
    - Channel ID
@@ -63,6 +67,7 @@ st.session_state['refresh_workflow_step'] = 2
    delta = compare_data(db_data, api_data)
    ```
 2. **Delta Summary Display**:
+`TODO: Make sure all api details are returned here`
    - Subscriber changes: `old → new ⬆️/⬇️`
    - View count changes: `old → new ⬆️/⬇️`
    - Video count changes: `old → new ⬆️/⬇️`
@@ -80,11 +85,14 @@ channel_info_response = youtube_service.update_channel_data(channel_id, options,
 
 #### User Actions
 - **"Save Channel Data"**: Updates database with fresh channel info
+`TODO: Make sure that we have visual ui confirmation of what was saved after the operation is completed.  May need to abstract this out into a method that will be used for all save operations.  This may already be present in the codebase but we need to locate and update to always return in the UI. `
+
 - **"Continue to Videos Data"**: Advances to Step 3
 
 ### Step 3: Video Collection & Update
 
 #### Video Data Refresh
+TODO: Apply all of the same TODO: items from channels to this workflow pattern to ensure parity of returned and visible information at each step of the process.  The only exception would be making sure that the ability to select the video and comment count should be selectable with a slider of all possible values from the prior channel api response and the response from when videos are fetched.  The same would be true for comments which should be applied below. 
 1. **API Call Configuration**:
    ```python
    options = {
