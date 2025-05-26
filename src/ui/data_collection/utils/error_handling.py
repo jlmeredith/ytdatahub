@@ -39,5 +39,5 @@ Action: {action_description}
         st.info("This appears to be a network issue. Check your internet connection.")
     elif "not found" in str(error).lower():
         st.info("The requested resource was not found. Please check the channel ID/URL.")
-    elif "experimental_rerun" in str(error).lower():
+    elif "rerun" in str(error).lower():
         st.info("There was an issue with the application workflow. This has been fixed, please try again.")

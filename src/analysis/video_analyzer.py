@@ -35,19 +35,63 @@ class VideoAnalyzer(BaseAnalyzer):
                 'avg_views': 0,
                 'df': None
             }
-            
+        
+        from src.utils.helpers import debug_log
+        # Use the standardizer to normalize video data format
+        from src.utils.video_standardizer import standardize_video_data
+        videos = standardize_video_data(videos)
+        
+        debug_log(f"Processing {len(videos)} videos in get_video_statistics")
+        
         # Create pandas DataFrame from videos
         data = []
         for video in videos:
+            # Video data is now standardized
+            video_id = video.get('video_id', 'Unknown')
+            title = video.get('title', 'Unknown')
+            published = video.get('published_at', '')
+            
+            # Try to get statistics - handle different formats
+            views = 0
+            likes = 0
+            comments = 0
+            
+            # Option 1: Standard API format
+            if 'statistics' in video and isinstance(video['statistics'], dict):
+                views = self.safe_int_value(video['statistics'].get('viewCount', 0))
+                likes = self.safe_int_value(video['statistics'].get('likeCount', 0))
+                comments = self.safe_int_value(video['statistics'].get('commentCount', 0))
+            
+            # Option 2: Flattened format
+            else:
+                views = self.safe_int_value(video.get('views', 0))
+                likes = self.safe_int_value(video.get('likes', 0))
+                comments = self.safe_int_value(video.get('comment_count', 0))
+            
+            # Get duration
+            duration_str = ''
+            if 'contentDetails' in video and 'duration' in video['contentDetails']:
+                duration_str = video['contentDetails']['duration']
+            elif 'duration' in video:
+                duration_str = video['duration']
+                
+            # Calculate duration in seconds and formatted value
+            duration_seconds = duration_to_seconds(duration_str)
+            formatted_duration = format_duration(duration_seconds)
+            
+            # Record input data in debug log
+            debug_log(f"Video {video_id}: views={views}, likes={likes}, comments={comments}, title={title}")
+            
+            # Create row data
             row = {
-                'Video ID': video.get('id', 'Unknown'),
-                'Title': video.get('snippet', {}).get('title', 'Unknown'),
-                'Published': video.get('snippet', {}).get('publishedAt', ''),
-                'Views': self.safe_int_value(video.get('statistics', {}).get('viewCount', 0)),
-                'Likes': self.safe_int_value(video.get('statistics', {}).get('likeCount', 0)),
-                'Comments': self.safe_int_value(video.get('statistics', {}).get('commentCount', 0)),
-                'Duration': format_duration(duration_to_seconds(video.get('contentDetails', {}).get('duration', ''))),
-                'Duration_Seconds': duration_to_seconds(video.get('contentDetails', {}).get('duration', ''))
+                'Video ID': video_id,
+                'Title': title,
+                'Published': published,
+                'Views': views,
+                'Likes': likes,
+                'Comments': comments,
+                'Duration': formatted_duration,
+                'Duration_Seconds': duration_seconds
             }
             data.append(row)
             

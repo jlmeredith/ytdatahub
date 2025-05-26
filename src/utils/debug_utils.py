@@ -5,7 +5,11 @@ This module contains functions for debugging and logging.
 import sys
 import time
 import logging
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 from typing import Any, Dict, Optional, List, Union
 from src.utils.performance_tracking import start_timer, end_timer
 from src.utils.log_level_helper import get_log_level_int
@@ -13,12 +17,28 @@ from src.utils.log_level_helper import get_log_level_int
 def debug_log(message: str, data: Any = None, performance_tag: str = None):
     """
     Log debug messages to server console if debug mode is enabled
+    Also append to st.session_state['ui_debug_logs'] if it exists, for UI visibility.
     
     Args:
         message: The message to log
         data: Optional data to include with the log
         performance_tag: Optional tag for performance tracking
     """
+    # Append to UI debug logs for Streamlit UI regardless of log level
+    try:
+        if STREAMLIT_AVAILABLE and hasattr(st, 'session_state'):
+            if 'ui_debug_logs' not in st.session_state:
+                st.session_state['ui_debug_logs'] = []
+            st.session_state['ui_debug_logs'].append(message)
+            # Also append to debug_logs for backward compatibility
+            if 'debug_logs' not in st.session_state:
+                st.session_state['debug_logs'] = []
+            st.session_state['debug_logs'].append(message)
+    except Exception:
+        pass
+    # Always print to console
+    print(message, file=sys.stderr)
+    
     # In test environments, st.session_state might not be available, so we need fallbacks
     if 'pytest' in sys.modules:
         # We're running in a test - respect debug mode from mock session_state if available

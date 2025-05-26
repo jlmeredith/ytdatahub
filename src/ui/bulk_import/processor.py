@@ -243,7 +243,7 @@ def batch_process_channels(channel_ids, log_container, progress_container, resul
                 # Execute the batch API request with all possible parts to get complete data
                 # Based on the documentation, we'll request all relevant parts in one call
                 batch_data = api.channel_client.youtube.channels().list(
-                    part="snippet,contentDetails,statistics,status,topicDetails,brandingSettings",
+                    part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
                     id=comma_separated_ids,
                     maxResults=50
                 ).execute()

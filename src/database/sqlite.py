@@ -2,10 +2,9 @@
 SQLite database module for the YouTube scraper application.
 """
 import sqlite3
-import streamlit as st
-import pandas as pd
 import os
 from pathlib import Path
+from datetime import datetime
 
 from src.utils.helpers import debug_log
 from src.database.channel_repository import ChannelRepository
@@ -13,6 +12,12 @@ from src.database.video_repository import VideoRepository
 from src.database.comment_repository import CommentRepository
 from src.database.location_repository import LocationRepository
 from src.database.database_utility import DatabaseUtility
+
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 
 class SQLiteDatabase:
     """SQLite database connector for the YouTube scraper application."""
@@ -28,53 +33,101 @@ class SQLiteDatabase:
         self.comment_repository = CommentRepository(db_path)
         self.location_repository = LocationRepository(db_path)
         self.database_utility = DatabaseUtility(db_path)
-        # Initialize the database tables
+        # Always initialize the database tables (for each DB instance)
         self.initialize_db()
     
     def initialize_db(self):
-        """Create the necessary tables in SQLite if they don't exist"""
-        debug_log("Creating SQLite tables if needed")
-        
+        """Create the necessary tables in SQLite if they don't exist (full schema, with historical tables for all major objects)."""
+        db_file_existed = os.path.exists(self.db_path)
+        if not db_file_existed:
+            debug_log("Creating SQLite tables (full schema, zero state)")
         try:
-            # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Create the channels table
+            # Create the channels table (full schema)
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                youtube_id TEXT UNIQUE NOT NULL,
-                title TEXT,
-                subscriber_count INTEGER,
-                video_count INTEGER,
-                view_count INTEGER,
-                description TEXT,
-                custom_url TEXT,
-                published_at TEXT,
-                country TEXT,
-                default_language TEXT,
-                privacy_status TEXT,
-                is_linked BOOLEAN,
-                long_uploads_status TEXT,
-                made_for_kids BOOLEAN,
-                hidden_subscriber_count BOOLEAN,
-                thumbnail_default TEXT,
-                thumbnail_medium TEXT,
-                thumbnail_high TEXT,
-                keywords TEXT,
-                topic_categories TEXT,
-                fetched_at TEXT,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                channel_id TEXT UNIQUE NOT NULL,
+                channel_title TEXT,
                 uploads_playlist_id TEXT,
-                local_thumbnail_medium TEXT,
-                local_thumbnail_default TEXT,
-                local_thumbnail_high TEXT,
-                updated_at TEXT
+                subscriber_count INTEGER,
+                view_count INTEGER,
+                video_count INTEGER,
+                kind TEXT,
+                etag TEXT,
+                snippet_title TEXT,
+                snippet_description TEXT,
+                snippet_customUrl TEXT,
+                snippet_publishedAt TEXT,
+                snippet_defaultLanguage TEXT,
+                snippet_country TEXT,
+                snippet_thumbnails_default_url TEXT,
+                snippet_thumbnails_medium_url TEXT,
+                snippet_thumbnails_high_url TEXT,
+                snippet_localized_title TEXT,
+                snippet_localized_description TEXT,
+                contentDetails_relatedPlaylists_uploads TEXT,
+                contentDetails_relatedPlaylists_likes TEXT,
+                contentDetails_relatedPlaylists_favorites TEXT,
+                statistics_viewCount INTEGER,
+                statistics_subscriberCount INTEGER,
+                statistics_hiddenSubscriberCount BOOLEAN,
+                statistics_videoCount INTEGER,
+                brandingSettings_channel_title TEXT,
+                brandingSettings_channel_description TEXT,
+                brandingSettings_channel_keywords TEXT,
+                brandingSettings_channel_country TEXT,
+                brandingSettings_image_bannerExternalUrl TEXT,
+                status_privacyStatus TEXT,
+                status_isLinked BOOLEAN,
+                status_longUploadsStatus TEXT,
+                status_madeForKids BOOLEAN,
+                topicDetails_topicIds TEXT,
+                topicDetails_topicCategories TEXT,
+                localizations TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             ''')
-            
-            # Create the videos table
+            # Create the channel_history table (for full JSON/time series)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS channel_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_channel_info TEXT NOT NULL
+            )
+            ''')
+            # Create the playlists table (full schema)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS playlists (
+                playlist_id TEXT PRIMARY KEY,
+                channel_id TEXT NOT NULL,
+                type TEXT DEFAULT 'uploads',
+                title TEXT,
+                description TEXT,
+                kind TEXT,
+                etag TEXT,
+                snippet_publishedAt TEXT,
+                snippet_channelId TEXT,
+                snippet_title TEXT,
+                snippet_description TEXT,
+                snippet_thumbnails TEXT,
+                snippet_channelTitle TEXT,
+                snippet_defaultLanguage TEXT,
+                snippet_localized_title TEXT,
+                snippet_localized_description TEXT,
+                status_privacyStatus TEXT,
+                contentDetails_itemCount INTEGER,
+                player_embedHtml TEXT,
+                localizations TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (channel_id) REFERENCES channels (channel_id)
+            )
+            ''')
+            # Create the videos table (full schema)
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,22 +166,7 @@ class SQLiteDatabase:
                 FOREIGN KEY (channel_id) REFERENCES channels (id)
             )
             ''')
-            
-            # Create the video_locations table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS video_locations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                video_id INTEGER NOT NULL,
-                location_type TEXT NOT NULL,
-                location_name TEXT NOT NULL,
-                confidence REAL DEFAULT 0.0,
-                source TEXT DEFAULT 'auto',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
-            )
-            ''')
-            
-            # Create the comments table
+            # Create the comments table (full schema)
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS comments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,55 +186,97 @@ class SQLiteDatabase:
                 FOREIGN KEY (parent_id) REFERENCES comments (id) ON DELETE CASCADE
             )
             ''')
-            
-            # Create indexes for better performance
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_channel_id ON videos(channel_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_youtube_id ON channels(youtube_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_youtube_id ON videos(youtube_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_video_locations_video_id ON video_locations(video_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_video_locations_location ON video_locations(location_type, location_name)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_comments_video_id ON comments(video_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_id ON channels(id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_videos_id ON videos(id)')
-            
-            # Commit the changes and close the connection
+            # Create the video_locations table (full schema)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS video_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id INTEGER NOT NULL,
+                location_type TEXT NOT NULL,
+                location_name TEXT NOT NULL,
+                confidence REAL DEFAULT 0.0,
+                source TEXT DEFAULT 'auto',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(video_id) REFERENCES videos(id)
+            )
+            ''')
+            # Create the videos_history table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS videos_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_video_info TEXT NOT NULL
+            )
+            ''')
+            # Create the comments_history table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS comments_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_comment_info TEXT NOT NULL
+            )
+            ''')
+            # Create the playlists_history table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS playlists_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_playlist_info TEXT NOT NULL
+            )
+            ''')
+            # Create the video_locations_history table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS video_locations_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_location_info TEXT NOT NULL
+            )
+            ''')
+            # Create index on channel_id
+            cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_channels_channel_id ON channels(channel_id)
+            ''')
             conn.commit()
             conn.close()
-            
-            debug_log("SQLite tables created or already exist")
-            return True
         except Exception as e:
-            st.error(f"Error creating SQLite tables: {str(e)}")
-            debug_log(f"Exception in initialize_db: {str(e)}", e)
-            return False
+            debug_log(f"Error initializing SQLite DB: {str(e)}")
     
     def store_channel_data(self, data):
         """Save channel data to SQLite database - delegated to ChannelRepository"""
-        debug_log("SQLiteDatabase: Delegating store_channel_data to ChannelRepository")
-        # Check if data contains comments before delegating
-        videos = data.get('video_id', [])
-        comment_count = 0
-        for video in videos:
-            comments = video.get('comments', [])
-            comment_count += len(comments)
-        debug_log(f"SQLiteDatabase: Data contains {len(videos)} videos with {comment_count} total comments")
-        
-        # Add debugging log to trace data flow
-        result = self.channel_repository.store_channel_data(data)
-        
-        # Verify comments were stored
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM comments")
-            stored_comments = cursor.fetchone()[0]
-            debug_log(f"SQLiteDatabase: After storage, database contains {stored_comments} comments")
-            conn.close()
-        except Exception as e:
-            debug_log(f"SQLiteDatabase: Error checking comment count: {str(e)}")
+            abs_db_path = os.path.abspath(self.db_path)
+            debug_log(f"[DB] Using database at: {abs_db_path}")
+            debug_log("SQLiteDatabase: Delegating store_channel_data to ChannelRepository")
+            # Check if data contains comments before delegating
+            videos = data.get('video_id', [])
+            comment_count = 0
+            for video in videos:
+                comments = video.get('comments', [])
+                comment_count += len(comments)
+            debug_log(f"SQLiteDatabase: Data contains {len(videos)} videos with {comment_count} total comments")
             
-        return result
+            # Add debugging log to trace data flow
+            result = self.channel_repository.store_channel_data(data)
+            
+            # Verify comments were stored
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM comments")
+                stored_comments = cursor.fetchone()[0]
+                debug_log(f"SQLiteDatabase: After storage, database contains {stored_comments} comments")
+                conn.close()
+            except Exception as e:
+                debug_log(f"SQLiteDatabase: Error checking comment count: {str(e)}")
+            
+            return result
+        except Exception as e:
+            import traceback
+            debug_log(f"Exception in SQLiteDatabase.store_channel_data: {str(e)}\n{traceback.format_exc()}")
+            return {"error": str(e)}
     
     def get_channels_list(self):
         """Get a list of all channel names from the database - delegated to ChannelRepository"""
@@ -312,6 +392,96 @@ class SQLiteDatabase:
         debug_log(f"SQLiteDatabase: get_channel called with identifier: {channel_identifier}")
         # This is an alias for get_channel_data to maintain compatibility with the API
         return self.get_channel_data(channel_identifier)
+
+    def flatten_dict(self, d, parent_key='', sep='.'):
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+    def store_playlist_data(self, playlist: dict) -> bool:
+        """
+        Save playlist data to SQLite database and insert full API response into playlists_history.
+        Args:
+            playlist: Dictionary containing playlist data (must include playlist_id and channel_id)
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # --- Flatten all fields from the API response ---
+            flat_playlist = self.flatten_dict(playlist)
+            flat_playlist_underscore = {k.replace('.', '_'): v for k, v in flat_playlist.items()}
+            # --- Special handling for complex fields ---
+            import json
+            # snippet.thumbnails (dict)
+            if 'snippet.thumbnails' in flat_playlist:
+                flat_playlist_underscore['snippet_thumbnails'] = json.dumps(flat_playlist['snippet.thumbnails'])
+            # snippet.localized (dict)
+            if 'snippet.localized' in flat_playlist:
+                if isinstance(flat_playlist['snippet.localized'], dict):
+                    flat_playlist_underscore['snippet_localized_title'] = flat_playlist['snippet.localized'].get('title')
+                    flat_playlist_underscore['snippet_localized_description'] = flat_playlist['snippet.localized'].get('description')
+            # localizations (dict)
+            if 'localizations' in flat_playlist:
+                flat_playlist_underscore['localizations'] = json.dumps(flat_playlist['localizations'])
+            # player.embedHtml
+            if 'player.embedHtml' in flat_playlist:
+                flat_playlist_underscore['player_embedHtml'] = flat_playlist['player.embedHtml']
+            # contentDetails.itemCount
+            if 'contentDetails.itemCount' in flat_playlist:
+                try:
+                    flat_playlist_underscore['contentDetails_itemCount'] = int(flat_playlist['contentDetails.itemCount'])
+                except Exception:
+                    flat_playlist_underscore['contentDetails_itemCount'] = None
+            debug_log(f"[DB DEBUG] flat_playlist_underscore: {flat_playlist_underscore}")
+            # --- Get all columns in the playlists table ---
+            cursor.execute("PRAGMA table_info(playlists)")
+            existing_cols = set(row[1] for row in cursor.fetchall())
+            # --- Prepare columns and values for insert/update ---
+            columns = []
+            values = []
+            for col in existing_cols:
+                if col in ['created_at', 'updated_at']:
+                    continue
+                v = flat_playlist_underscore.get(col, None)
+                # Serialize lists/dicts
+                if isinstance(v, (list, dict)):
+                    v = json.dumps(v)
+                values.append(v)
+                columns.append(col)
+            debug_log(f"[DB INSERT] Final playlist insert columns: {columns}")
+            debug_log(f"[DB INSERT] Final playlist insert values: {values}")
+            if not columns:
+                debug_log("[DB WARNING] No columns to insert for playlist.")
+                conn.close()
+                return False
+            placeholders = ','.join(['?'] * len(columns))
+            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
+            cursor.execute(f'''
+                INSERT INTO playlists ({','.join(columns)})
+                VALUES ({placeholders})
+                ON CONFLICT(playlist_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
+            ''', values)
+            # Insert full JSON into playlists_history
+            now = datetime.utcnow().isoformat()
+            raw_playlist_info = json.dumps(playlist)
+            cursor.execute('''
+                INSERT INTO playlists_history (playlist_id, fetched_at, raw_playlist_info)
+                VALUES (?, ?, ?)
+            ''', (playlist.get('playlist_id'), now, raw_playlist_info))
+            conn.commit()
+            conn.close()
+            debug_log(f"Inserted/updated playlist: {playlist.get('playlist_id')} and saved to playlists_history.")
+            return True
+        except Exception as e:
+            debug_log(f"Exception in store_playlist_data: {str(e)}")
+            return False
 
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():

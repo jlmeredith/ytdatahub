@@ -99,135 +99,38 @@ def render_data_collection_tab():
             
             # Tab 1: New Collection
             with tabs[0]:
-                # Set collection mode to new_channel
                 st.session_state['collection_mode'] = "new_channel"
-                
-                if ('channel_info_temp' in st.session_state and 
+                # Only render workflow if not in form context
+                if st.session_state.get('trigger_new_channel_workflow'):
+                    from .workflow_factory import create_workflow
+                    workflow = create_workflow(youtube_service, "new_channel")
+                    workflow.initialize_workflow(st.session_state['channel_input'])
+                    workflow.render_current_step()
+                    st.session_state['trigger_new_channel_workflow'] = False
+                    st.stop()
+                elif ('channel_info_temp' in st.session_state and 
                     st.session_state.get('channel_info_temp') is not None and 
                     st.session_state.channel_data_fetched):
-                    # Use our new workflow system to render the collection steps
                     from .workflow_factory import create_workflow
                     workflow = create_workflow(youtube_service, "new_channel")
                     workflow.initialize_workflow(st.session_state.channel_input)
                     workflow.render_current_step()
                 else:
-                    # Channel input form
                     st.subheader("Channel Data Collection")
                     st.write("Enter a YouTube Channel URL or ID to start collecting data.")
-                    
-                    # Input form with better validation
                     with st.form("channel_form", clear_on_submit=False):
                         channel_input = st.text_input(
                             "Enter a YouTube Channel URL or ID:", 
                             help="For example: https://www.youtube.com/c/ChannelName or UCxxxxx"
                         )
-                        
-                        # Add option to fetch data from database if available
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.form_submit_button("Fetch Channel Data", type="primary"):
-                                with st.spinner("Fetching channel data..."):
-                                    try:
-                                        # Check if this is a valid channel ID/URL
-                                        is_valid, resolved_id = youtube_service.validate_and_resolve_channel_id(channel_input)
-                                        
-                                        if is_valid:
-                                            # Check if we already have this channel in the database
-                                            db = SQLiteDatabase(SQLITE_DB_PATH)
-                                            existing_data = db.get_channel_data(resolved_id)
-                                            
-                                            if existing_data:
-                                                # Ask if user wants to update existing data or start fresh
-                                                st.session_state.collection_mode = "existing_channel"
-                                                st.session_state.previous_channel_data = existing_data
-                                                st.session_state.existing_channel_id = resolved_id
-                                                
-                                                st.info(f"Channel '{existing_data.get('channel_name', resolved_id)}' found in database. Using existing data as a starting point.")
-                                                
-                                                # Immediately collect channel data from API for comparison
-                                                options = {
-                                                    'fetch_channel_data': True, 
-                                                    'fetch_videos': False,
-                                                    'fetch_comments': False
-                                                }
-                                                
-                                                channel_info = youtube_service.collect_channel_data(resolved_id, options)
-                                                
-                                                if channel_info:
-                                                    st.session_state.channel_input = resolved_id
-                                                    st.session_state.channel_info_temp = channel_info
-                                                    st.session_state.current_channel_data = channel_info
-                                                    st.session_state.channel_data_fetched = True
-                                                    # Attach debug logs and response data to session state for debug panel
-                                                    if 'debug_logs' in channel_info:
-                                                        st.session_state['debug_logs'] = channel_info['debug_logs']
-                                                    if 'response_data' in channel_info:
-                                                        st.session_state['response_data'] = channel_info['response_data']
-                                                    # Show delta info if present
-                                                    if 'delta' in channel_info:
-                                                        st.subheader("Detailed Change Report")
-                                                        delta = channel_info['delta']
-                                                        # Display video deltas if present
-                                                        if 'videos' in delta and delta['videos']:
-                                                            import pandas as pd
-                                                            st.write("Video Metric Changes:")
-                                                            st.dataframe(pd.DataFrame(delta['videos']))
-                                                        else:
-                                                            st.info("No video metric changes detected.")
-                                                    # Show actual video count if present
-                                                    if 'actual_video_count' in channel_info:
-                                                        st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
-                                                    st.rerun()
-                                                else:
-                                                    st.error("Could not fetch latest channel data from YouTube API.")
-                                            else:
-                                                # This is a new channel, fetch from YouTube API
-                                                st.session_state.collection_mode = "new_channel"
-                                                options = {
-                                                    'fetch_channel_data': True, 
-                                                    'fetch_videos': False,
-                                                    'fetch_comments': False
-                                                }
-                                                
-                                                channel_info = youtube_service.collect_channel_data(channel_input, options)
-                                                
-                                                if channel_info:
-                                                    st.session_state.channel_input = channel_input
-                                                    st.session_state.channel_info_temp = channel_info
-                                                    st.session_state.current_channel_data = channel_info
-                                                    st.session_state.channel_data_fetched = True
-                                                    # Attach debug logs and response data to session state for debug panel
-                                                    if 'debug_logs' in channel_info:
-                                                        st.session_state['debug_logs'] = channel_info['debug_logs']
-                                                    if 'response_data' in channel_info:
-                                                        st.session_state['response_data'] = channel_info['response_data']
-                                                    # Show delta info if present
-                                                    if 'delta' in channel_info:
-                                                        st.subheader("Detailed Change Report")
-                                                        delta = channel_info['delta']
-                                                        # Display video deltas if present
-                                                        if 'videos' in delta and delta['videos']:
-                                                            import pandas as pd
-                                                            st.write("Video Metric Changes:")
-                                                            st.dataframe(pd.DataFrame(delta['videos']))
-                                                        else:
-                                                            st.info("No video metric changes detected.")
-                                                    # Show actual video count if present
-                                                    if 'actual_video_count' in channel_info:
-                                                        st.info(f"Actual videos fetched: {channel_info['actual_video_count']}")
-                                                    st.rerun()
-                                                else:
-                                                    st.error("Could not fetch channel data from YouTube API.")
-                                        else:
-                                            st.error("Invalid YouTube channel URL or ID. Please check and try again.")
-                                            
-                                    except Exception as e:
-                                        st.error(f"Error fetching channel data: {str(e)}")
-                                        debug_log(f"Channel data fetch error: {str(e)}", e)
-                        
+                                st.session_state['channel_input'] = channel_input
+                                st.session_state['trigger_new_channel_workflow'] = True
+                                st.rerun()
                         with col2:
                             if st.form_submit_button("Clear Form", type="secondary"):
-                                # Reset all session state related to channel data
                                 if 'channel_info_temp' in st.session_state:
                                     del st.session_state.channel_info_temp
                                 if 'current_channel_data' in st.session_state:
@@ -236,6 +139,7 @@ def render_data_collection_tab():
                                 st.session_state.videos_fetched = False
                                 st.session_state.comments_fetched = False
                                 st.session_state.show_all_videos = False
+                                st.rerun()
                     
                     # Display helpful information about collection process
                     with st.expander("How Data Collection Works"):

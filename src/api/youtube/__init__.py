@@ -50,25 +50,19 @@ class YouTubeAPI:
         if hasattr(self, 'youtube') and self.youtube is not None:
             try:
                 response = self.youtube.channels().list(
-                    part="snippet,contentDetails,statistics",
+                    part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
                     id=channel_id
                 ).execute()
                 
                 if not response.get('items'):
                     return None
-                    
-                channel_data = response['items'][0]
-                uploads_playlist_id = channel_data['contentDetails']['relatedPlaylists']['uploads']
                 
+                channel_data = response['items'][0]
+                # Return only the true, full API response as raw_channel_info
                 return {
-                    'channel_id': channel_id,
-                    'channel_name': channel_data['snippet']['title'],
-                    'channel_description': channel_data['snippet']['description'],
-                    'subscribers': channel_data['statistics'].get('subscriberCount', '0'),
-                    'views': channel_data['statistics'].get('viewCount', '0'),
-                    'total_videos': channel_data['statistics'].get('videoCount', '0'),
-                    'playlist_id': uploads_playlist_id,
-                    'video_id': [],
+                    'raw_channel_info': channel_data,
+                    'channel_id': channel_data.get('id'),
+                    'playlist_id': channel_data.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads', ''),
                 }
             except Exception:
                 pass  # Fall back to channel_client if this fails

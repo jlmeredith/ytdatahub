@@ -7,6 +7,7 @@ import pandas as pd
 from unittest.mock import MagicMock, patch
 from src.ui.data_collection.channel_refresh_ui import channel_refresh_section
 from src.utils.video_formatter import extract_video_views, fix_missing_views
+from src.utils.video_processor import process_video_data
 
 # Sample video data with different view count structures
 SAMPLE_VIDEOS = [
@@ -47,6 +48,42 @@ SAMPLE_VIDEOS = [
         "published_at": "2025-05-05T12:00:00Z"
     }
 ]
+
+# Test specifically for the issue where videos don't display in the new channel workflow
+def test_new_channel_workflow_video_processing():
+    """Test that the video processing functions work correctly for the new channel workflow"""
+    # Create sample raw API response videos
+    raw_videos = [
+        {
+            "video_id": "testvid1",
+            "title": "Test Video 1",
+            "statistics": {
+                "viewCount": "5000",
+                "likeCount": "200",
+                "commentCount": "50"
+            }
+        },
+        {
+            "video_id": "testvid2",
+            "title": "Test Video 2",
+            "statistics": {}  # Missing view count
+        }
+    ]
+    
+    # Process the videos as done in the new channel workflow
+    processed_videos = process_video_data(raw_videos)
+    fixed_videos = fix_missing_views(processed_videos)
+    
+    # Check that the first video has views correctly extracted
+    assert processed_videos[0]["views"] == "5000"
+    assert processed_videos[0]["comment_count"] == "50"
+    
+    # Check that the second video has default values for missing data
+    assert processed_videos[1]["views"] == "0"
+    
+    # Verify fix_missing_views doesn't change existing valid values
+    assert fixed_videos[0]["views"] == "5000"
+    assert fixed_videos[0]["comment_count"] == "50"
 
 @pytest.fixture
 def mock_youtube_service():

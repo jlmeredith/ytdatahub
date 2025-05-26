@@ -4,30 +4,155 @@ This module handles the comparison between database and API data for channels.
 import streamlit as st
 import pandas as pd
 from src.utils.helpers import debug_log
+from ..components.comprehensive_display import render_detailed_change_dashboard, render_collapsible_field_explorer
 
 def display_comparison_results(db_data, api_data):
-    """Displays a comparison between database and API data."""
+    """Displays a comparison between database and API data using comprehensive display components."""
     st.subheader("Data Comparison")
-    # Show detailed delta report if available (move this up)
+    # Show detailed delta report if available
     if 'delta' in st.session_state:
         st.subheader("Detailed Change Report")
         delta = st.session_state['delta']
-        # DEBUG: Show the actual delta structure
-        st.info(f"DEBUG: delta = {repr(delta)}")
-        # Process the delta report for display
+        
+        # Get comparison options for display
+        comparison_options = None
+        if '_comparison_options' in api_data:
+            comparison_options = api_data.get('_comparison_options')
+        elif 'comparison_options' in st.session_state:
+            comparison_options = st.session_state.get('comparison_options')
+        
+        # Display comparison level used for this data
+        comparison_level = "standard"
+        if comparison_options:
+            comparison_level = comparison_options.get('comparison_level', 'standard')
+        
+        st.info(f"Comparison level: {comparison_level.upper()}")
+        
+        # Process the delta report for display using the comprehensive display components
         if delta and isinstance(delta, dict):
-            # Format changes for display
+            # Store delta information in the API data for rendering
+            enhanced_api_data = api_data.copy() if api_data else {}
+            enhanced_api_data['delta'] = delta
+            
+            # Use the comprehensive display component to render the detailed change dashboard
+            render_detailed_change_dashboard(enhanced_api_data)
+            
+            # For significant changes, still show a clear alert at the top
+            if 'significant_changes' in delta and delta['significant_changes']:
+                st.error("⚠️ Significant changes detected!")
+                sig_changes = delta['significant_changes']
+                
+                # Format significant changes for display
+                sig_formatted = []
+                for change in sig_changes:
+                    sig_formatted.append({
+                        'Metric': change.get('metric', ''),
+                        'Change': f"{change.get('old', '')} → {change.get('new', '')}" if 'old' in change else 
+                                f"{change.get('change', '')} ({change.get('percentage', '')}%)" if 'percentage' in change else 
+                                str(change.get('keywords', '')),
+                        'Significance': change.get('significance', 'medium').upper()
+                    })
+                
+                if sig_formatted:
+                    st.table(pd.DataFrame(sig_formatted))
+            
+            # Format all changes for display
             formatted_changes = []
             for field, change in delta.items():
-                if isinstance(change, dict) and 'old' in change and 'new' in change:
+                # Skip internal fields and significant_changes which was already displayed
+                if field.startswith('_') or field == 'significant_changes':
+                    continue
+                    
+                if isinstance(change, dict):
+                    if 'old' in change and 'new' in change:
+                        # Handle standard change fields
+                        formatted_changes.append({
+                            'Field': field,
+                            'Previous Value': str(change['old']),
+                            'New Value': str(change['new']),
+                            'Change Type': 'Modified'
+                        })
+                    elif field.endswith('_keywords'):
+                        # Handle keyword tracking results
+                        base_field = field.replace('_keywords', '')
+                        keywords_added = change.get('added', [])
+                        keywords_removed = change.get('removed', [])
+                        
+                        if keywords_added or keywords_removed:
+                            formatted_changes.append({
+                                'Field': f"{base_field} Keywords",
+                                'Previous Value': ', '.join(keywords_removed) if keywords_removed else '-',
+                                'New Value': ', '.join(keywords_added) if keywords_added else '-',
+                                'Change Type': 'Keywords'
+                            })
+                            
+                            # Show keyword context if available
+                            if 'context' in change:
+                                for context_key, context_text in change['context'].items():
+                                    formatted_changes.append({
+                                        'Field': f"{context_key} Context",
+                                        'Previous Value': '',
+                                        'New Value': context_text,
+                                        'Change Type': 'Context'
+                                    })
+                    elif 'value' in change:
+                        # Handle unchanged fields (comprehensive mode)
+                        status = "Unchanged"
+                        if field.endswith('_unchanged'):
+                            field = field.replace('_unchanged', '')
+                        elif field.endswith('_new'):
+                            field = field.replace('_new', '')
+                            status = "New Field"
+                            
+                        formatted_changes.append({
+                            'Field': field,
+                            'Previous Value': str(change['value']) if status == "Unchanged" else "-",
+                            'New Value': str(change['value']),
+                            'Change Type': status
+                        })
+                elif isinstance(change, (int, float)) and field not in ('old', 'new', 'diff'):
+                    # Legacy numeric difference format
                     formatted_changes.append({
                         'Field': field,
-                        'Previous Value': str(change['old']),
-                        'New Value': str(change['new'])
+                        'Previous Value': "-",
+                        'New Value': str(change),
+                        'Change Type': 'Numeric Difference'
                     })
-            if formatted_changes:
-                st.table(pd.DataFrame(formatted_changes))
-                return
+                    
+            # Add any API fields not in delta but present in API data (for comprehensive mode)
+            if comparison_level == 'comprehensive':
+                # Filter to only include fields not already in formatted_changes
+                existing_fields = {fc['Field'] for fc in formatted_changes}
+                for field, value in api_data.items():
+                    if (not field.startswith('_') and field != 'delta' and 
+                        field not in existing_fields and not isinstance(value, dict) and not isinstance(value, list)):
+                        formatted_changes.append({
+                            'Field': field,
+                            'Previous Value': "-",
+                            'New Value': str(value),
+                            'Change Type': 'API Field'
+                        })
+            
+            # Sort changes by field name
+            formatted_changes.sort(key=lambda x: x['Field'])
+            
+            # Create toggles for different views
+            show_all = st.checkbox("Show all fields", value=False)
+            
+            # Filter based on selected view
+            display_changes = formatted_changes
+            if not show_all:
+                # Show only modified fields by default
+                display_changes = [fc for fc in formatted_changes if fc['Change Type'] in ('Modified', 'Keywords')]
+                
+                if not display_changes:
+                    st.info("No modified fields detected. Check 'Show all fields' to see all available data.")
+            
+            # Display the table
+            if display_changes:
+                st.table(pd.DataFrame(display_changes))
+            return
+            
         st.warning("Delta information is not available")
         return
     if not db_data or not api_data:

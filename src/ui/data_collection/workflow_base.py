@@ -178,3 +178,120 @@ class BaseCollectionWorkflow(ABC):
         # Set flag to show the prompt
         st.session_state[prompt_key] = True
         return None
+    
+    def debug_video_data_flow(self, video_data, title="Video Data Diagnostic"):
+        """
+        Debug tool to diagnose issues in the video data flow pipeline.
+        This helps identify where video data might be getting lost or corrupted.
+        
+        Args:
+            video_data: The video data to diagnose
+            title: Title for the diagnostic section
+        """
+        from src.utils.helpers import debug_log
+        
+        # Create an expandable section for the diagnostics
+        with st.expander(f"🔍 {title}", expanded=False):
+            st.write("### Video Data Structure Analysis")
+            
+            # Check if video_data exists
+            if video_data is None:
+                st.error("❌ Video data is None")
+                debug_log("Video data is None")
+                return
+                
+            # Check data type
+            data_type = type(video_data).__name__
+            if isinstance(video_data, dict):
+                st.info(f"📊 Data type: Dictionary with {len(video_data)} keys")
+                st.write("Top-level keys:")
+                st.code(list(video_data.keys()))
+                
+                # Look for video data in common locations
+                locations = ['video_id', 'videos', 'items']
+                found = False
+                
+                for loc in locations:
+                    if loc in video_data:
+                        videos = video_data[loc]
+                        if isinstance(videos, list):
+                            st.success(f"✅ Found {len(videos)} videos in '{loc}' field")
+                            found = True
+                            # Show sample of first video
+                            if videos:
+                                with st.expander("First Video Sample"):
+                                    st.json(videos[0])
+                                    
+                                # Check for critical fields
+                                has_video_id = all('video_id' in v for v in videos if isinstance(v, dict))
+                                has_views = all('views' in v for v in videos if isinstance(v, dict)) 
+                                
+                                if has_video_id:
+                                    st.success("✅ All videos have video_id field")
+                                else:
+                                    st.error("❌ Some videos missing video_id field")
+                                    
+                                if has_views:
+                                    st.success("✅ All videos have views field")
+                                    # Check for zero views
+                                    zero_views = sum(1 for v in videos if isinstance(v, dict) and v.get('views') == '0')
+                                    if zero_views:
+                                        st.warning(f"⚠️ {zero_views} videos have '0' views")
+                                else:
+                                    st.error("❌ Some videos missing views field")
+                        else:
+                            st.warning(f"⚠️ '{loc}' field exists but is not a list: {type(videos).__name__}")
+                            
+                if not found:
+                    st.error("❌ No video data found in standard locations")
+                    
+            elif isinstance(video_data, list):
+                st.info(f"📊 Data type: List with {len(video_data)} items")
+                
+                # Check if items are video objects
+                if video_data and isinstance(video_data[0], dict):
+                    video_fields = ['video_id', 'id', 'title']
+                    is_video_list = any(field in video_data[0] for field in video_fields)
+                    
+                    if is_video_list:
+                        st.success(f"✅ Found list of {len(video_data)} videos")
+                        # Show sample of first video
+                        with st.expander("First Video Sample"):
+                            st.json(video_data[0])
+                            
+                        # Check for critical fields
+                        has_video_id = all('video_id' in v for v in video_data if isinstance(v, dict))
+                        has_views = all('views' in v for v in video_data if isinstance(v, dict)) 
+                        
+                        if has_video_id:
+                            st.success("✅ All videos have video_id field")
+                        else:
+                            st.error("❌ Some videos missing video_id field")
+                            
+                        if has_views:
+                            st.success("✅ All videos have views field")
+                            # Check for zero views
+                            zero_views = sum(1 for v in video_data if isinstance(v, dict) and v.get('views') == '0')
+                            if zero_views:
+                                st.warning(f"⚠️ {zero_views} videos have '0' views")
+                        else:
+                            st.error("❌ Some videos missing views field")
+                    else:
+                        st.warning("⚠️ List does not appear to contain video objects")
+            else:
+                st.error(f"❌ Unexpected data type: {data_type}")
+                debug_log(f"Unexpected video data type: {data_type}")
+                
+            # Add a 'Copy Raw Data' button for further analysis
+            st.subheader("Raw Data")
+            if st.button("Copy Raw Data to Clipboard"):
+                import json
+                try:
+                    st.session_state['_debug_clipboard'] = json.dumps(video_data, indent=2)
+                    st.success("Data copied to clipboard! (Available in session state)")
+                except Exception as e:
+                    st.error(f"Error copying data: {str(e)}")
+                    
+            # Show raw data in an expandable section
+            with st.expander("View Raw Data"):
+                st.json(video_data)

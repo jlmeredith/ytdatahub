@@ -70,7 +70,7 @@ class ChannelClient(YouTubeBaseClient):
             # Request only the necessary parts to optimize quota usage
             # This is important for the test_part_parameter_optimization test
             request = self.youtube.channels().list(
-                part="snippet,contentDetails,statistics",
+                part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
                 id=validated_channel_id
             )
             response = request.execute()

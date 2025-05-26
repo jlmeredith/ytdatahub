@@ -11,7 +11,7 @@ import sys
 from src.api.youtube_api import YouTubeAPIError
 from googleapiclient.errors import HttpError
 
-from src.utils.queue_tracker import add_to_queue
+from src.utils.queue_tracker import add_to_queue, get_queue_stats
 from src.utils.video_formatter import fix_missing_views
 
 class DataCollectionMixin:
@@ -28,10 +28,11 @@ class DataCollectionMixin:
             # Deep copy existing_data to avoid mutation
             channel_data = copy.deepcopy(existing_data) if existing_data else {}
             channel_data['channel_id'] = channel_id
-            log(f"Starting data collection for channel: {channel_id}")
+            log(f"[WORKFLOW] collect_channel_data called for channel_id={channel_id} with options={options}")
             
             # Get channel info
             channel_info = self.api.get_channel_info(channel_id)
+            log(f"[WORKFLOW] Got channel_info: {channel_info}")
             if not channel_info:
                 log("Failed to fetch channel info")
                 channel_data['debug_logs'] = debug_logs
@@ -39,14 +40,47 @@ class DataCollectionMixin:
             
             # Update channel data with info
             channel_data.update(channel_info)
-            log(f"Fetched channel info: {channel_info}")
+            # Always fetch the correct uploads playlist ID from the API after fetching channel info
+            log(f"[WORKFLOW] Fetching uploads playlist ID from API for channel_id={channel_id}...")
+            playlist_id = self.api.get_playlist_id_for_channel(channel_id)
+            log(f"[WORKFLOW] API returned playlist_id={playlist_id} for channel_id={channel_id}")
+            if playlist_id and playlist_id != channel_id and playlist_id.startswith('UU'):
+                channel_info['playlist_id'] = playlist_id
+                channel_info['uploads_playlist_id'] = playlist_id
+                channel_data['playlist_id'] = playlist_id
+                channel_data['uploads_playlist_id'] = playlist_id
+                log(f"[WORKFLOW] Stored valid playlist_id in channel_info and channel_data for channel_id={channel_id}: {playlist_id}")
+            else:
+                log(f"[WORKFLOW][ERROR] Invalid or missing playlist_id for channel_id={channel_id}: {playlist_id}")
+                channel_data['error_videos'] = 'No valid uploads playlist ID found. Videos cannot be fetched.'
+                channel_data['debug_logs'] = debug_logs
+                channel_data['response_data'] = copy.deepcopy(channel_data)
+                return channel_data
+            # Add to queue after channel info fetch
+            try:
+                add_to_queue('channels', channel_id)
+                log(f"[WORKFLOW] Added channel_id={channel_id} to processing queue. Current queue stats: {get_queue_stats()}")
+            except Exception as e:
+                log(f"[WORKFLOW] Queue operation failed: {str(e)}")
+            
+            # Defensive check for playlist_id before fetching videos
+            playlist_id = channel_data.get('playlist_id', '')
+            if options.get('fetch_videos'):
+                if not playlist_id:
+                    log(f"[WORKFLOW][ERROR] No uploads playlist_id found in channel_info for channel_id={channel_id}. Skipping video fetch.")
+                    channel_data['error_videos'] = 'No uploads playlist ID found in channel info. Videos cannot be fetched.'
+                    channel_data['debug_logs'] = debug_logs
+                    channel_data['response_data'] = copy.deepcopy(channel_data)
+                    return channel_data
+                log(f"[WORKFLOW] Using playlist_id={playlist_id} to fetch videos for channel_id={channel_id}")
             
             delta = {}
             
             # Fetch videos if requested
             if options.get('fetch_videos'):
+                log(f"[WORKFLOW] Fetching videos for channel_id={channel_id} using playlist_id={playlist_id}")
                 try:
-                    video_response = self.video_service.collect_channel_videos(channel_data)
+                    video_response = self.video_service.collect_channel_videos({'playlist_id': playlist_id})
                     log(f"Video service response: {video_response}")
                     if 'error_videos' in video_response:
                         channel_data['error_videos'] = video_response['error_videos']
@@ -85,6 +119,7 @@ class DataCollectionMixin:
             
             # Fetch comments if requested
             if options.get('fetch_comments') and 'video_id' in channel_data:
+                log(f"[WORKFLOW] Fetching comments for channel_id={channel_id}")
                 try:
                     comment_response = self.comment_service.collect_video_comments(channel_data)
                     log(f"Comment service response: {comment_response}")
@@ -100,10 +135,24 @@ class DataCollectionMixin:
                     log(f"Exception during comment fetch: {str(e)}")
             
             # Attach debug logs and full response for frontend
+            try:
+                import streamlit as st
+                if hasattr(st, 'session_state') and 'ui_debug_logs' in st.session_state:
+                    debug_logs = list({*debug_logs, *st.session_state['ui_debug_logs']})
+            except Exception:
+                pass
             channel_data['debug_logs'] = debug_logs
             channel_data['response_data'] = copy.deepcopy(channel_data)
             if delta:
                 channel_data['delta'] = delta
+            # PATCH: Always include 'video_id' key for test and API compatibility
+            if 'video_id' not in channel_data:
+                channel_data['video_id'] = []
+            # DB fetch
+            log(f"[WORKFLOW] Saving channel data to DB for channel_id={channel_id}")
+            db_data = self.storage_service.get_channel_data(channel_id, "sqlite")
+            log(f"[WORKFLOW] DB fetch complete for channel_id={channel_id}, found {len(db_data.get('video_id', [])) if db_data and 'video_id' in db_data else 0} videos")
+            
             return channel_data
             
         except Exception as e:

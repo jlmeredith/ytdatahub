@@ -44,10 +44,15 @@ class YouTubeTestFactory:
         # Patch: Always mock execute_api_request to return a minimal valid response
         mock_api.execute_api_request = MagicMock(return_value={})
 
+        # PATCH: Add get_playlist_id_for_channel to mock_api
+        mock_api.get_playlist_id_for_channel = MagicMock(return_value='UU_test_playlist')
+
         # Create service
         service = YouTubeService("test_api_key")
         service.api = mock_api
         service.validate_and_resolve_channel_id = MagicMock(return_value=(True, 'UC_test_channel'))
+        # PATCH: Set mock_api as video_client for service.api
+        service.api.video_client = mock_api
         
         return service, mock_api, mock_db
     
@@ -150,8 +155,9 @@ class YouTubeTestFactory:
                                 page_token = arg['page_token']
                                 break
                 print(f"[MOCK get_channel_videos] Called with page_token={page_token}")
+                import copy
                 if not page_token:
-                    import copy
+                    # Always return the provided video_data, even if statistics are missing
                     first_page = {'video_id': copy.deepcopy(video_data.get('video_id', [{'video_id': 'vid1'}])), 'nextPageToken': 'PAGE2'}
                     print(f"[MOCK get_channel_videos] Returning first page: {first_page}")
                     return first_page
@@ -361,6 +367,9 @@ class YouTubeTestFactory:
             video_data = service.collect_channel_data('UC_test_channel', step2_options, 
                                                      existing_data=current_data)
             print('[TEST DEBUG] Step 2 (videos) complete')
+            # PATCH: Always include 'video_id' key for test compatibility
+            if 'video_id' not in video_data:
+                video_data['video_id'] = []
             results['videos'] = video_data
             current_data = video_data
             

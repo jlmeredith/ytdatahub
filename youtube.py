@@ -244,7 +244,7 @@ def render_footer(settings):
     st.markdown("---")
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.markdown("YouTube Data Hub v0.90 | © 2025 | [Documentation](https://github.com/yourusername/ytdatahub)")
+        st.markdown("YouTube Data Hub v0.90 | © 2025 | [Documentation](https://github.com/jlmeredith/ytdatahub)")
     with col2:
         # Show stats if enabled
         if hasattr(settings, 'show_app_stats') and settings.show_app_stats and 'app_stats' in st.session_state:

@@ -148,4 +148,38 @@ YTDataHub ensures your YouTube data is properly stored and easily accessible:
 - **Multi-channel storage**: Store data from multiple channels for comparative analysis
 - **Data versioning**: Track changes in channel performance over time
 
+## Resetting the Database (Development/Testing)
+
+YTDataHub provides two ways to completely clear and reset your database (all records, all tables):
+
+### 1. Using the UI (Recommended for Most Users)
+- Go to the **Utilities** tab in the Streamlit app.
+- Scroll to **Database Management Tools**.
+- Use the **Clear Database** section:
+  - Confirm the warning and type 'CLEAR ALL DATA' to enable the button.
+  - Click **Clear Database**. The app will:
+    - Create a backup of your current database file (with a timestamp).
+    - Drop all tables and recreate the schema.
+    - You can immediately start collecting/importing new data.
+
+### 2. Using the CLI (For Automation/Advanced Users)
+- Run the following command to clear and reset the database from the terminal:
+
+```bash
+venv/bin/python scripts/clear_and_reset_db.py
+```
+- This will:
+  - Create a backup of your database file.
+  - Drop all tables and recreate the schema.
+
+**Note:** This operation is destructive and should only be used in development or when you want to start fresh. All data will be lost, but a backup is created for safety.
+
+For more details, see [Database Operations Documentation](documentation/reference/database-operations.md).
+
+### Workflow Parity: Playlist ID Handling
+
+- Both the **New Channel** and **Update Channel** workflows always fetch, log, and store the YouTube uploads playlist ID before any video fetch.
+- All playlist ID actions (fetch, store, error) are logged and visible in the UI debug panel.
+- This parity is enforced by automated tests and code review to prevent regressions.
+
 

@@ -14,6 +14,12 @@ from src.utils.debug_utils import (
     get_ui_freeze_report
 )
 
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
 from src.utils.performance_tracking import initialize_performance_tracking
 
 from src.utils.formatters import (
@@ -49,11 +55,11 @@ from src.utils.ui_helpers import (
 
 from src.utils.ui_performance import (
     report_ui_timing,
-    get_performance_summary
 )
 
-# Initialize performance tracking
-initialize_performance_tracking()
+# Only call initialize_performance_tracking if Streamlit is available
+if STREAMLIT_AVAILABLE:
+    initialize_performance_tracking()
 
 # Function has been moved to src.utils.debug_utils
 # This placeholder is kept for backward compatibility
@@ -162,3 +168,33 @@ def clean_channel_id(channel_identifier: str) -> str:
     """
     from src.utils.validation import validate_channel_id
     return validate_channel_id(channel_identifier)[1]
+
+# Add new video data repair function
+def repair_inconsistent_video_data(video_data: Union[Dict, List]) -> Union[Dict, List]:
+    """
+    Utility function to detect and repair common inconsistencies in video data.
+    This is a helper to ensure backward compatibility with various data formats.
+    Prefer using video_standardizer for new code.
+    
+    Args:
+        video_data: Video data that might have format issues
+        
+    Returns:
+        Repaired video data with consistent format
+    """
+    from src.utils.video_standardizer import standardize_video_data
+    
+    # First validate if this is a single video or multiple videos
+    if not video_data:
+        return video_data
+        
+    # For a list of videos, process each one
+    if isinstance(video_data, list):
+        return standardize_video_data(video_data)
+    
+    # For a single video, wrap it in a list and then process
+    if isinstance(video_data, dict):
+        return standardize_video_data([video_data])[0]
+        
+    # If neither a list nor a dict, return as is
+    return video_data

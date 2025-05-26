@@ -403,3 +403,82 @@ for comment in comments:
 The YouTube API is a powerful tool for accessing YouTube data, but it requires careful management to use effectively within quota limitations. By following the architecture and best practices outlined in this guide, you can maximize the value of your API quota while building robust applications.
 
 The modular architecture implemented in YTDataHub provides a solid foundation for YouTube API interactions, with specialized components that focus on specific areas of functionality. This approach improves maintainability, testability, and separation of concerns while providing opportunities for optimization at each level.
+
+## Public YouTube Channel API Fields Collected by YTDataHub
+
+YTDataHub collects and stores all publicly available data points for YouTube channels as returned by the YouTube Data API v3. The following fields are fetched and mapped (where available) for each channel:
+
+### Top-Level Fields
+- `kind`: Type of the API resource (e.g., youtube#channel)
+- `etag`: ETag for caching
+- `id`: Unique YouTube channel ID
+
+### `snippet` Part
+- `snippet.title`: Channel name
+- `snippet.description`: Channel description
+- `snippet.customUrl`: Custom URL (if set)
+- `snippet.publishedAt`: Channel creation date (ISO 8601)
+- `snippet.thumbnails`: Thumbnails (default, medium, high)
+  - `thumbnails.default.url`, `.width`, `.height`
+  - `thumbnails.medium.url`, `.width`, `.height`
+  - `thumbnails.high.url`, `.width`, `.height`
+- `snippet.defaultLanguage`: Default metadata language
+- `snippet.localized.title`: Localized title (if available)
+- `snippet.localized.description`: Localized description (if available)
+- `snippet.country`: Associated country (if set and public)
+
+### `contentDetails` Part
+- `contentDetails.relatedPlaylists.uploads`: Playlist ID for uploaded public videos
+
+### `statistics` Part
+- `statistics.viewCount`: Total channel video views
+- `statistics.subscriberCount`: Subscriber count (not present if hidden)
+- `statistics.hiddenSubscriberCount`: Whether subscriber count is hidden
+- `statistics.videoCount`: Total public videos
+- `statistics.commentCount`: (DEPRECATED, may not be present)
+
+### `topicDetails` Part
+- `topicDetails.topicIds[]`: List of topic IDs (if available)
+- `topicDetails.topicCategories[]`: List of Wikipedia topic URLs (if available)
+
+### `brandingSettings` Part
+- `brandingSettings.channel.title`: Channel title (can differ from snippet.title)
+- `brandingSettings.channel.description`: Channel description (can differ from snippet.description)
+- `brandingSettings.channel.keywords`: Space-separated keywords (may be truncated)
+- `brandingSettings.channel.unsubscribedTrailer`: Video ID for unsubscribed trailer (if set)
+- `brandingSettings.channel.country`: Country (if set)
+- `brandingSettings.channel.defaultLanguage`: Default language
+- **Deprecated fields**: Many fields in brandingSettings are deprecated and may not be present (see official docs).
+
+### `status` Part
+- `status.privacyStatus`: Privacy status (e.g., public)
+- `status.isLinked`: Whether the channel is linked to a YouTube account
+- `status.longUploadsStatus`: Eligibility for long uploads
+- `status.madeForKids`: Whether the channel is "made for kids"
+- `status.selfDeclaredMadeForKids`: (Not available to non-owners)
+
+### `localizations` Part
+- `[languageCode].title`: Localized title for each language
+- `[languageCode].description`: Localized description for each language
+
+### Notes
+- Some fields may be missing or empty for non-owners or due to privacy settings.
+- Deprecated fields may not be present in all responses.
+- YTDataHub stores the full raw channel API response under `channel_info` for each channel, so all available fields are accessible for analysis and export.
+
+### Code References
+- API fetch: `src/api/youtube/channel.py` (`ChannelClient.get_channel_info`)
+- Service mapping: `src/services/youtube_service.py` (`get_basic_channel_info`)
+- UI display: All fields are accessible in the "All Channel Fields" expander in the data collection workflow.
+
+For the most up-to-date field definitions, always refer to the [official YouTube Data API v3 documentation](https://developers.google.com/youtube/v3/docs/channels/list).
+
+## Database Persistence of API Fields
+
+As of the latest release, YTDataHub persists the full public YouTube channel API response for each channel in the database. This is stored in the `raw_channel_info` column of the `channels` table. All fields returned by the YouTube Data API v3 are available for analysis and export, even after reloading from the database.
+
+- The `raw_channel_info` column contains the complete JSON response from the API for each channel.
+- The UI and export features can access all public fields, including those not mapped to top-level columns.
+- This ensures full parity with the API and future-proofs the system for new fields.
+
+For more details, see the [channels table schema](../project-structure.md) and the code in `src/database/channel_repository.py`.

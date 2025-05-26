@@ -176,21 +176,27 @@ class YouTubeAPI(ModularYouTubeAPI):
             video_ids (list): List of video IDs
             
         Returns:
-            list: List of video details
+            dict: Response containing video details with 'items' containing the video data
         """
         from googleapiclient.errors import HttpError
         
         try:
             if not video_ids:
-                return []
+                debug_log("Warning: get_video_details_batch called with empty video_ids list")
+                return {'items': []}
+                
+            # Log for debugging
+            debug_log(f"Getting details for {len(video_ids)} videos in batch")
+            debug_log(f"First few video IDs: {video_ids[:5]}")
                 
             # The YouTube API can only handle 50 video IDs at once
             max_results_per_request = 50
-            results = []
+            all_items = []
             
             # Process video IDs in batches of 50
             for i in range(0, len(video_ids), max_results_per_request):
                 batch = video_ids[i:i + max_results_per_request]
+                debug_log(f"Processing batch {i//max_results_per_request + 1} with {len(batch)} videos")
                 
                 # Call the videos.list API endpoint
                 response = self.youtube.videos().list(
@@ -198,15 +204,21 @@ class YouTubeAPI(ModularYouTubeAPI):
                     id=','.join(batch)
                 ).execute()
                 
+                # Check if we got any items
+                items = response.get('items', [])
+                debug_log(f"Received {len(items)} video details in response")
+                
                 # Add video results to our list
-                results.extend(response.get('items', []))
+                all_items = []
+                all_items.extend(response.get('items', []))
                 
                 # Handle API rate limiting if needed
                 if i + max_results_per_request < len(video_ids):
                     import time
                     time.sleep(0.5)  # Add a small delay between requests to avoid quota issues
                     
-            return results
+            # Return a dict with 'items' key to match YouTube API structure
+            return {'items': all_items}
             
         except HttpError as e:
             # Convert YouTube API errors to our custom format

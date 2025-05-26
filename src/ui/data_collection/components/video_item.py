@@ -20,59 +20,110 @@ def render_video_item(video, index=0):
     # Import debug logging function at the top level if not already imported
     from src.utils.helpers import debug_log
     
-    # Log video structure for debugging if missing crucial fields
-    if not all(k in video for k in ['title', 'video_id', 'views', 'likes', 'comment_count']):
-        debug_log(f"Video data missing fields: {', '.join(k for k in ['title', 'video_id', 'views', 'likes', 'comment_count'] if k not in video)}")
-        debug_log(f"Available keys: {', '.join(video.keys())}")
+    # Use our standardizer to ensure consistent video structure
+    from src.utils.video_standardizer import standardize_video_data
     
-    # Extract video information
+    # Standardize this single video (wrap in list and extract first item)
+    debug_log(f"VIDEO_ITEM: Before standardization, video data: {str(video)[:200]}...")
+    debug_log(f"VIDEO_ITEM: Before standardization, video type: {type(video)}")
+    debug_log(f"VIDEO_ITEM: Before standardization, has key 'video_id': {'video_id' in video if isinstance(video, dict) else 'not a dict'}")
+    video = standardize_video_data([video])[0] if video else {}
+    debug_log(f"VIDEO_ITEM: After standardization, video data: {str(video)[:200]}...")
+    
+    # Extract video information (should now be standardized)
     title = video.get('title', 'No Title')
     video_id = video.get('video_id', '')
     published_at = video.get('published_at', '')
+    debug_log(f"VIDEO_ITEM: Extracted key fields - title: {title}, video_id: {video_id}")
     
-    # Ensure metrics are always present
-    video.setdefault('views', 0)
-    video.setdefault('likes', 0)
-    video.setdefault('comment_count', 0)
+    # Log diagnostic info 
+    debug_log(f"Processing video item for video_id: {video_id}")
+    debug_log(f"Video keys: {list(video.keys())}")
     
-    # Convert to integers safely - protect against invalid values
+    # VIEWS - Convert to integers safely with more robust extraction logic
+    views = 0
     try:
-        # Try to extract views from different possible locations in the structure
-        if 'views' in video:
-            views = int(video.get('views', 0))
-        elif 'statistics' in video and 'viewCount' in video['statistics']:
-            views = int(video['statistics']['viewCount'])
-        else:
-            views = 0
-    except (ValueError, TypeError):
-        debug_log(f"Invalid views format: {video.get('views')}")
+        # Explicit debug log to track the paths
+        debug_log(f"Looking for views data in video {video_id}")
+        
+        # Try all possible locations for views data
+        if 'views' in video and video['views']:
+            try:
+                views_str = str(video['views']).strip()
+                views = int(views_str) if views_str.isdigit() else 0
+                debug_log(f"Found views in direct field: {views}")
+            except (ValueError, TypeError):
+                debug_log(f"Invalid direct views format: {video.get('views')}")
+        elif 'statistics' in video and isinstance(video['statistics'], dict):
+            if 'viewCount' in video['statistics']:
+                try:
+                    views = int(video['statistics']['viewCount'])
+                    debug_log(f"Found views in statistics.viewCount: {views}")
+                except (ValueError, TypeError):
+                    debug_log(f"Invalid statistics.viewCount format: {video['statistics'].get('viewCount')}")
+        
+        # If views is still 0, check other possible paths
+        if views == 0:
+            # Check contentDetails.statistics path
+            if 'contentDetails' in video and 'statistics' in video['contentDetails']:
+                stats = video['contentDetails']['statistics']
+                if 'viewCount' in stats:
+                    try:
+                        views = int(stats['viewCount'])
+                        debug_log(f"Found views in contentDetails.statistics.viewCount: {views}")
+                    except (ValueError, TypeError):
+                        pass
+    except (ValueError, TypeError) as e:
+        debug_log(f"Error extracting views for video {video_id}: {str(e)}")
         views = 0
         
+    # LIKES - Extract with similar robust approach
+    likes = 0
     try:
-        # Try to extract likes from different possible locations in the structure
-        if 'likes' in video:
-            likes = int(video.get('likes', 0))
-        elif 'statistics' in video and 'likeCount' in video['statistics']:
-            likes = int(video['statistics']['likeCount'])
-        else:
-            likes = 0
+        if 'likes' in video and video['likes']:
+            try:
+                likes_str = str(video['likes']).strip()
+                likes = int(likes_str) if likes_str.isdigit() else 0
+                debug_log(f"Found likes in direct field: {likes}")
+            except (ValueError, TypeError):
+                debug_log(f"Invalid direct likes format: {video.get('likes')}")
+        elif 'statistics' in video and isinstance(video['statistics'], dict):
+            if 'likeCount' in video['statistics']:
+                try:
+                    likes = int(video['statistics']['likeCount'])
+                    debug_log(f"Found likes in statistics.likeCount: {likes}")
+                except (ValueError, TypeError):
+                    debug_log(f"Invalid statistics.likeCount format: {video['statistics'].get('likeCount')}")
     except (ValueError, TypeError):
-        debug_log(f"Invalid likes format: {video.get('likes')}")
+        debug_log(f"Error extracting likes for video {video_id}")
         likes = 0
         
+    # COMMENTS - Extract with similar robust approach
+    comment_count = 0
     try:
-        # Try to extract comment count from different possible locations in the structure
-        if 'comment_count' in video:
-            comment_count = int(video.get('comment_count', 0))
+        if 'comment_count' in video and video['comment_count']:
+            try:
+                comment_str = str(video['comment_count']).strip()
+                comment_count = int(comment_str) if comment_str.isdigit() else 0
+                debug_log(f"Found comments in comment_count field: {comment_count}")
+            except (ValueError, TypeError):
+                debug_log(f"Invalid comment_count format: {video.get('comment_count')}")
         elif 'comments' in video and isinstance(video['comments'], list):
             comment_count = len(video['comments'])
-        elif 'statistics' in video and 'commentCount' in video['statistics']:
-            comment_count = int(video['statistics']['commentCount'])
-        else:
-            comment_count = 0
+            debug_log(f"Found {comment_count} comments in comments list")
+        elif 'statistics' in video and isinstance(video['statistics'], dict):
+            if 'commentCount' in video['statistics']:
+                try:
+                    comment_count = int(video['statistics']['commentCount'])
+                    debug_log(f"Found comments in statistics.commentCount: {comment_count}")
+                except (ValueError, TypeError):
+                    debug_log(f"Invalid statistics.commentCount format: {video['statistics'].get('commentCount')}")
     except (ValueError, TypeError):
-        debug_log(f"Invalid comment_count format: {video.get('comment_count')}")
+        debug_log(f"Error extracting comment count for video {video_id}")
         comment_count = 0
+        
+    # Final diagnostic log
+    debug_log(f"Video {video_id} final metrics: views={views}, likes={likes}, comments={comment_count}")
         
     # Always log metric values for debugging
     debug_log(f"Video {video_id} metrics: views={views}, likes={likes}, comments={comment_count}")
@@ -97,19 +148,49 @@ def render_video_item(video, index=0):
     # YouTube URL for preview
     video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else "#"
     
-    # Get thumbnail URL or use default
-    thumbnail_url = video.get('thumbnails', '')
-    if isinstance(thumbnail_url, dict) and 'medium' in thumbnail_url:
-        thumbnail_url = thumbnail_url['medium'].get('url', '')
-    elif isinstance(thumbnail_url, dict) and 'default' in thumbnail_url:
-        thumbnail_url = thumbnail_url['default'].get('url', '')
+    # Get thumbnail URL from standardized field or try multiple fallback sources
+    thumbnail_url = video.get('thumbnail_url', '')
     
+    # If not in standard field, try other possible locations
+    if not thumbnail_url:
+        debug_log(f"No thumbnail_url found for video {video_id}, trying alternative sources")
+        
+        # Try thumbnails nested object - API standard format
+        if isinstance(video.get('thumbnails'), dict):
+            thumbnails = video['thumbnails']
+            debug_log(f"Found thumbnails object with keys: {list(thumbnails.keys())}")
+            
+            # Try medium, then default, then high resolution
+            if 'medium' in thumbnails and isinstance(thumbnails['medium'], dict) and 'url' in thumbnails['medium']:
+                thumbnail_url = thumbnails['medium'].get('url', '')
+                debug_log(f"Using thumbnails.medium.url: {thumbnail_url[:60]}...")
+            elif 'default' in thumbnails and isinstance(thumbnails['default'], dict) and 'url' in thumbnails['default']:
+                thumbnail_url = thumbnails['default'].get('url', '')
+                debug_log(f"Using thumbnails.default.url: {thumbnail_url[:60]}...")
+            elif 'high' in thumbnails and isinstance(thumbnails['high'], dict) and 'url' in thumbnails['high']:
+                thumbnail_url = thumbnails['high'].get('url', '')
+                debug_log(f"Using thumbnails.high.url: {thumbnail_url[:60]}...")
+        
+        # Try snippet.thumbnails path - another common format
+        elif isinstance(video.get('snippet'), dict) and isinstance(video['snippet'].get('thumbnails'), dict):
+            thumbnails = video['snippet']['thumbnails']
+            debug_log(f"Found snippet.thumbnails object with keys: {list(thumbnails.keys())}")
+            
+            if 'medium' in thumbnails and isinstance(thumbnails['medium'], dict) and 'url' in thumbnails['medium']:
+                thumbnail_url = thumbnails['medium'].get('url', '')
+                debug_log(f"Using snippet.thumbnails.medium.url: {thumbnail_url[:60]}...")
+            elif 'default' in thumbnails and isinstance(thumbnails['default'], dict) and 'url' in thumbnails['default']:
+                thumbnail_url = thumbnails['default'].get('url', '')
+                debug_log(f"Using snippet.thumbnails.default.url: {thumbnail_url[:60]}...")
+    
+    # If still no thumbnail, use video ID to construct URL, or fall back to placeholder
     if not thumbnail_url or not isinstance(thumbnail_url, str):
-        # Use video ID to construct thumbnail URL if not provided
         if video_id:
             thumbnail_url = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+            debug_log(f"Generated thumbnail URL from video_id: {thumbnail_url}")
         else:
             thumbnail_url = "https://via.placeholder.com/320x180?text=No+Thumbnail"
+            debug_log("Using placeholder thumbnail image")
     
     # Create a card-like display
     col1, col2 = st.columns([1, 3])

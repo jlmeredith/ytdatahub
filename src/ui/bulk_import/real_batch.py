@@ -34,7 +34,7 @@ def process_real_batch(batch_channel_ids, api, db, debug_container, progress_con
         
         # Execute the batch API request with all possible parts to get complete data
         batch_data = api.channel_client.youtube.channels().list(
-            part="snippet,contentDetails,statistics,status,topicDetails,brandingSettings",
+            part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
             id=comma_separated_ids,
             maxResults=50
         ).execute()

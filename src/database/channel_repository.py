@@ -2,12 +2,38 @@
 Channel repository module for interacting with YouTube channel data in the SQLite database.
 """
 import sqlite3
-import streamlit as st
-import pandas as pd
 from typing import List, Dict, Optional, Any, Union
+import json
+import os
 
 from src.utils.helpers import debug_log
 from src.database.base_repository import BaseRepository
+
+def flatten_dict(d, parent_key='', sep='.'):
+    """Recursively flattens a nested dictionary."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def safe_int(val, field_name):
+    """Safely convert a value to int, or return None if not possible. Log a warning if conversion fails."""
+    try:
+        if val is None or val == '':
+            return None
+        return int(val)
+    except Exception as e:
+        debug_log(f"[DB WARNING] Could not convert {field_name} value '{val}' to int: {str(e)}")
+        return None
+
+def serialize_for_sqlite(val):
+    if isinstance(val, (list, dict)):
+        return json.dumps(val)
+    return val
 
 class ChannelRepository(BaseRepository):
     """Repository for managing YouTube channel data in the SQLite database."""
@@ -19,365 +45,174 @@ class ChannelRepository(BaseRepository):
     
     @property
     def video_repository(self):
-        """Lazy initialization of VideoRepository to avoid circular imports"""
+        """Lazy initialization of VideoRepository to avoid circular imports""" 
         if self._video_repository is None:
             from src.database.video_repository import VideoRepository
             self._video_repository = VideoRepository(self.db_path)
         return self._video_repository
     
     def store_channel_data(self, data):
-        """Save channel data to SQLite database"""
-        debug_log("Saving data to SQLite")
-        
+        """Save channel data to SQLite database, mapping every API field (recursively) to a column, and insert full JSON into channel_history only."""
         try:
-            # Connect to the database
+            abs_db_path = os.path.abspath(self.db_path)
+            debug_log(f"[DB] Using database at: {abs_db_path}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Extract channel data
-            youtube_id = data.get('channel_id')
-            title = data.get('channel_name')
-            subscriber_count = int(data.get('subscribers', 0))
-            view_count = int(data.get('views', 0))
-            video_count = int(data.get('total_videos', 0))
-            description = data.get('channel_description', '')
-            uploads_playlist_id = data.get('playlist_id', '')
-            
-            # Extract new fields from channel data
-            custom_url = data.get('custom_url', '')
-            published_at = data.get('published_at', '')
-            country = data.get('country', '')
-            default_language = data.get('default_language', '')
-            privacy_status = data.get('privacy_status', '')
-            is_linked = data.get('is_linked', False)
-            long_uploads_status = data.get('long_uploads_status', '')
-            made_for_kids = data.get('made_for_kids', False)
-            hidden_subscriber_count = data.get('hidden_subscriber_count', False)
-            thumbnail_default = data.get('thumbnail_default', '')
-            thumbnail_medium = data.get('thumbnail_medium', '')
-            thumbnail_high = data.get('thumbnail_high', '')
-            keywords = data.get('keywords', '')
-            topic_categories = data.get('topic_categories', '')
-            fetched_at = data.get('fetched_at', '')
-            
-            # Insert or update channel data with all fields from the new schema
+            # --- Flatten the actual raw API response ---
+            raw_api = data.get('raw_channel_info') or data.get('channel_info', data)
+            flat_api = flatten_dict(raw_api)
+            # --- Merge in extra fields from the wrapper dict (e.g., channel_id, channel_title) ---
+            extra_fields = {k: v for k, v in data.items() if k not in ['raw_channel_info', 'channel_info']}
+            flat_api.update(extra_fields)
+            # --- Map dot notation to underscores for DB columns ---
+            flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
+            debug_log(f"[DB DEBUG] flat_api_underscore: {flat_api_underscore}")
+            # --- Get all columns in the channels table ---
+            cursor.execute("PRAGMA table_info(channels)")
+            existing_cols = set(row[1] for row in cursor.fetchall())
+            # --- Prepare columns and values for insert/update ---
+            columns = []
+            values = []
+            for col in existing_cols:
+                if col in ['id', 'created_at', 'updated_at']:
+                    continue
+                api_key = CANONICAL_FIELD_MAP.get(col, col)
+                v = flat_api_underscore.get(api_key, None)
+                values.append(serialize_for_sqlite(v))
+                columns.append(col)
+            debug_log(f"[DB INSERT] Final channel insert columns: {columns}")
+            debug_log(f"[DB INSERT] Final channel insert values: {values}")
+            if not columns:
+                debug_log("[DB WARNING] No columns to insert for channel.")
+                conn.close()
+                return False
+            placeholders = ','.join(['?'] * len(columns))
+            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
+            cursor.execute(f'''
+                INSERT INTO channels ({','.join(columns)})
+                VALUES ({placeholders})
+                ON CONFLICT(channel_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
+            ''', values)
+            debug_log(f"Inserted/updated channel: {flat_api.get('channel_id') or flat_api.get('id')}")
+            # --- Insert full JSON into channel_history only ---
+            self._ensure_channel_history_table(cursor)
+            import datetime, json
+            fetched_at = datetime.datetime.utcnow().isoformat()
+            raw_channel_info = json.dumps(raw_api)
             cursor.execute('''
-            INSERT OR REPLACE INTO channels (
-                youtube_id, title, subscriber_count, video_count, 
-                view_count, description, custom_url, published_at,
-                country, default_language, privacy_status, is_linked,
-                long_uploads_status, made_for_kids, hidden_subscriber_count,
-                thumbnail_default, thumbnail_medium, thumbnail_high,
-                keywords, topic_categories, fetched_at,
-                uploads_playlist_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                youtube_id, title, subscriber_count, video_count, 
-                view_count, description, custom_url, published_at,
-                country, default_language, privacy_status, is_linked,
-                long_uploads_status, made_for_kids, hidden_subscriber_count,
-                thumbnail_default, thumbnail_medium, thumbnail_high,
-                keywords, topic_categories, fetched_at,
-                uploads_playlist_id
-            ))
-            
-            # Get the id of the inserted channel
-            cursor.execute("SELECT id FROM channels WHERE youtube_id = ?", (youtube_id,))
-            channel_db_id = cursor.fetchone()[0]
-            
-            # Extract video data
-            videos = data.get('video_id', [])
-            debug_log(f"Processing {len(videos)} videos")
-            
-            # Store videos directly using SQL for better control
-            for video in videos:
-                video_id = video.get('video_id')
-                title = video.get('title')
-                description = video.get('video_description', '')
-                published_at = video.get('published_at')
-                
-                try:
-                    view_count = int(video.get('views', 0))
-                except (ValueError, TypeError):
-                    view_count = 0
-                
-                try:
-                    like_count = int(video.get('likes', 0))
-                except (ValueError, TypeError):
-                    like_count = 0
-                
-                duration = video.get('duration', '')
-                
-                # Insert the video directly
-                debug_log(f"Directly inserting video {video_id} into database")
-                try:
-                    cursor.execute('''
-                    INSERT OR REPLACE INTO videos (
-                        youtube_id, channel_id, title, description, published_at,
-                        view_count, like_count, duration
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        video_id, channel_db_id, title, description, published_at,
-                        view_count, like_count, duration
-                    ))
-                    
-                    # Get the video ID
-                    cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (video_id,))
-                    result = cursor.fetchone()
-                    
-                    if result:
-                        video_db_id = result[0]
-                        debug_log(f"Inserted video {video_id} with DB ID: {video_db_id}")
-                        
-                        # Store comments for this video if we have a valid ID
-                        comments = video.get('comments', [])
-                        if comments and len(comments) > 0:
-                            debug_log(f"Found {len(comments)} comments for video {video_id}, DB ID: {video_db_id}")
-                            debug_log(f"Sample comment data: {comments[0]}")
-                            
-                            # DIRECT STORAGE: Instead of delegating to video_repository, 
-                            # we'll directly insert the comments here to ensure they're stored
-                            for i, comment in enumerate(comments):
-                                try:
-                                    # Ensure comment_id exists
-                                    comment_id = comment.get('comment_id')
-                                    if not comment_id:
-                                        comment_id = f"generated_id_{video_db_id}_{i}_{hash(str(comment))}"
-                                    
-                                    # Extract comment fields with fallbacks
-                                    text = comment.get('comment_text', comment.get('text', ''))
-                                    author = comment.get('comment_author', comment.get('author_display_name', ''))
-                                    published = comment.get('comment_published_at', comment.get('published_at', ''))
-                                    author_profile_image_url = comment.get('author_profile_image_url', '')
-                                    author_channel_id = comment.get('author_channel_id', '')
-                                    
-                                    # Handle like_count
-                                    try:
-                                        like_count = int(comment.get('like_count', 0))
-                                    except (ValueError, TypeError):
-                                        like_count = 0
-                                        
-                                    updated_at = comment.get('updated_at', published)
-                                    parent_id = comment.get('parent_id', None)
-                                    is_reply = bool(comment.get('is_reply', False))
-                                    
-                                    # Direct SQL insert - bypass VideoRepository 
-                                    cursor.execute('''
-                                    INSERT OR REPLACE INTO comments (
-                                        comment_id, video_id, text, author_display_name, author_profile_image_url,
-                                        author_channel_id, like_count, published_at, updated_at, parent_id,
-                                        is_reply, fetched_at
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    ''', (
-                                        comment_id, video_db_id, text, author, author_profile_image_url,
-                                        author_channel_id, like_count, published, updated_at, parent_id,
-                                        is_reply, fetched_at
-                                    ))
-                                    debug_log(f"ChannelRepository: Inserted comment {comment_id}")
-                                except Exception as e:
-                                    debug_log(f"ChannelRepository: Error inserting comment {i}: {str(e)}")
-                                    
-                            # Also try delegating through the repository as a backup
-                            try:
-                                result = self.video_repository.store_comments(comments, video_db_id, fetched_at)
-                                debug_log(f"ChannelRepository: Video repository comment storage result: {result}")
-                            except Exception as e:
-                                debug_log(f"ChannelRepository: Error delegating comment storage: {str(e)}")
-                            
-                            # Verify comments were stored
-                            try:
-                                cursor.execute("SELECT COUNT(*) FROM comments WHERE video_id = ?", (video_db_id,))
-                                comment_count = cursor.fetchone()[0]
-                                debug_log(f"ChannelRepository: Verified {comment_count} comments stored for video DB ID {video_db_id}")
-                            except Exception as e:
-                                debug_log(f"ChannelRepository: Error verifying comments: {str(e)}", e)
-                        
-                        # Store locations for this video
-                        locations = video.get('locations', [])
-                        if locations and len(locations) > 0:
-                            debug_log(f"Storing {len(locations)} locations for video")
-                            self.video_repository.store_video_locations(locations, video_db_id)
-                    else:
-                        debug_log(f"Failed to get ID for inserted video {video_id}")
-                except Exception as e:
-                    debug_log(f"Error inserting video {video_id}: {str(e)}", e)
-            
-            # Commit the changes and close the connection
+                INSERT INTO channel_history (channel_id, fetched_at, raw_channel_info) VALUES (?, ?, ?)
+            ''', (flat_api.get('channel_id') or flat_api.get('id'), fetched_at, raw_channel_info))
             conn.commit()
-            debug_log("Committed all changes to database")
-            
-            # Verify videos were stored
-            cursor.execute("SELECT COUNT(*) FROM videos WHERE channel_id = ?", (channel_db_id,))
-            count = cursor.fetchone()[0]
-            debug_log(f"Verified {count} videos stored for channel {youtube_id}")
-            
+            # After commit, check if row exists
+            cursor.execute("SELECT COUNT(*) FROM channels WHERE channel_id = ?", (flat_api.get('channel_id') or flat_api.get('id'),))
+            row_count = cursor.fetchone()[0]
+            debug_log(f"[DB] Row count for channel_id={flat_api.get('channel_id') or flat_api.get('id')} after save: {row_count}")
             conn.close()
-            
-            debug_log("Data saved to SQLite successfully")
             return True
         except Exception as e:
-            st.error(f"Error saving to SQLite: {str(e)}")
-            debug_log(f"Exception in store_channel_data: {str(e)}", e)
-            return False
+            import traceback
+            debug_log(f"Exception in store_channel_data: {str(e)}\n{traceback.format_exc()}")
+            return {"error": str(e)}
+
+    def _ensure_channel_history_table(self, cursor):
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS channel_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                raw_channel_info TEXT NOT NULL
+            )
+        ''')
+
+    def get_channel_db_id(self, channel_id):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM channels WHERE channel_id = ?", (channel_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
     
     def get_channels_list(self):
         """Get a list of all channel names from the database"""
         try:
-            # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Get all channel IDs and titles
-            cursor.execute("SELECT youtube_id, title FROM channels ORDER BY title")
+            cursor.execute("SELECT channel_id, channel_title FROM channels ORDER BY channel_title")
             rows = cursor.fetchall()
-            
-            # Format as a list of dictionaries with channel_id and channel_name keys
             channels = [{'channel_id': row[0], 'channel_name': row[1]} for row in rows]
-            
-            # Close the connection
             conn.close()
-            
             debug_log(f"Retrieved {len(channels)} channels from database")
             return channels
         except Exception as e:
-            debug_log(f"Exception in get_channels_list: {str(e)}", e)
+            debug_log(f"Exception in get_channels_list: {str(e)}")
             return []
     
     def get_channel_data(self, channel_identifier):
-        """Get full data for a specific channel including videos, comments, and locations
-        
-        Args:
-            channel_identifier (str): Either a YouTube channel ID (UC...) or a channel title
-            
-        Returns:
-            dict or None: Channel data or None if not found
-        """
+        """Get full data for a specific channel, including all API fields from raw_channel_info if present."""
         conn = None
         try:
-            # First check if this is a channel title or ID
+            abs_db_path = os.path.abspath(self.db_path)
+            debug_log(f"[DB] Using database at: {abs_db_path}")
             is_id = channel_identifier.startswith('UC')
-            
-            # Check if we have this channel data cached in session state
-            cache_key = f"channel_data_{channel_identifier}"
-            if cache_key in st.session_state and st.session_state.get('use_data_cache', True):
-                # Cache handling code removed as it will depend on external state management
-                pass
-            
             debug_log(f"Loading data for channel: {channel_identifier} from database")
-            
-            # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
             # Get channel info - using either ID or title depending on what was provided
             if is_id:
                 cursor.execute("""
-                    SELECT id, youtube_id, title, subscriber_count, view_count, 
-                           video_count, description, uploads_playlist_id 
-                    FROM channels WHERE youtube_id = ?
+                    SELECT id, channel_id FROM channels WHERE channel_id = ?
                 """, (channel_identifier,))
             else:
                 cursor.execute("""
-                    SELECT id, youtube_id, title, subscriber_count, view_count, 
-                           video_count, description, uploads_playlist_id 
-                    FROM channels WHERE title = ?
+                    SELECT id, channel_id FROM channels WHERE channel_title = ?
                 """, (channel_identifier,))
-            
             channel_row = cursor.fetchone()
             if not channel_row:
                 debug_log(f"Channel not found in database: {channel_identifier}")
                 return None
-            
             channel_db_id = channel_row[0]
-            channel_youtube_id = channel_row[1]  # Store the actual YouTube ID
-            uploads_playlist_id = channel_row[7]  # Get the uploads_playlist_id
-            
-            debug_log(f"Found channel with database ID: {channel_db_id}, YouTube ID: {channel_youtube_id}")
-            
-            # Create channel data dictionary
-            channel_info = {
-                'id': channel_youtube_id,
-                'title': channel_row[2],
-                'statistics': {
-                    'subscriberCount': channel_row[3],
-                    'viewCount': channel_row[4],
-                    'videoCount': channel_row[5]
-                },
-                'description': channel_row[6],
-                'uploads_playlist_id': uploads_playlist_id
-            }
-            
-            # For backwards compatibility, also add contentDetails structure if we have a playlist ID
-            if uploads_playlist_id:
-                channel_info['contentDetails'] = {
-                    'relatedPlaylists': {
-                        'uploads': uploads_playlist_id
-                    }
-                }
-            
-            # Add debug logging for statistics and uploads playlist ID
-            debug_log(f"DEBUG: Channel statistics from database: subscribers={channel_row[3]}, views={channel_row[4]}, videoCount={channel_row[5]}")
-            debug_log(f"DEBUG: Uploads playlist ID from database: {uploads_playlist_id}")
-            
-            channel_data = {
-                'channel_info': channel_info,
+            channel_youtube_id = channel_row[1]
+            # Load full API response if present
+            cursor.execute("PRAGMA table_info(channels)")
+            columns = [row[1] for row in cursor.fetchall()]
+            raw_info = None
+            if 'raw_channel_info' in columns:
+                cursor.execute("SELECT raw_channel_info FROM channels WHERE id = ?", (channel_db_id,))
+                raw_info_row = cursor.fetchone()
+                if raw_info_row and raw_info_row[0]:
+                    try:
+                        import json
+                        raw_info = json.loads(raw_info_row[0])
+                    except Exception as e:
+                        debug_log(f"Error loading raw_channel_info JSON: {str(e)}")
+            # Fetch uploads playlist from playlists table
+            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_youtube_id,))
+            playlist_row = cursor.fetchone()
+            uploads_playlist_id = playlist_row[0] if playlist_row else ''
+            # Return only the parsed raw_channel_info, channel_id, and playlist_id
+            return {
+                'raw_channel_info': raw_info,
                 'channel_id': channel_youtube_id,
-                'uploads_playlist_id': uploads_playlist_id,
-                'videos': []
+                'playlist_id': uploads_playlist_id,
             }
-            
-            # Get videos for this channel using VideoRepository
-            videos = self.video_repository.get_videos_by_channel(channel_db_id)
-            debug_log(f"DEBUG: Found {len(videos)} videos for channel {channel_identifier}")
-            
-            # Add videos to channel data
-            channel_data['videos'] = videos
-            
-            # Add video_id field for backward compatibility with tests
-            channel_data['video_id'] = videos
-            
-            # If we have comments, add them to the channel data
-            if any(v['statistics']['commentCount'] > 0 for v in channel_data['videos']):
-                channel_data['comments'] = {}
-                
-                # Add comments organized by video
-                for video in channel_data['videos']:
-                    if video['statistics']['commentCount'] > 0:
-                        # Get comments for this video
-                        comments = self.video_repository.get_video_comments(video['db_id'])
-                        if comments:
-                            channel_data['comments'][video['id']] = comments
-            
-            # Final debug verification of channel data structure
-            if channel_data and 'channel_info' in channel_data:
-                debug_log(f"Successfully built channel data structure for {channel_identifier}")
-            
-            return channel_data
         except Exception as e:
-            debug_log(f"Exception in get_channel_data: {str(e)}", e)
+            debug_log(f"Exception in get_channel_data: {str(e)}")
             return None
         finally:
-            # Ensure connection is always closed
             if conn:
                 conn.close()
     
     def get_channel_id_by_title(self, title):
         """Get the YouTube channel ID for a given channel title."""
         try:
-            # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Get channel ID by title
-            cursor.execute("SELECT youtube_id FROM channels WHERE title = ?", (title,))
+            cursor.execute("SELECT channel_id FROM channels WHERE channel_title = ?", (title,))
             result = cursor.fetchone()
-            
-            # Close the connection
             conn.close()
-            
             return result[0] if result else None
         except Exception as e:
-            debug_log(f"Exception in get_channel_id_by_title: {str(e)}", e)
+            debug_log(f"Exception in get_channel_id_by_title: {str(e)}")
             return None
 
     def display_channels_data(self):
@@ -392,7 +227,7 @@ class ChannelRepository(BaseRepository):
             query = '''
             SELECT 
                 c.title as channel_name,
-                c.youtube_id as channel_id,
+                c.channel_id as channel_id,
                 c.subscriber_count as subscribers,
                 c.view_count as views,
                 c.video_count as total_videos,
@@ -423,8 +258,7 @@ class ChannelRepository(BaseRepository):
                 
             return True
         except Exception as e:
-            st.error(f"Error loading data from SQLite: {str(e)}")
-            debug_log(f"Exception in display_channels_data: {str(e)}", e)
+            debug_log(f"Error loading data from SQLite: {str(e)}")
             return False
     
     def list_channels(self):
@@ -432,17 +266,16 @@ class ChannelRepository(BaseRepository):
         Get a list of all channels from the database with their IDs and titles.
         
         Returns:
-            list: List of tuples containing (youtube_id, title) for each channel
+            list: List of tuples containing (channel_id, title) for each channel
         """
         debug_log("Fetching list of all channels")
         
         try:
-            # Connect to the database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             # Query all channels, returning both ID and title
-            cursor.execute("SELECT youtube_id, title FROM channels ORDER BY title")
+            cursor.execute("SELECT channel_id, channel_title FROM channels ORDER BY channel_title")
             channels = cursor.fetchall()
             
             # Close the connection
@@ -451,7 +284,7 @@ class ChannelRepository(BaseRepository):
             debug_log(f"Retrieved {len(channels)} channels from database")
             return channels
         except Exception as e:
-            debug_log(f"Exception in list_channels: {str(e)}", e)
+            debug_log(f"Exception in list_channels: {str(e)}")
             return []
 
     def get_by_id(self, id: int) -> Optional[Dict[str, Any]]:
@@ -480,3 +313,29 @@ class ChannelRepository(BaseRepository):
         except Exception as e:
             debug_log(f"Error retrieving channel by ID {id}: {str(e)}", e)
             return None
+
+    def get_uploads_playlist_id(self, channel_id):
+        """Fetch the uploads playlist ID for a channel from the playlists table."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                debug_log(f"Found uploads playlist_id for channel_id={channel_id}: {row[0]}")
+                return row[0]
+            debug_log(f"No uploads playlist_id found for channel_id={channel_id}")
+            return ''
+        except Exception as e:
+            debug_log(f"Exception in get_uploads_playlist_id: {str(e)}")
+            return ''
+
+# ... existing code ...
+
+CANONICAL_FIELD_MAP = {
+    'subscriber_count': 'statistics_subscriberCount',
+    'view_count': 'statistics_viewCount',
+    'video_count': 'statistics_videoCount',
+    # Add more as needed
+}

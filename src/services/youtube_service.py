@@ -7,6 +7,7 @@ This module implements a service class for handling YouTube data operations.
 
 import datetime
 from src.services.youtube.youtube_service_impl import YouTubeServiceImpl
+from src.utils.helpers import debug_log
 
 class YouTubeService(YouTubeServiceImpl):
     """
@@ -286,6 +287,13 @@ class YouTubeService(YouTubeServiceImpl):
                 - fetch_channel_data (bool): Whether to fetch channel info
                 - fetch_videos (bool): Whether to fetch videos
                 - fetch_comments (bool): Whether to fetch comments
+                - comparison_level (str, optional): Level of comparison detail 
+                  ('basic', 'standard', or 'comprehensive')
+                - track_keywords (list, optional): List of keywords to track in text fields
+                - alert_on_significant_changes (bool, optional): Whether to alert on major changes
+                - persist_change_history (bool, optional): Whether to save change history
+                - max_videos (int, optional): Maximum number of videos to fetch
+                - max_comments_per_video (int, optional): Maximum comments per video to fetch
             interactive (bool): Whether to run in interactive mode which may
                                 initialize comparison views
             existing_data (dict, optional): Existing data to use instead of fetching from storage
@@ -293,35 +301,84 @@ class YouTubeService(YouTubeServiceImpl):
         Returns:
             dict: A dictionary with db_data and api_data for comparison
         """
+        debug_log(f"[WORKFLOW] Entering update_channel_data for channel_id={channel_id} with options={options}")
         # Get existing data from database or use provided data
         db_data = existing_data if existing_data is not None else self.storage_service.get_channel_data(channel_id, "sqlite")
-        
         # Get fresh data from API using collect_channel_data (which is mocked in tests)
         api_data = self.collect_channel_data(channel_id, options, existing_data=db_data)
+        # Log playlist_id if present
+        playlist_id = api_data.get('playlist_id') or api_data.get('uploads_playlist_id')
+        if playlist_id:
+            debug_log(f"[WORKFLOW] update_channel_data: playlist_id for channel_id={channel_id} is {playlist_id}")
+        else:
+            debug_log(f"[WORKFLOW] update_channel_data: No playlist_id found for channel_id={channel_id}")
         
-        # --- Delta Calculation (TDD/Spec) ---
+        # --- Enhanced Delta Calculation Framework ---
+        # Configure delta calculation with default options if not specified
+        comparison_level = options.get('comparison_level', 'comprehensive')  # Default to comprehensive for more complete analysis
+        track_keywords = options.get('track_keywords', ['copyright', 'disclaimer', 'new owner', 'policy', 'terms'])
+        alert_on_significant_changes = options.get('alert_on_significant_changes', True)
+        persist_change_history = options.get('persist_change_history', True)
+        
         # Attach delta info to api_data for refresh workflow
         if db_data and api_data:
             from src.services.youtube.delta_service import DeltaService
             delta_service = DeltaService()
-            api_data = delta_service.calculate_deltas(api_data, db_data)
+            
+            # Configure delta service with enhanced options
+            delta_options = {
+                'comparison_level': comparison_level,
+                'track_keywords': track_keywords,
+                'alert_on_significant_changes': alert_on_significant_changes,
+                'persist_change_history': persist_change_history
+            }
+            
+            # Calculate deltas with enhanced options
+            api_data = delta_service.calculate_deltas(api_data, db_data, delta_options)
+            
             # Ensure delta is present at the top level
             if 'delta' not in api_data:
                 api_data['delta'] = {}
+            
+            # Store comparison options in api_data for reference in UI
+            api_data['_comparison_options'] = delta_options
+        
         # If the channel data is a dict, also attach delta to it for test parity
         if isinstance(api_data, dict) and 'channel_id' in api_data:
             if 'delta' not in api_data:
                 api_data['delta'] = {}
+            # Also attach comparison options to the channel object
+            if '_comparison_options' not in api_data and 'delta' in api_data:
+                api_data['_comparison_options'] = {
+                    'comparison_level': comparison_level,
+                    'track_keywords': track_keywords,
+                    'alert_on_significant_changes': alert_on_significant_changes,
+                    'persist_change_history': persist_change_history
+                }
         
         # If in interactive mode, initialize the comparison view
         if interactive and db_data and api_data:
             self._initialize_comparison_view(channel_id, db_data, api_data)
         
-        # Return the comparison data
+        # Promote debug_logs to top-level if present in api_data
+        debug_logs = []
+        if isinstance(api_data, dict) and 'debug_logs' in api_data:
+            debug_logs = api_data['debug_logs']
+        else:
+            debug_logs = []
+        debug_log(f"[WORKFLOW] Exiting update_channel_data for channel_id={channel_id}. Debug logs count: {len(debug_logs)}")
+        # Return the comparison data with enhanced details
         return {
             'db_data': db_data,
             'api_data': api_data,
-            'channel': api_data  # Ensure top-level channel data includes delta
+            'channel': api_data,  # Ensure top-level channel data includes delta
+            'comparison_options': {
+                'comparison_level': comparison_level,
+                'track_keywords': track_keywords,
+                'alert_on_significant_changes': alert_on_significant_changes,
+                'persist_change_history': persist_change_history
+            },
+            'debug_logs': debug_logs
         }
         
     def collect_channel_data(self, channel_id, options=None, existing_data=None):
@@ -886,3 +943,138 @@ class YouTubeService(YouTubeServiceImpl):
             result['sentiment_trend'] = 'stable'
 
         return result
+
+    def get_playlist_id_for_channel(self, channel_id: str) -> str:
+        """
+        Fetch the uploads playlist ID for a channel using the YouTube API.
+        Returns the playlist ID string or empty string if not found or invalid.
+        """
+        try:
+            api = self.api if hasattr(self, 'api') else self
+            response = api.youtube.channels().list(
+                part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
+                id=channel_id
+            ).execute()
+            if response and 'items' in response and response['items']:
+                playlist_id = response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+                # Validate playlist_id: must not be channel_id and must start with 'UU'
+                if not playlist_id or playlist_id == channel_id or not playlist_id.startswith('UU'):
+                    debug_log(f"[WORKFLOW][ERROR] Invalid playlist_id fetched for channel_id={channel_id}: {playlist_id}")
+                    return ''
+                debug_log(f"[WORKFLOW] get_playlist_id_for_channel: Found playlist_id={playlist_id} for channel_id={channel_id}")
+                return playlist_id
+            else:
+                debug_log(f"[WORKFLOW] get_playlist_id_for_channel: No playlist_id found for channel_id={channel_id}")
+                return ''
+        except Exception as e:
+            debug_log(f"[WORKFLOW] get_playlist_id_for_channel: Error fetching playlist_id for channel_id={channel_id}: {str(e)}")
+            return ''
+
+    def ensure_playlist_id_in_db(self, channel_id: str):
+        """
+        Ensure uploads_playlist_id is present in the DB for the given channel_id. If missing, fetch and update it.
+        """
+        playlist_id = self.get_playlist_id_for_channel(channel_id)
+        if playlist_id:
+            from src.services.youtube.storage_service import StorageService
+            storage = StorageService()
+            storage.update_channel_field(channel_id, 'uploads_playlist_id', playlist_id)
+            debug_log(f"[WORKFLOW] Backfilled uploads_playlist_id for channel_id={channel_id}: {playlist_id}")
+        else:
+            debug_log(f"[WORKFLOW] Could not backfill uploads_playlist_id for channel_id={channel_id}")
+
+    def get_basic_channel_info(self, channel_input: str) -> dict:
+        """
+        Fetch basic channel info from the YouTube API, resolving custom URLs/handles as needed.
+        Args:
+            channel_input (str): Channel ID, URL, or handle
+        Returns:
+            dict: Channel info dict or None if not found
+        """
+        debug_log(f"[WORKFLOW] get_basic_channel_info called with input: {channel_input}")
+        try:
+            # Robustly resolve channel input
+            resolved_input = self.channel_service.parse_channel_input(channel_input)
+            is_valid, resolved_id = self.channel_service.validate_and_resolve_channel_id(resolved_input)
+            if not is_valid:
+                error_msg = f"Invalid or unresolvable channel input: {channel_input} (resolved: {resolved_id})"
+                debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+                try:
+                    import streamlit as st
+                    st.error(error_msg)
+                except Exception:
+                    pass
+                return None
+            debug_log(f"[WORKFLOW] Resolved channel input to ID: {resolved_id}")
+            channel_info = self.channel_service.get_channel_info(resolved_id)
+            if not channel_info:
+                error_msg = f"No channel info found for: {resolved_id}"
+                debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+                try:
+                    import streamlit as st
+                    st.error(error_msg)
+                except Exception:
+                    pass
+                return None
+            # --- PATCH: Always ensure raw_channel_info is present and is the full API response ---
+            if 'raw_channel_info' not in channel_info and 'channel_info' in channel_info:
+                channel_info['raw_channel_info'] = channel_info['channel_info']
+            # Always extract playlist_id
+            playlist_id = channel_info.get('playlist_id') or channel_info.get('uploads_playlist_id')
+            if not playlist_id:
+                playlist_id = self.get_playlist_id_for_channel(resolved_id)
+                if playlist_id:
+                    channel_info['playlist_id'] = playlist_id
+                else:
+                    error_msg = f"Could not determine uploads playlist for channel: {resolved_id}"
+                    debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+                    try:
+                        import streamlit as st
+                        st.error(error_msg)
+                    except Exception:
+                        pass
+                    return None
+            debug_log(f"[WORKFLOW] Successfully fetched channel info for: {resolved_id} with playlist_id: {playlist_id}")
+            return channel_info
+        except Exception as e:
+            error_msg = f"Exception in get_basic_channel_info: {str(e)}"
+            debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+            try:
+                import streamlit as st
+                st.error(error_msg)
+            except Exception:
+                pass
+            return None
+
+    def save_playlist_data(self, playlist_data: dict) -> bool:
+        """
+        Save playlist data to the database and ensure historical tracking.
+        Args:
+            playlist_data (dict): The playlist data to save (must include playlist_id and channel_id)
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        from src.config import SQLITE_DB_PATH
+        from src.database.sqlite import SQLiteDatabase
+        db = SQLiteDatabase(SQLITE_DB_PATH)
+        result = db.store_playlist_data(playlist_data)
+        debug_log(f"[WORKFLOW] Save result for playlist_id={playlist_data.get('playlist_id')}: {result}")
+        return result
+
+    def get_playlist_info(self, playlist_id: str) -> dict:
+        """
+        Fetch full playlist info from the YouTube API for a given playlist_id.
+        Args:
+            playlist_id (str): The playlist ID to fetch
+        Returns:
+            dict: Playlist info dict or None if not found
+        """
+        debug_log(f"[WORKFLOW] get_playlist_info called with playlist_id: {playlist_id}")
+        try:
+            api = self.api if hasattr(self, 'api') else self
+            playlist_info = api.video_client.get_playlist_info(playlist_id)
+            debug_log(f"[WORKFLOW] Playlist info fetched for playlist_id={playlist_id}: {playlist_info}")
+            return playlist_info
+        except Exception as e:
+            debug_log(f"[WORKFLOW][ERROR] Exception in get_playlist_info: {str(e)}")
+            return None

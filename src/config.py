@@ -20,7 +20,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # Default application settings
 DEFAULT_MAX_VIDEOS = 25
-DEFAULT_DEBUG_MODE = False
+DEFAULT_DEBUG_MODE = True  # Temporarily enabled for debugging
 
 class Settings:
     """

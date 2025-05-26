@@ -5,6 +5,7 @@ import streamlit as st
 import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+import json
 
 import googleapiclient.errors
 
@@ -54,6 +55,12 @@ class VideoClient(YouTubeBaseClient):
             st.error("No uploads playlist ID found in channel info. Videos cannot be fetched.")
             return channel_info
         
+        debug_log(f"[WORKFLOW] Using playlist_id={playlist_id} to fetch videos for channel_id={channel_info.get('channel_id','?')}")
+        
+        debug_log(f"[DIAG] API key starts with: {self.api_key[:6]}... (masked)")
+        debug_log(f"[DIAG] YouTube client initialized: {self.is_initialized()}")
+        debug_log(f"[DIAG] Using playlist_id: {playlist_id}")
+        
         debug_log(f"Fetching videos for channel using playlist ID: {playlist_id}")
         
         # Initialize variables
@@ -93,6 +100,15 @@ class VideoClient(YouTubeBaseClient):
                 )
                 
                 playlist_response = playlist_request.execute()
+                debug_log(f"[DIAG] Raw playlistItems API response: {json.dumps(playlist_response)[:1000]}")
+                if 'error' in playlist_response:
+                    debug_log(f"[DIAG] API error in playlistItems response: {playlist_response['error']}")
+                    channel_info['error_videos'] = f"YouTube API error: {playlist_response['error']}"
+                    return channel_info
+                if not playlist_response.get('items'):
+                    debug_log(f"[DIAG] No items returned in playlistItems response for playlist_id {playlist_id}")
+                    channel_info['error_videos'] = f"No videos found in playlist {playlist_id}. API response: {json.dumps(playlist_response)[:500]}"
+                    return channel_info
                 
                 # Extract video IDs from playlist items
                 for item in playlist_response.get('items', []):
@@ -259,3 +275,31 @@ class VideoClient(YouTubeBaseClient):
 
     # Alias for test compatibility: patching get_video_details_batch will patch get_videos_details
     get_video_details_batch = get_videos_details
+
+    def get_playlist_info(self, playlist_id: str) -> dict:
+        """
+        Fetch full playlist info from the YouTube Data API for a given playlist_id.
+        Args:
+            playlist_id (str): The playlist ID to fetch
+        Returns:
+            dict: Playlist info dict or None if not found
+        """
+        debug_log(f"[API] get_playlist_info called with playlist_id: {playlist_id}")
+        if not self.is_initialized():
+            debug_log("YouTube API client not initialized. Cannot fetch playlist info.")
+            return None
+        try:
+            request = self.youtube.playlists().list(
+                part="snippet,contentDetails,status,player,localizations",
+                id=playlist_id
+            )
+            response = request.execute()
+            debug_log(f"[API] Playlist API response: {str(response)[:500]}")
+            if 'items' in response and len(response['items']) > 0:
+                return response['items'][0]
+            else:
+                debug_log(f"No playlist found with ID: {playlist_id}")
+                return None
+        except Exception as e:
+            debug_log(f"[API][ERROR] Exception in get_playlist_info: {str(e)}")
+            return None

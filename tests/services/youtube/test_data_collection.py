@@ -22,6 +22,9 @@ def data_collection(mock_api, mock_video_service, mock_comment_service):
     collection.api = mock_api
     collection.video_service = mock_video_service
     collection.comment_service = mock_comment_service
+    # PATCH: Add mock storage_service for DB fetch compatibility
+    collection.storage_service = MagicMock()
+    collection.storage_service.get_channel_data.return_value = {'video_id': []}
     return collection
 
 def test_collect_channel_data_extracts_video_metrics(data_collection, mock_video_service):
@@ -44,6 +47,9 @@ def test_collect_channel_data_extracts_video_metrics(data_collection, mock_video
     result = data_collection.collect_channel_data('test_channel', {'fetch_videos': True})
     
     # Verify metrics were extracted
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     assert video['views'] == '1000'
     assert video['likes'] == '100'
@@ -64,6 +70,9 @@ def test_collect_channel_data_handles_missing_video_metrics(data_collection, moc
     result = data_collection.collect_channel_data('test_channel', {'fetch_videos': True})
     
     # Verify default values were set
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     assert video['views'] == '0'
     assert video['likes'] == '0'
@@ -115,6 +124,9 @@ def test_collect_channel_data_updates_existing_videos(data_collection, mock_vide
     result = data_collection.collect_channel_data('test_channel', {'fetch_videos': True}, existing_data)
     
     # Verify metrics were updated
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     assert video['views'] == '1000'
     assert video['likes'] == '100'
@@ -173,6 +185,9 @@ def test_collect_channel_data_handles_mixed_video_metrics(data_collection, mock_
     
     # Verify metrics were handled correctly
     videos = result['video_id']
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     assert videos[0]['views'] == '1000'
     assert videos[0]['likes'] == '100'
     assert videos[0]['comment_count'] == '50'
@@ -200,6 +215,9 @@ def test_new_collection_workflow_no_deltas(data_collection, mock_video_service):
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     # Call as new collection (no existing_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     assert video['views'] == '100'
     assert video['likes'] == '10'
@@ -236,6 +254,9 @@ def test_update_channel_workflow_with_deltas(data_collection, mock_video_service
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     # Call as update (with existing_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     assert video['views'] == '100'
     assert video['likes'] == '10'
@@ -280,6 +301,9 @@ def test_update_channel_response_includes_deltas_and_logs(data_collection, mock_
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     # Call as update (with existing_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     video = result['video_id'][0]
     # Delta fields should be present and correct
     assert video['view_delta'] == 20
@@ -308,8 +332,10 @@ def test_fetch_videos_returns_videos_and_logs(data_collection, mock_video_servic
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     # Call as new collection (no existing_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     # Video list should not be empty
-    assert 'video_id' in result
     assert len(result['video_id']) == 2
     # Debug logs and response data should be present
     assert 'debug_logs' in result
@@ -346,6 +372,9 @@ def test_update_channel_response_includes_top_level_delta(data_collection, mock_
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     # Call as update (with existing_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     # There should be a top-level 'delta' field
     assert 'delta' in result, "No top-level 'delta' field in response"
     delta = result['delta']
@@ -372,6 +401,9 @@ def test_update_channel_delta_videos_non_empty(data_collection, mock_video_servi
     }
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True}, existing_data)
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     assert 'delta' in result
     assert 'videos' in result['delta']
     # Should have at least two entries for updated videos
@@ -389,7 +421,9 @@ def test_fetch_all_videos_returns_all(data_collection, mock_video_service):
     }
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True, 'max_videos': 0})
-    assert 'video_id' in result
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     assert len(result['video_id']) == 200
     assert result.get('actual_video_count', 0) == 200
 
@@ -402,6 +436,9 @@ def test_debug_logs_and_response_data_present(data_collection, mock_video_servic
     }
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
     assert 'debug_logs' in result
     assert isinstance(result['debug_logs'], list)
     assert 'response_data' in result
@@ -417,5 +454,42 @@ def test_fetch_videos_returns_non_empty_list(data_collection, mock_video_service
     }
     mock_video_service.collect_channel_videos.return_value = copy.deepcopy(mock_video_data)
     result = data_collection.collect_channel_data('chan1', {'fetch_videos': True})
-    assert 'video_id' in result
-    assert len(result['video_id']) == 2 
+    # Assert video_id is present and non-empty
+    assert 'video_id' in result, "Missing 'video_id' in result"
+    assert result['video_id'], "'video_id' is empty in result"
+    assert len(result['video_id']) == 2
+
+def test_get_basic_channel_info_all_input_types(youtube_service, monkeypatch):
+    """Test get_basic_channel_info with channel ID, URL, handle, and custom URL."""
+    # Mock channel_service methods
+    class DummyChannelService:
+        def parse_channel_input(self, inp):
+            if inp.startswith('UC'): return inp
+            if inp.startswith('http'): return 'UC1234567890123456789012'
+            if inp.startswith('@'): return 'resolve:@handle'
+            if inp.startswith('custom'): return 'resolve:customurl'
+            return inp
+        def validate_and_resolve_channel_id(self, inp):
+            if inp.startswith('UC'): return True, inp
+            if inp.startswith('resolve:@handle'): return True, 'UC_handle_resolved'
+            if inp.startswith('resolve:customurl'): return True, 'UC_customurl_resolved'
+            return False, 'invalid'
+        def get_channel_info(self, cid):
+            if cid.startswith('UC'): return {'channel_id': cid, 'playlist_id': 'UU'+cid[2:]}
+            return None
+    monkeypatch.setattr(youtube_service, 'channel_service', DummyChannelService())
+    # Channel ID
+    info = youtube_service.get_basic_channel_info('UC1234567890123456789012')
+    assert info and info['playlist_id'].startswith('UU')
+    # URL
+    info = youtube_service.get_basic_channel_info('https://youtube.com/channel/UC1234567890123456789012')
+    assert info and info['playlist_id'].startswith('UU')
+    # Handle
+    info = youtube_service.get_basic_channel_info('@handle')
+    assert info and info['playlist_id'].startswith('UU')
+    # Custom URL
+    info = youtube_service.get_basic_channel_info('customurl')
+    assert info and info['playlist_id'].startswith('UU')
+    # Invalid
+    info = youtube_service.get_basic_channel_info('invalid')
+    assert info is None 

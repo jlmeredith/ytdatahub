@@ -167,7 +167,7 @@ class TestSQLiteDatabase:
         
         # Verify at least some indexes exist
         assert len(indexes) > 0
-        assert 'idx_channels_youtube_id' in indexes
+        assert 'idx_channels_channel_id' in indexes
         assert 'idx_videos_youtube_id' in indexes
         
         # Close connection
@@ -186,7 +186,7 @@ class TestSQLiteDatabase:
         cursor = conn.cursor()
         
         # Check if channel was inserted
-        cursor.execute("SELECT youtube_id FROM channels WHERE youtube_id = ?", 
+        cursor.execute("SELECT channel_id FROM channels WHERE channel_id = ?", 
                       (sample_channel_data['channel_id'],))
         channel = cursor.fetchone()
         assert channel is not None

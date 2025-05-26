@@ -3,6 +3,9 @@ Comment repository module for interacting with YouTube comment data in the SQLit
 """
 import sqlite3
 from typing import List, Dict, Optional, Any, Union
+import json
+from datetime import datetime
+import os
 
 from src.utils.helpers import debug_log
 from src.database.base_repository import BaseRepository
@@ -41,109 +44,61 @@ class CommentRepository(BaseRepository):
             debug_log(f"Error retrieving comment by ID {id}: {str(e)}", e)
             return None
     
-    def store_comments(self, comments: List[Dict[str, Any]], video_db_id: int, fetched_at: str) -> bool:
-        """
-        Save comment data to SQLite database.
-        
-        Args:
-            comments: List of comments for a video
-            video_db_id: The database ID of the video these comments belong to
-            fetched_at: Timestamp when the data was fetched
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            if not comments:
-                debug_log("CommentRepository: No comments to store")
-                return True
-                
-            # Connect to the database
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            debug_log(f"CommentRepository: Attempting to store {len(comments)} comments for video ID {video_db_id}")
-            debug_log(f"CommentRepository: Sample comment: {comments[0]}")
-            
-            # First check if the video exists
-            cursor.execute("SELECT id FROM videos WHERE id = ?", (video_db_id,))
-            video_record = cursor.fetchone()
-            if not video_record:
-                debug_log(f"CommentRepository: ERROR - Video ID {video_db_id} does not exist in the database!")
-                # Try to find a valid video ID from the database as a fallback
-                cursor.execute("SELECT id FROM videos LIMIT 1")
-                fallback_record = cursor.fetchone()
-                if fallback_record:
-                    video_db_id = fallback_record[0]
-                    debug_log(f"CommentRepository: Using fallback video ID {video_db_id}")
-                else:
-                    debug_log("CommentRepository: No videos in database, cannot store comments")
-                    conn.close()
-                    return False
-            
-            successful_inserts = 0
-            for i, comment in enumerate(comments):
-                # Support both naming patterns (test vs production data)
-                comment_id = comment.get('comment_id')
-                if not comment_id:
-                    debug_log(f"CommentRepository: Missing required comment_id for comment {i}, generating one")
-                    comment_id = f"generated_id_{video_db_id}_{i}_{hash(str(comment))}"
-                    
-                text = comment.get('comment_text', comment.get('text', ''))
-                author_display_name = comment.get('comment_author', comment.get('author_display_name', ''))
-                published_at = comment.get('comment_published_at', comment.get('published_at', ''))
-                author_profile_image_url = comment.get('author_profile_image_url', '')
-                author_channel_id = comment.get('author_channel_id', '')
-                
-                # Handle like_count more carefully
-                try:
-                    like_count = int(comment.get('like_count', 0))
-                except (ValueError, TypeError):
-                    like_count = 0
-                    
-                updated_at = comment.get('updated_at', published_at)
-                parent_id = comment.get('parent_id', None)
-                is_reply = bool(comment.get('is_reply', False))
-                
-                debug_log(f"CommentRepository: Processing comment {i} (ID: {comment_id}) with text: {text[:30]}...")
-                
-                # Insert or update comment data
-                try:
-                    cursor.execute('''
-                    INSERT OR REPLACE INTO comments (
-                        comment_id, video_id, text, author_display_name, author_profile_image_url,
-                        author_channel_id, like_count, published_at, updated_at, parent_id,
-                        is_reply, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        comment_id, video_db_id, text, author_display_name, author_profile_image_url,
-                        author_channel_id, like_count, published_at, updated_at, parent_id,
-                        is_reply, fetched_at
-                    ))
-                    successful_inserts += 1
-                except sqlite3.Error as e:
-                    debug_log(f"CommentRepository: Error inserting comment {comment_id}: {str(e)}")
-            
-            # Commit changes
-            conn.commit()
-            
-            # Verify the comments were stored
-            cursor.execute("SELECT COUNT(*) FROM comments WHERE video_id = ?", (video_db_id,))
-            count = cursor.fetchone()[0]
-            debug_log(f"CommentRepository: Successfully stored {count} comments for video_id {video_db_id} (attempted {len(comments)}, succeeded {successful_inserts})")
-            
-            conn.close()
-            
-            # If we successfully inserted any comments, consider it a success
-            # But if we were expecting to insert comments and inserted none, that's a problem
-            if len(comments) > 0 and successful_inserts == 0:
-                debug_log("CommentRepository: ERROR - Failed to insert any comments")
-                return False
-                
-            return True
-        except Exception as e:
-            debug_log(f"CommentRepository: Error storing comments: {str(e)}", e)
-            return False
+    def flatten_dict(self, d, parent_key='', sep='.'):
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+    
+    def store_comments(self, comments, video_db_id=None, fetched_at=None):
+        """Save comments to SQLite database, mapping every API field (recursively) to a column, and insert full JSON into comments_history only."""
+        abs_db_path = os.path.abspath(self.db_path)
+        debug_log(f"[DB] Using database at: {abs_db_path}")
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for comment in comments:
+            api = comment.get('comment_info', comment)
+            flat_api = self.flatten_dict(api)
+            cursor.execute("PRAGMA table_info(comments)")
+            existing_cols = set(row[1] for row in cursor.fetchall())
+            columns = []
+            values = []
+            flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
+            for col in existing_cols:
+                if col == 'id' or col == 'created_at' or col == 'updated_at':
+                    continue
+                if col in flat_api_underscore:
+                    columns.append(col)
+                    values.append(flat_api_underscore[col])
+            if video_db_id and 'video_id' in existing_cols:
+                columns.append('video_id')
+                values.append(video_db_id)
+            debug_log(f"[DB INSERT] Final comment insert columns: {columns}")
+            debug_log(f"[DB INSERT] Final comment insert values: {values}")
+            if not columns:
+                debug_log("[DB WARNING] No columns to insert for comment.")
+                continue
+            placeholders = ','.join(['?'] * len(columns))
+            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
+            cursor.execute(f'''
+                INSERT INTO comments ({','.join(columns)})
+                VALUES ({placeholders})
+                ON CONFLICT(comment_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
+            ''', values)
+            debug_log(f"Inserted/updated comment: {flat_api.get('comment_id') or flat_api.get('id')}")
+            # --- Insert full JSON into comments_history only ---
+            fetched_at = fetched_at or datetime.datetime.utcnow().isoformat()
+            raw_comment_info = json.dumps(api)
+            cursor.execute('''
+                INSERT INTO comments_history (comment_id, fetched_at, raw_comment_info) VALUES (?, ?, ?)
+            ''', (flat_api.get('comment_id') or flat_api.get('id'), fetched_at, raw_comment_info))
+        conn.commit()
+        conn.close()
+        return True
     
     def get_video_comments(self, video_db_id: int) -> List[Dict[str, Any]]:
         """

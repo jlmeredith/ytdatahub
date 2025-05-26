@@ -6,7 +6,11 @@ import sys
 import shutil
 import logging
 from typing import Dict, Any, Optional
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 
 # Import utility functions
 from src.utils.logging_utils import debug_log

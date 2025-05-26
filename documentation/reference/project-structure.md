@@ -101,6 +101,7 @@ YTDataHub follows a modular architecture with clear separation of concerns. This
   - `__init__.py` - Package initialization for utilities
   - `helpers.py` - Common utility functions used across the application
   - `background_tasks.py` - Background task management and execution
+  - `queue_tracker.py` - Queue management system for tracking data operations
 
 ### Data Storage
 
@@ -131,3 +132,39 @@ The project structure follows several key design principles:
 4. **Backward Compatibility**: Legacy code support while evolving the architecture
 
 For more information about the technical architecture, see the [Architecture Documentation](architecture.md).
+
+## Queue System
+
+YTDataHub includes a queue management system to track and stage data operations (channels, videos, comments) before committing them to the database. This system is designed to support both manual and future automated (scheduled) processing of data collection and update tasks.
+
+### Purpose
+- Allows users to queue channels, videos, or comments for later processing or saving.
+- Enables batch operations and future background task automation (e.g., scheduled updates).
+- Provides a clear UI for monitoring what is pending in the queue.
+
+### Implementation
+- Core logic: [`src/utils/queue_tracker.py`](../../src/utils/queue_tracker.py)
+  - Tracks items in session state queues for 'channels', 'videos', 'comments', and 'analytics'.
+  - Provides functions: `add_to_queue`, `remove_from_queue`, `clear_queue`, `get_queue_stats`, and `render_queue_status_sidebar`.
+- UI integration:
+  - In the data collection workflows (new channel and refresh/update), users can:
+    - Save channel, video, or comment data directly to the queue for later processing ("Save to Queue for Later" or "Queue ... for Later" buttons).
+    - View queue status in the sidebar at each workflow step.
+  - The queue status dialog is rendered once per step for clarity.
+
+### Usage in the UI
+- At each step (channel, videos, comments), users can choose to:
+  - Save data immediately to the database
+  - Continue to the next step
+  - **Queue the current data for later** (using the provided button)
+- The queue can be reviewed and managed from the "Queue Status" tab in the main data collection interface.
+
+### Future Automation
+- The queue system is designed to support future enhancements:
+  - Background task runners can process queued items on a schedule.
+  - Users will be able to select multiple queued items for batch processing or scheduled updates.
+
+For more details, see the code in [`src/utils/queue_tracker.py`](../../src/utils/queue_tracker.py) and the data collection workflow UIs.
+
+### channels
+- Stores basic channel metadata and now includes a `raw_channel_info` column (TEXT/JSON) that contains the full public YouTube API response for each channel. This enables all API fields to be available for analysis and export, even after reloading from the database.

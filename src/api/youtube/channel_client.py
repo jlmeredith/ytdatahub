@@ -48,7 +48,7 @@ class YouTubeChannelClient(YouTubeBaseClient):
         try:
             # Get the channel data from YouTube API
             request = self.youtube.channels().list(
-                part="snippet,contentDetails,statistics",
+                part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
                 id=channel_id
             )
             
@@ -65,27 +65,12 @@ class YouTubeChannelClient(YouTubeBaseClient):
             # Process the response to extract channel data
             if 'items' in response and len(response['items']) > 0:
                 channel_item = response['items'][0]
-                
-                # Build the channel info dictionary with standardized structure
-                channel_info = {
-                    'channel_id': channel_id,
-                    'channel_info': channel_item,  # Store the full API response
-                    'channel_name': channel_item.get('snippet', {}).get('title', 'Unknown Channel'),
-                    'channel_description': channel_item.get('snippet', {}).get('description', ''),
-                    'subscribers': channel_item.get('statistics', {}).get('subscriberCount', '0'),
-                    'views': channel_item.get('statistics', {}).get('viewCount', '0'),
-                    'total_videos': channel_item.get('statistics', {}).get('videoCount', '0'),
+                # Return only the true, full API response as raw_channel_info
+                return {
+                    'raw_channel_info': channel_item,
+                    'channel_id': channel_item.get('id'),
+                    'playlist_id': channel_item.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads', ''),
                 }
-                
-                # Extract the uploads playlist ID for fetching videos later
-                if 'contentDetails' in channel_item and 'relatedPlaylists' in channel_item['contentDetails']:
-                    channel_info['playlist_id'] = channel_item['contentDetails']['relatedPlaylists'].get('uploads', '')
-                
-                # Cache the result
-                self.store_in_cache(cache_key, channel_info)
-                
-                debug_log(f"Channel info processed successfully. Name: {channel_info['channel_name']}, Videos: {channel_info['total_videos']}")
-                return channel_info
             else:
                 debug_log(f"No channel found with ID: {channel_id}")
                 if hasattr(st, 'session_state'):
@@ -127,7 +112,7 @@ class YouTubeChannelClient(YouTubeBaseClient):
         try:
             # Make API request for channel by username
             request = self.youtube.channels().list(
-                part="snippet,contentDetails,statistics",
+                part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
                 forUsername=username
             )
             

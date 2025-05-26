@@ -1,7 +1,11 @@
 """
 YouTube API quota estimation utilities.
 """
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 
 def estimate_quota_usage(fetch_channel=None, fetch_videos=None, fetch_comments=None, 
                          video_count=None, comments_count=None):

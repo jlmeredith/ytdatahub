@@ -88,6 +88,20 @@ The utilities section provides:
 - **Theme Selection**: Toggle between light and dark mode
 - **Export Options**: Export data for use in external tools
 
+## Utilities Tab: Clear Database Feature
+
+The Utilities tab provides a powerful tool for development and testing: **Clear Database**.
+
+- **Location:** Utilities tab → Database Management Tools → Clear Database
+- **How it works:**
+  - You must confirm your intent by checking a box and typing 'CLEAR ALL DATA'.
+  - When you click **Clear Database**:
+    - The app creates a backup of your current database file (with a timestamp).
+    - All tables are dropped and the schema is recreated.
+    - You can immediately start collecting/importing new data.
+- **Warning:** This operation is destructive! Only use it in development or when you want to start with a clean slate. All data will be lost, but a backup is created for safety.
+- **Alternative:** You can also reset the database from the command line using the CLI script (`scripts/clear_and_reset_db.py`).
+
 ## UI Design Principles
 
 The YTDataHub interface follows several key design principles:
@@ -137,3 +151,12 @@ Planned improvements to the YTDataHub interface include:
 - Enhanced visualization options with additional chart types
 - Improved notification system for long-running operations
 - More advanced filtering and search capabilities
+
+### Debug Panel: Playlist ID Logging Parity
+
+- Both the **New Channel** and **Update Channel** workflows always log playlist ID actions:
+  - When the playlist ID is fetched from the API
+  - When it is stored in the database
+  - When an error occurs (e.g., missing playlist ID, API failure)
+- These logs are always visible in the UI debug panel for full transparency.
+- This parity is enforced by automated tests and code review.

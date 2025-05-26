@@ -3,7 +3,11 @@ UI performance utilities for measuring and reporting UI performance.
 """
 import time
 import logging
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 from datetime import datetime
 
 def report_ui_timing(operation_name: str, start_time: float, show_spinner: bool = False):

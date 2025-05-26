@@ -209,3 +209,7 @@ class YouTubeBaseClient:
     def ensure_api_cache(self):
         """Stub for API cache initialization (no-op for now)."""
         pass
+
+@st.cache_resource
+def get_youtube_api_client(api_key: str):
+    return YouTubeBaseClient(api_key)

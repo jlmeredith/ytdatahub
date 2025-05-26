@@ -12,7 +12,8 @@ from src.ui.data_analysis.components import (
     render_data_coverage_dashboard
 )
 from src.ui.data_analysis.utils.session_state import initialize_chart_toggles, initialize_analysis_section
-from src.utils.helpers import debug_log, log_error
+from src.utils.helpers import debug_log
+from src.utils.logging_utils import log_error
 
 def render_data_analysis_tab():
     """Render the data analysis tab."""

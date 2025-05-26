@@ -4,6 +4,7 @@ Location repository module for interacting with video location data in the SQLit
 import sqlite3
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
+import json
 
 from src.utils.helpers import debug_log
 from src.database.base_repository import BaseRepository
@@ -53,6 +54,13 @@ class LocationRepository(BaseRepository):
                 ''', (
                     video_db_id, location_type, location_name, confidence, source, created_at
                 ))
+                # --- NEW: Insert full API response into video_locations_history ---
+                now = datetime.utcnow().isoformat()
+                raw_location_info = json.dumps(location)
+                cursor.execute('''
+                    INSERT INTO video_locations_history (video_id, fetched_at, raw_location_info)
+                    VALUES (?, ?, ?)
+                ''', (video_db_id, now, raw_location_info))
             
             # Commit changes
             conn.commit()

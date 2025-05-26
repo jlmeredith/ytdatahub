@@ -6,16 +6,24 @@ import os
 import sys
 import json
 import logging
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Union
-import pandas as pd
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
 from src.utils.log_level_helper import get_log_level_int
 
-# Configure logging with detailed format and set to WARNING level to reduce output
+# Configure logging with detailed format and set to DEBUG level to show all logs
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%H:%M:%S'
 )
@@ -239,46 +247,48 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
         else:
             logging.debug(f"{log_prefix} {message}")
 
-def get_ui_freeze_report() -> pd.DataFrame:
-    """
-    Generate a report of performance metrics that might cause UI freezing
-    
-    Returns:
-        DataFrame containing operations that may freeze the UI
-    """
-    # Default to empty DataFrame
-    df = pd.DataFrame(columns=['operation', 'Duration', 'Time', 'severity'])
-    
-    # Get metrics from session state
-    if 'performance_metrics' not in st.session_state:
-        st.session_state.performance_metrics = {}
-    
-    metrics = st.session_state.performance_metrics
-    if not metrics:
-        return df
-    
-    # Convert metrics to DataFrame
-    rows = []
-    for key, data in metrics.items():
-        # Only include metrics with potential UI impact
-        if data.get('ui_impact', False) or data.get('severity') != 'good':
-            rows.append({
-                'operation': data['tag'],
-                'Duration': round(data['duration'], 2),
-                'Time': datetime.fromtimestamp(data['timestamp']).strftime('%H:%M:%S'),
-                'severity': data['severity']
-            })
-    
-    # Create DataFrame if we have rows
-    if rows:
-        df = pd.DataFrame(rows)
-        df = df.sort_values(by='Duration', ascending=False)
-    
-    # Return formatted DataFrame
-    display_df = df[['operation', 'Duration', 'Time', 'severity']].copy()
-    display_df.columns = ['Operation', 'Duration', 'Time', 'Severity']
-    
-    return display_df
+# Only define pandas-dependent functions if pandas is available
+if PANDAS_AVAILABLE:
+    def get_ui_freeze_report() -> pd.DataFrame:
+        """
+        Generate a report of performance metrics that might cause UI freezing
+        
+        Returns:
+            DataFrame containing operations that may freeze the UI
+        """
+        # Default to empty DataFrame
+        df = pd.DataFrame(columns=['operation', 'Duration', 'Time', 'severity'])
+        
+        # Get metrics from session state
+        if 'performance_metrics' not in st.session_state:
+            st.session_state.performance_metrics = {}
+        
+        metrics = st.session_state.performance_metrics
+        if not metrics:
+            return df
+        
+        # Convert metrics to DataFrame
+        rows = []
+        for key, data in metrics.items():
+            # Only include metrics with potential UI impact
+            if data.get('ui_impact', False) or data.get('severity') != 'good':
+                rows.append({
+                    'operation': data['tag'],
+                    'Duration': round(data['duration'], 2),
+                    'Time': datetime.fromtimestamp(data['timestamp']).strftime('%H:%M:%S'),
+                    'severity': data['severity']
+                })
+        
+        # Create DataFrame if we have rows
+        if rows:
+            df = pd.DataFrame(rows)
+            df = df.sort_values(by='Duration', ascending=False)
+        
+        # Return formatted DataFrame
+        display_df = df[['operation', 'Duration', 'Time', 'severity']].copy()
+        display_df.columns = ['Operation', 'Duration', 'Time', 'Severity']
+        
+        return display_df
 
 def log_error(error, component=None, additional_info=None):
     """

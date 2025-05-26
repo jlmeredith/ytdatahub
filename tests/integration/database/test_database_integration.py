@@ -332,6 +332,14 @@ class TestDatabaseIntegration:
         assert video['snippet']['title'] == "Video with emoji"
         assert video['snippet']['description'] == "Description with special characters"
 
+    def test_all_channels_have_uploads_playlist_id(self, temp_db):
+        """Test that all channels have uploads_playlist_id set (migration health check)."""
+        conn = temp_db._get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT channel_id FROM channels WHERE uploads_playlist_id IS NULL OR uploads_playlist_id = ''")
+        missing = cur.fetchall()
+        conn.close()
+        assert not missing, f"Channels missing uploads_playlist_id: {[row[0] for row in missing]}"
 
 if __name__ == '__main__':
     pytest.main()

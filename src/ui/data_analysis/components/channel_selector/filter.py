@@ -54,8 +54,20 @@ def filter_channels(channels_df):
         search_term = st.session_state.channel_search_query.lower()
         debug_log(f"Filtering channels with search term: {search_term}")
         
+        # Check if the expected column exists and use an appropriate column for filtering
+        if 'Channel' in channels_df.columns:
+            channel_column = 'Channel'
+        elif 'channel_name' in channels_df.columns:
+            channel_column = 'channel_name'
+        elif 'name' in channels_df.columns:
+            channel_column = 'name'
+        else:
+            # If no appropriate column found, return unfiltered data
+            debug_log(f"Warning: No channel name column found for filtering. Available columns: {channels_df.columns.tolist()}")
+            return channels_df
+            
         # Apply the filter to channel names (case-insensitive)
-        filtered_df = channels_df[channels_df['Channel'].str.lower().str.contains(search_term)]
+        filtered_df = channels_df[channels_df[channel_column].str.lower().str.contains(search_term)]
         
         # Show filter results message
         if len(filtered_df) != len(channels_df):

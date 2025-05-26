@@ -2,10 +2,10 @@
 Video repository module for interacting with YouTube video data in the SQLite database.
 """
 import sqlite3
-import streamlit as st
-import pandas as pd
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
+import json
+import os
 
 from src.utils.helpers import debug_log
 from src.database.base_repository import BaseRepository
@@ -62,181 +62,66 @@ class VideoRepository(BaseRepository):
             debug_log(f"Error retrieving video by ID {id}: {str(e)}", e)
             return None
     
-    def store_video_data(self, video: Dict[str, Any], channel_db_id: int, fetched_at: str) -> Optional[int]:
-        """
-        Save video data to SQLite database.
-        
-        Args:
-            video: Dictionary containing video data
-            channel_db_id: The database ID of the channel this video belongs to
-            fetched_at: Timestamp when the data was fetched
-            
-        Returns:
-            int: The database ID of the inserted/updated video, or None on error
-        """
+    def flatten_dict(self, d, parent_key='', sep='.'):  # Add if not present
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+    
+    def store_video_data(self, data, channel_db_id=None, fetched_at=None):
+        """Save video data to SQLite database, mapping every API field (recursively) to a column, and insert full JSON into videos_history only."""
         try:
-            # Connect to the database
+            abs_db_path = os.path.abspath(self.db_path)
+            debug_log(f"[DB] Using database at: {abs_db_path}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Extract video data with detailed debugging
-            youtube_id = video.get('video_id')
-            debug_log(f"Processing video with ID: {youtube_id}")
-            
-            title = video.get('title')
-            debug_log(f"Video title: {title}")
-            
-            description = video.get('video_description', '')
-            published_at = video.get('published_at')
-            debug_log(f"Published at: {published_at}")
-            
-            # Convert string values to integers with checks
-            try:
-                view_count = int(video.get('views', 0))
-            except (ValueError, TypeError):
-                view_count = 0
-                debug_log(f"Error converting view count: {video.get('views')}, using default 0")
-            
-            try:
-                like_count = int(video.get('likes', 0))
-            except (ValueError, TypeError):
-                like_count = 0
-                debug_log(f"Error converting like count: {video.get('likes')}, using default 0")
-            
-            duration = video.get('duration')
-            
-            # Extract new fields from video data
-            try:
-                dislike_count = int(video.get('dislike_count', 0))
-                favorite_count = int(video.get('favorite_count', 0))
-                comment_count = int(video.get('comment_count', 0))
-            except (ValueError, TypeError):
-                dislike_count = 0
-                favorite_count = 0
-                comment_count = 0
-                debug_log(f"Error converting counts, using defaults")
-            
-            dimension = video.get('dimension', '')
-            definition = video.get('definition', '')
-            caption = video.get('caption_status', False)
-            licensed_content = video.get('licensed_content', False)
-            projection = video.get('projection', '')
-            privacy_status = video.get('privacy_status', '')
-            license_type = video.get('license', '')
-            embeddable = video.get('embeddable', True)
-            public_stats_viewable = video.get('public_stats_viewable', True)
-            made_for_kids = video.get('made_for_kids', False)
-            
-            # Thumbnail URLs
-            thumbnail_default = video.get('thumbnail_default', '')
-            thumbnail_medium = video.get('thumbnail_medium', '')
-            thumbnail_high = video.get('thumbnails', '') or video.get('thumbnail_high', '')
-            
-            # Additional metadata
-            if isinstance(video.get('tags', []), list):
-                tags = ','.join(video.get('tags', []))
-            else:
-                tags = str(video.get('tags', ''))
-                
-            category_id = video.get('category_id', '')
-            live_broadcast_content = video.get('live_broadcast_content', '')
-            video_fetched_at = video.get('fetched_at', fetched_at)  # Use video's fetched_at or default to channel's
-            updated_at = video.get('updated_at', video_fetched_at)  # Use video's updated_at or default to fetched_at
-            
-            debug_log(f"Inserting video {youtube_id} into database")
-            
-            # Insert or update video data with all new fields
-            try:
-                # First check if the video already exists to avoid unique constraint errors
-                cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
-                existing_video = cursor.fetchone()
-                
-                # Log for debugging
-                if existing_video:
-                    debug_log(f"Video {youtube_id} already exists with ID {existing_video[0]}, updating")
-                else:
-                    debug_log(f"Video {youtube_id} is new, inserting")
-                
-                # Use INSERT OR REPLACE to handle both new videos and updates
-                cursor.execute('''
-                INSERT OR REPLACE INTO videos (
-                    youtube_id, channel_id, title, description, published_at,
-                    view_count, like_count, dislike_count, favorite_count, 
-                    comment_count, duration, dimension, definition,
-                    caption, licensed_content, projection, privacy_status, 
-                    license, embeddable, public_stats_viewable, made_for_kids,
-                    thumbnail_default, thumbnail_medium, thumbnail_high,
-                    tags, category_id, live_broadcast_content, 
-                    fetched_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    youtube_id, channel_db_id, title, description, published_at,
-                    view_count, like_count, dislike_count, favorite_count,
-                    comment_count, duration, dimension, definition,
-                    caption, licensed_content, projection, privacy_status,
-                    license_type, embeddable, public_stats_viewable, made_for_kids,
-                    thumbnail_default, thumbnail_medium, thumbnail_high,
-                    tags, category_id, live_broadcast_content,
-                    video_fetched_at, updated_at
-                ))
-                conn.commit()  # Commit after insert but before selecting the ID
-                debug_log("SQL execution successful")
-            except Exception as sql_e:
-                debug_log(f"SQL error: {sql_e}", sql_e)  # Log with exception for more details
-                conn.rollback()
+            api = data.get('video_info', data)
+            flat_api = self.flatten_dict(api)
+            cursor.execute("PRAGMA table_info(videos)")
+            existing_cols = set(row[1] for row in cursor.fetchall())
+            columns = []
+            values = []
+            flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
+            for col in existing_cols:
+                if col == 'id' or col == 'created_at' or col == 'updated_at':
+                    continue
+                if col in flat_api_underscore:
+                    columns.append(col)
+                    values.append(flat_api_underscore[col])
+            if channel_db_id and 'channel_id' in existing_cols:
+                columns.append('channel_id')
+                values.append(channel_db_id)
+            debug_log(f"[DB INSERT] Final video insert columns: {columns}")
+            debug_log(f"[DB INSERT] Final video insert values: {values}")
+            if not columns:
+                debug_log("[DB WARNING] No columns to insert for video.")
                 conn.close()
-                return None
-            
-            # Get the id of the inserted video
-            try:
-                cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
-                result = cursor.fetchone()
-                if result:
-                    video_db_id = result[0]
-                    debug_log(f"Video ID in database: {video_db_id}")
-                    
-                    # DEBUG - Verify the video is actually there
-                    cursor.execute("SELECT COUNT(*) FROM videos WHERE id = ?", (video_db_id,))
-                    count = cursor.fetchone()[0]
-                    debug_log(f"Video record count with ID {video_db_id}: {count}")
-                    
-                    # Close connection
-                    conn.close()
-                    return video_db_id
-                else:
-                    debug_log(f"Video with youtube_id {youtube_id} not found after insert")
-                    # Try to insert directly
-                    try:
-                        debug_log("Attempting direct insert for video")
-                        cursor.execute('''
-                            INSERT INTO videos (youtube_id, channel_id, title) 
-                            VALUES (?, ?, ?)
-                        ''', (youtube_id, channel_db_id, title))
-                        conn.commit()
-                        
-                        # Get the ID again
-                        cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", (youtube_id,))
-                        result = cursor.fetchone()
-                        if result:
-                            video_db_id = result[0]
-                            debug_log(f"Video ID after direct insert: {video_db_id}")
-                            conn.close()
-                            return video_db_id
-                    except Exception as direct_insert_e:
-                        debug_log(f"Direct insert failed: {direct_insert_e}", direct_insert_e)
-                    
-                    # If we get here, both attempts failed
-                    conn.rollback()
-                    conn.close()
-                    return None
-            except Exception as select_e:
-                debug_log(f"Error selecting video ID: {select_e}", select_e)
-                conn.rollback()
-                conn.close()
-                return None
+                return False
+            placeholders = ','.join(['?'] * len(columns))
+            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
+            cursor.execute(f'''
+                INSERT INTO videos ({','.join(columns)})
+                VALUES ({placeholders})
+                ON CONFLICT(youtube_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
+            ''', values)
+            debug_log(f"Inserted/updated video: {flat_api.get('youtube_id') or flat_api.get('id')}")
+            # --- Insert full JSON into videos_history only ---
+            fetched_at = fetched_at or datetime.datetime.utcnow().isoformat()
+            raw_video_info = json.dumps(api)
+            cursor.execute('''
+                INSERT INTO videos_history (video_id, fetched_at, raw_video_info) VALUES (?, ?, ?)
+            ''', (flat_api.get('youtube_id') or flat_api.get('id'), fetched_at, raw_video_info))
+            conn.commit()
+            conn.close()
+            return True
         except Exception as e:
-            debug_log(f"Error storing video data: {str(e)}", e)
-            return None
+            import traceback
+            debug_log(f"Exception in store_video_data: {str(e)}\n{traceback.format_exc()}")
+            return {"error": str(e)}
             
     def store_comments(self, comments: List[Dict[str, Any]], video_db_id: int, fetched_at: str) -> bool:
         """
@@ -473,6 +358,28 @@ class VideoRepository(BaseRepository):
             
             return True
         except Exception as e:
-            st.error(f"Error loading videos from SQLite: {str(e)}")
+            print(f"Error loading videos from SQLite: {str(e)}")
             debug_log(f"Exception in display_videos_data: {str(e)}", e)
             return False
+
+    def get_playlist_data(self, playlist_id: str) -> dict:
+        """
+        Fetch a playlist record from the playlists table by playlist_id.
+        Args:
+            playlist_id (str): The playlist ID to fetch
+        Returns:
+            dict: Playlist record as a dict, or None if not found
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM playlists WHERE playlist_id = ?', (playlist_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            debug_log(f"Error fetching playlist data for {playlist_id}: {str(e)}")
+            return None

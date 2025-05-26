@@ -269,3 +269,10 @@ st.session_state['update_in_progress'] = True|False
 - [Delta Calculation System](delta-calculation-system.md)
 - [Service Layer Architecture](workflow-service-layer.md)
 - [Data Comparison Methods](data-comparison-methods.md)
+
+## Migration Health Checks and Zero-Cruft Policy
+
+- After any schema or data migration, a test is added to ensure all records are migrated (e.g., all channels have uploads_playlist_id).
+- Backfill scripts are to be removed or archived after all environments are migrated and tests pass.
+- No migration or fix logic is left in production code after migration is complete.
+- The codebase is kept clean and modern, with no legacy cruft left behind.

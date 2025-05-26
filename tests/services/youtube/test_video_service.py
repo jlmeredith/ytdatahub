@@ -27,10 +27,11 @@ def test_collect_channel_videos_extracts_metrics(video_service, mock_api):
     }
     
     # Call the method
-    channel_data = {'channel_id': 'test_channel'}
+    channel_data = {'channel_id': 'test_channel', 'playlist_id': 'UU_test_playlist'}
     result = video_service.collect_channel_videos(channel_data)
     
     # Verify metrics were extracted
+    assert result['video_id'], "'video_id' is empty in result; expected at least one video with metrics."
     video = result['video_id'][0]
     assert video['views'] == '1000'
     assert video['likes'] == '100'

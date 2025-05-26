@@ -1,8 +1,16 @@
 """
 UI helper functions for the YouTube Data Hub application.
 """
-import streamlit as st
-import pandas as pd
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
 import math
 
 def paginate_dataframe(df, page_size, page_num):

@@ -183,3 +183,39 @@ def test_video_list_displayed_after_fetch(mock_youtube_service, mock_session_sta
     workflow = RefreshChannelWorkflow(mock_youtube_service)
     workflow._handle_video_collection('test_channel', 2)
     mock_session_state.__setitem__.assert_any_call('videos_data', mock_response['video_id']) 
+
+@patch('streamlit.error')
+def test_channel_fetch_failure(mock_error, mock_youtube_service, mock_session_state):
+    # Simulate comparison_data is None (API/db failure)
+    workflow = RefreshChannelWorkflow(mock_youtube_service)
+    with patch('streamlit.selectbox', return_value='Test Channel (UC123)'), \
+         patch('streamlit.button', return_value=True), \
+         patch('streamlit.spinner'):
+        st.session_state['refresh_workflow_step'] = 1
+        st.session_state['db_data'] = {}
+        st.session_state['api_data'] = {}
+        workflow.render_step_1_select_channel()
+    mock_error.assert_any_call("Failed to retrieve channel data for comparison. Please try again.")
+
+@patch('streamlit.error')
+def test_video_fetch_failure(mock_error, mock_youtube_service, mock_session_state):
+    # Simulate update_channel_data returns None
+    workflow = RefreshChannelWorkflow(mock_youtube_service)
+    st.session_state['refresh_workflow_step'] = 3
+    st.session_state['channel_input'] = 'UC123'
+    mock_youtube_service.update_channel_data.return_value = None
+    with patch('streamlit.slider', return_value=5), patch('streamlit.button', side_effect=[True, False]):
+        workflow.render_step_2_video_collection()
+    mock_error.assert_any_call("Video fetch failed: No response from API.")
+
+@patch('streamlit.error')
+def test_save_failure(mock_error, mock_youtube_service, mock_session_state):
+    # Simulate save_channel_data returns False
+    workflow = RefreshChannelWorkflow(mock_youtube_service)
+    st.session_state['api_data'] = {'channel_id': 'UC123'}
+    st.session_state['videos_data'] = []
+    st.session_state['refresh_workflow_step'] = 4
+    with patch('src.ui.data_collection.refresh_channel_workflow.SaveOperationManager') as mock_save_mgr:
+        mock_save_mgr.return_value.perform_save_operation.return_value = False
+        workflow.save_data()
+    mock_error.assert_any_call("Failed to save data.") 

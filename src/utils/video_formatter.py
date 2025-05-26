@@ -55,21 +55,21 @@ def ensure_views_data(video_data):
                     # Default to zero if no views data can be found
                     debug_log(f"No views data found for video {video_id}, setting to 0")
                     video['views'] = '0'
-        
-        # Additional step: Check for comment_count in statistics and make sure it's copied to the base level
-        # This ensures consistency between the new channel and refresh flows
-        if 'statistics' in video and isinstance(video['statistics'], dict):
-            # Handle comment count
-            if 'commentCount' in video['statistics']:
-                if 'comment_count' not in video or not video['comment_count']:
-                    video['comment_count'] = video['statistics']['commentCount']
-                    debug_log(f"Setting comment_count from statistics.commentCount: {video['statistics']['commentCount']}")
-            
-            # Handle likes
-            if 'likeCount' in video['statistics']:
-                if 'likes' not in video or not video['likes']:
-                    video['likes'] = video['statistics']['likeCount']
-                    debug_log(f"Setting likes from statistics.likeCount: {video['statistics']['likeCount']}")
+        # PATCH: Always set likes and comment_count to '0' if missing or malformed
+        if 'likes' not in video or not video['likes']:
+            if 'statistics' in video and isinstance(video['statistics'], dict) and 'likeCount' in video['statistics']:
+                video['likes'] = video['statistics']['likeCount']
+                debug_log(f"Setting likes from statistics.likeCount: {video['statistics']['likeCount']}")
+            else:
+                video['likes'] = '0'
+                debug_log(f"No likes data found for video {video_id}, setting to 0")
+        if 'comment_count' not in video or not video['comment_count']:
+            if 'statistics' in video and isinstance(video['statistics'], dict) and 'commentCount' in video['statistics']:
+                video['comment_count'] = video['statistics']['commentCount']
+                debug_log(f"Setting comment_count from statistics.commentCount: {video['statistics']['commentCount']}")
+            else:
+                video['comment_count'] = '0'
+                debug_log(f"No comment_count data found for video {video_id}, setting to 0")
         
         # Clean up temporary field
         if 'original_views' in video:
@@ -202,16 +202,18 @@ def fix_missing_views(videos):
     """Fix missing views data in video list"""
     if not videos:
         return videos
+    
+    from src.utils.helpers import debug_log
         
     for video in videos:
         video_id = video.get('video_id', 'unknown')
-        print(f"Processing video {video_id} in fix_missing_views", file=sys.stderr)
-        print(f"Initial state: views={video.get('views')}, statistics={video.get('statistics')}", file=sys.stderr)
+        debug_log(f"Processing video {video_id} in fix_missing_views")
+        debug_log(f"Initial state: views={video.get('views')}, statistics={video.get('statistics')}")
         
         # Only set default if missing
         if 'views' not in video:
             video['views'] = '0'
-            print(f"Set default views=0 for {video_id}", file=sys.stderr)
+            debug_log(f"Set default views=0 for {video_id}")
         if 'likes' not in video:
             video['likes'] = '0'
         if 'comment_count' not in video:
@@ -221,11 +223,11 @@ def fix_missing_views(videos):
         stats = None
         if isinstance(video.get('statistics'), dict):
             stats = video['statistics']
-            print(f"Found statistics dict for {video_id}: {stats}", file=sys.stderr)
+            debug_log(f"Found statistics dict for {video_id}: {stats}")
         elif isinstance(video.get('statistics'), str):
             try:
                 stats = json.loads(video['statistics'])
-                print(f"Parsed statistics string for {video_id}: {stats}", file=sys.stderr)
+                debug_log(f"Parsed statistics string for {video_id}: {stats}")
             except:
                 pass
         elif isinstance(video.get('contentDetails', {}).get('statistics'), dict):
@@ -237,7 +239,7 @@ def fix_missing_views(videos):
             # Only set if not already present or is '0', and only if the value is different
             if ('views' not in video or video['views'] == '0') and 'viewCount' in stats:
                 video['views'] = str(stats.get('viewCount', '0'))
-                print(f"Updated views from statistics for {video_id}: {video['views']}", file=sys.stderr)
+                debug_log(f"Updated views from statistics for {video_id}: {video['views']}")
             # If views is present and not '0', do not overwrite
             # If views is present and matches statistics, do nothing
             # If views is present and does not match statistics, do nothing (preserve original)
@@ -246,6 +248,6 @@ def fix_missing_views(videos):
             if ('comment_count' not in video or video['comment_count'] == '0') and 'commentCount' in stats:
                 video['comment_count'] = str(stats.get('commentCount', '0'))
                 
-        print(f"Final state for {video_id}: views={video.get('views')}", file=sys.stderr)
+        debug_log(f"Final state for {video_id}: views={video.get('views')}")
         
     return videos

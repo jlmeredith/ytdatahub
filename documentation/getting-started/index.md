@@ -22,6 +22,14 @@ YTDataHub is a powerful YouTube data collection and analysis tool that helps you
 5. **Store the data** in SQLite (or other supported databases)
 6. **Analyze the data** using the built-in analytics components
 
+## Resetting the Database (Development Only)
+
+If you want to start with a clean database (for development/testing):
+- Use the **Clear Database** tool in the Utilities tab of the app, or
+- Run `venv/bin/python scripts/clear_and_reset_db.py` from the command line.
+
+This will back up your current database, drop all tables, and recreate the schema so you can start fresh.
+
 ## Setup and Installation
 
 ### Prerequisites

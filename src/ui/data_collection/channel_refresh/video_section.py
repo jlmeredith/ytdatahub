@@ -4,8 +4,8 @@ This module handles the video section of the channel refresh UI.
 import streamlit as st
 import pandas as pd
 from src.utils.helpers import debug_log
-from src.utils.video_formatter import ensure_views_data, extract_video_views, fix_missing_views
-from src.utils.video_processor import process_video_data
+from src.utils.video_standardizer import standardize_video_data, extract_standardized_videos
+from src.utils.video_formatter import extract_video_views
 from ..utils.data_conversion import format_number
 
 def render_video_section(videos_data, youtube_service, channel_id):
@@ -21,10 +21,22 @@ def render_video_section(videos_data, youtube_service, channel_id):
         st.info("No videos found or videos have not been loaded yet.")
         return
     
+    debug_log(f"render_video_section: Raw input data type: {type(videos_data)}")
+    
+    # Handle different input formats
+    if isinstance(videos_data, dict):
+        # If videos_data is a dict (e.g., API response), extract videos
+        debug_log("render_video_section: Input is a dictionary, extracting videos")
+        videos_data = extract_standardized_videos(videos_data)
+    else:
+        # Otherwise standardize as is
+        debug_log(f"render_video_section: Input appears to be a list of {len(videos_data) if isinstance(videos_data, list) else 'non-list'} videos")
+        videos_data = standardize_video_data(videos_data)
+    
     st.write(f"Found {len(videos_data)} videos for this channel")
     
     # Add button to save all fetched videos to database
-    if st.button("Save Videos to Database", type="primary"):  # Make this a primary button for visibility
+    if st.button("Save Videos to Database", type="primary", key="video_section_save_videos_btn"):  # Make this a primary button for visibility
         with st.spinner("Saving videos to database..."):
             try:
                 # Structure data properly for saving
@@ -46,7 +58,7 @@ def render_video_section(videos_data, youtube_service, channel_id):
                 debug_log(f"Exception during video save: {str(e)}")
     
     # Option to view raw API data (like in channel comparison)
-    show_raw_data = st.checkbox("Show Raw API Data", value=False)
+    show_raw_data = st.checkbox("Show Raw API Data", value=False, key="video_section_show_raw_data")
     if show_raw_data:
         st.subheader("Raw API Video Data")
         
@@ -66,7 +78,8 @@ def render_video_section(videos_data, youtube_service, channel_id):
             debug_log(f"Views in first video: {first_video.get('views', 'Not found')}")
             
             # Create an enhanced expandable display for the first video to help debugging
-            with st.expander("Sample Video Data (First Video)", expanded=True):
+            # Adding unique key to prevent StreamlitDuplicateElementId errors
+            with st.expander("Sample Video Data (First Video)", expanded=True, key="video_section_first_video_expander"):
                 st.write("### Basic Information")
                 st.code(f"Video ID: {first_video.get('video_id', 'Unknown')}")
                 st.code(f"Title: {first_video.get('title', 'Unknown')}")
@@ -134,9 +147,8 @@ def render_video_section(videos_data, youtube_service, channel_id):
             st.subheader("All Video Data")
             st.json(videos_data)
     
-    # Process videos to fix views and comments before display
-    videos_data = process_video_data(videos_data)
-    videos_data = fix_missing_views(videos_data)
+    # We've already standardized the videos at the start of the function
+    # so no need to process them again
     
     # Display a sample of videos
     st.subheader("Recently Published Videos")
@@ -196,7 +208,7 @@ def render_video_section(videos_data, youtube_service, channel_id):
         col1, col2, col3 = st.columns([1, 3, 1])
         
         with col1:
-            if st.button("← Previous Page", disabled=st.session_state['video_page_number'] <= 0):
+            if st.button("← Previous Page", disabled=st.session_state['video_page_number'] <= 0, key="video_section_prev_page_btn"):
                 st.session_state['video_page_number'] -= 1
                 st.rerun()
         
@@ -204,14 +216,13 @@ def render_video_section(videos_data, youtube_service, channel_id):
             st.write(f"Page {st.session_state['video_page_number'] + 1} of {total_pages}")
         
         with col3:
-            if st.button("Next Page →", disabled=st.session_state['video_page_number'] >= total_pages - 1):
+            if st.button("Next Page →", disabled=st.session_state['video_page_number'] >= total_pages - 1, key="video_section_next_page_btn"):
                 st.session_state['video_page_number'] += 1
                 st.rerun()
         
-        # Apply fix_missing_views to pagination videos
-        debug_log("Applying fix_missing_views to pagination videos")
+        # Get videos for the current page
+        debug_log("Getting videos for current page")
         paginated_videos = videos_data[start_idx:end_idx]
-        paginated_videos = fix_missing_views(paginated_videos)
         
         # Display current page data
         video_data_for_current_page = []
@@ -233,20 +244,30 @@ def render_video_section(videos_data, youtube_service, channel_id):
             
             debug_log(f"Video {video_id} views for pagination: {views}")
             
+            # Ensure all values are strings to prevent ArrowInvalid errors when creating dataframe
             row = {
-                "Video ID": video_id,
-                "Title": title,
-                "Published Date": published,
-                "Views": views
+                "Video ID": str(video_id),
+                "Title": str(title),
+                "Published Date": str(published),
+                "Views": str(views)
             }
             if has_deltas:
-                row["View Δ"] = video.get("view_delta", "")
-                row["Like Δ"] = video.get("like_delta", "")
-                row["Comment Δ"] = video.get("comment_delta", "")
+                row["View Δ"] = str(video.get("view_delta", ""))
+                row["Like Δ"] = str(video.get("like_delta", ""))
+                row["Comment Δ"] = str(video.get("comment_delta", ""))
             
             video_data_for_current_page.append(row)
         
-        video_df = pd.DataFrame(video_data_for_current_page)
+        try:
+            # Handle potential ArrowInvalid errors when converting data for dataframe
+            video_df = pd.DataFrame(video_data_for_current_page)
+            st.dataframe(video_df)
+        except Exception as e:
+            debug_log(f"Error creating dataframe: {str(e)}")
+            st.error("Error displaying video data. Please check the console for details.")
+            # Display raw data as fallback
+            for row in video_data_for_current_page:
+                st.write(row)
         st.dataframe(video_df)
     else:
         st.info("No videos found or videos have not been loaded yet.")

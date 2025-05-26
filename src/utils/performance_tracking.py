@@ -5,7 +5,11 @@ This module contains functions for tracking and logging performance metrics.
 import time
 import sys
 import logging
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 from typing import Any, Dict, Optional, List, Union
 
 def initialize_performance_tracking():
@@ -24,16 +28,15 @@ def start_timer(tag: str, message: str = None):
         tag: The tag to identify this timer
         message: Optional message to log when starting the timer
     """
-    # Store the start time in session state
-    if 'performance_timers' not in st.session_state:
-        st.session_state.performance_timers = {}
-        
-    st.session_state.performance_timers[tag] = time.time()
+    if STREAMLIT_AVAILABLE:
+        st.session_state[f"timer_{tag}"] = time.time()
+    else:
+        globals()[f"timer_{tag}"] = time.time()
     
     if message and st.session_state.get('debug_mode', False):
         logging.debug(f"⏱️ START TIMER [{tag}]: {message}")
 
-def end_timer(tag: str, message: str = None):
+def end_timer(tag: str, message: str = None) -> float:
     """
     End a timer and log the elapsed time
     
@@ -44,16 +47,20 @@ def end_timer(tag: str, message: str = None):
     Returns:
         float: The elapsed time in seconds
     """
-    if 'performance_timers' not in st.session_state:
+    if STREAMLIT_AVAILABLE:
+        start = st.session_state.get(f"timer_{tag}", None)
+    else:
+        start = globals().get(f"timer_{tag}", None)
+    if start is None:
         logging.warning(f"Timer {tag} ended but no timers have been initialized")
         return 0.0
-        
+    
     if tag not in st.session_state.performance_timers:
         logging.warning(f"Timer {tag} ended but was never started")
         return 0.0
     
     # Calculate elapsed time
-    elapsed = time.time() - st.session_state.performance_timers[tag]
+    elapsed = time.time() - start
     
     # Store metrics
     if 'performance_metrics' not in st.session_state:

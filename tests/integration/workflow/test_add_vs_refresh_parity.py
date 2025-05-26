@@ -95,6 +95,8 @@ def test_add_vs_refresh_channel_data_parity():
     for v in edge_channel_data['video_id']:
         if 'statistics' in v:
             del v['statistics']
+    # PATCH: Ensure the mock returns a video with missing statistics, not an empty list
+    assert len(edge_channel_data['video_id']) == 1, 'Edge case setup failed: no video present'
     YouTubeTestFactory.configure_mock_api_for_workflow(mock_api, channel_data=edge_channel_data, video_data=edge_channel_data, comment_data=edge_channel_data)
     edge_steps = {
         'channel': {'fetch': True},
@@ -103,6 +105,9 @@ def test_add_vs_refresh_channel_data_parity():
         'save': False
     }
     edge_results, _ = YouTubeTestFactory.create_test_steps_pipeline(service, mock_api, mock_db, steps_config=edge_steps)
+    print('[TEST DEBUG] edge_results["videos"]:', edge_results['videos'])
+    assert 'video_id' in edge_results['videos'], "Missing 'video_id' in edge_results['videos']"
+    assert edge_results['videos']['video_id'], "'video_id' is empty in edge_results['videos']"
     edge_video = edge_results['videos']['video_id'][0]
     assert 'views' in edge_video, "Missing 'views' in video with missing statistics"
     assert 'comment_count' in edge_video, "Missing 'comment_count' in video with missing statistics"
@@ -112,6 +117,8 @@ def test_add_vs_refresh_channel_data_parity():
         v['statistics'] = {'viewCount': 'not_a_number', 'commentCount': None}
     YouTubeTestFactory.configure_mock_api_for_workflow(mock_api, channel_data=malformed_channel_data, video_data=malformed_channel_data, comment_data=malformed_channel_data)
     malformed_results, _ = YouTubeTestFactory.create_test_steps_pipeline(service, mock_api, mock_db, steps_config=edge_steps)
+    assert 'video_id' in malformed_results['videos'], "Missing 'video_id' in malformed_results['videos']"
+    assert malformed_results['videos']['video_id'], "'video_id' is empty in malformed_results['videos']"
     malformed_video = malformed_results['videos']['video_id'][0]
     assert 'views' in malformed_video, "Missing 'views' in video with malformed statistics"
     assert 'comment_count' in malformed_video, "Missing 'comment_count' in video with malformed statistics"
