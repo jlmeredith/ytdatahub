@@ -1,4 +1,7 @@
 # YTDataHub
+***Development Note:  This entire application is 100% "vibe" or agentically coded.  I developed the specification and have modified it along the way, but 100% of the code is NOT written by me.  This has been a thought and learning exercise in understanding how to make agentic coding tools do what I want through simple language.  It is actually really great and I hope otherse find it useful once I get to v1.  
+
+The latest code push has the collection system mapping all Youtube public API details to a local database for personal analytics.  The idea behind the project is to create a local system that I can use to surface relevant content. Think advanced Youtube search but taylored to your subscription list.  ***
 
 > **Development Status**: This project is under active development as of May 2025. While most of the core functionality is working, some features may be experimental. A stable release version (1.0) is planned for June 2025.
 
