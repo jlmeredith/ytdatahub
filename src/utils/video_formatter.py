@@ -198,6 +198,90 @@ def extract_video_views(video, format_func=None):
         debug_log(f"Error extracting views for video {video_id}: {str(e)}")
         return '0'
 
+def extract_video_comments(video, format_func=None):
+    """
+    Extracts comment count from a video object using a consistent approach
+    
+    Args:
+        video (dict): A dictionary containing video data
+        format_func (function, optional): A function to format the comment count
+        
+    Returns:
+        str: Formatted comment count or '0' if not found
+    """
+    if not isinstance(video, dict):
+        return '0'
+        
+    video_id = video.get('video_id', video.get('id', 'unknown'))
+    comment_count = None
+    
+    # Log detailed debugging info to help identify the problem
+    debug_log(f"Video {video_id} extract_video_comments() - all keys: {list(video.keys()) if isinstance(video, dict) else 'Not a dict'}")
+    
+    # Try all possible paths to find comment data with detailed logging
+    try:
+        # Path 1: Direct comment_count field - handle all formats and validate
+        if 'comment_count' in video:
+            raw_count = video['comment_count']
+            if raw_count is not None and raw_count != '':
+                comment_count = str(raw_count).strip()
+                debug_log(f"Using direct comment_count field for {video_id}: {comment_count}")
+        
+        # Path 2: Check if statistics is a string (API sometimes returns serialized JSON)
+        if not comment_count and 'statistics' in video and isinstance(video['statistics'], str):
+            try:
+                stats_dict = json.loads(video['statistics'])
+                if 'commentCount' in stats_dict:
+                    comment_count = str(stats_dict['commentCount']).strip()
+                    video['comment_count'] = comment_count
+                    debug_log(f"Using parsed statistics string for {video_id}: {comment_count}")
+            except:
+                debug_log(f"Failed to parse statistics string for {video_id}")
+        
+        # Path 3: statistics.commentCount (YouTube API standard location)
+        if not comment_count and 'statistics' in video and isinstance(video['statistics'], dict):
+            if 'commentCount' in video['statistics']:
+                comment_count = str(video['statistics']['commentCount']).strip()
+                # Also store in standard location for consistency
+                video['comment_count'] = comment_count
+                debug_log(f"Using statistics.commentCount for {video_id}: {comment_count}")
+        
+        # Path 4: contentDetails.statistics.commentCount (alternative nested location)
+        if not comment_count and 'contentDetails' in video:
+            debug_log(f"Video {video_id} contentDetails keys: {list(video['contentDetails'].keys()) if isinstance(video['contentDetails'], dict) else 'Not a dict'}")
+            if isinstance(video['contentDetails'], dict) and 'statistics' in video['contentDetails']:
+                if isinstance(video['contentDetails']['statistics'], dict) and 'commentCount' in video['contentDetails']['statistics']:
+                    comment_count = str(video['contentDetails']['statistics']['commentCount']).strip()
+                    # Also store in standard location for consistency
+                    video['comment_count'] = comment_count
+                    debug_log(f"Using contentDetails.statistics.commentCount for {video_id}: {comment_count}")
+        
+        # Path 5: Check if comments array exists and count its length
+        if not comment_count and 'comments' in video:
+            if isinstance(video['comments'], list):
+                comment_count = str(len(video['comments']))
+                video['comment_count'] = comment_count
+                debug_log(f"Using comments array length for {video_id}: {comment_count}")
+        
+        # Default to 0 if no valid data found
+        if not comment_count:
+            comment_count = '0'
+            debug_log(f"No valid comment count found for video {video_id}, using '0'")
+        
+        # Apply formatting if requested
+        if format_func and callable(format_func):
+            try:
+                return format_func(comment_count)
+            except Exception as e:
+                debug_log(f"Error formatting comment count for {video_id}: {str(e)}")
+                return comment_count
+        
+        return comment_count
+        
+    except Exception as e:
+        debug_log(f"Error extracting comment count for video {video_id}: {str(e)}")
+        return '0'
+
 def fix_missing_views(videos):
     """Fix missing views data in video list"""
     if not videos:

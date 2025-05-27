@@ -45,6 +45,28 @@ The YouTube Data API uses a quota system where different operations consume diff
   - Can retrieve replies for only one parent comment per `comments.list` call
   - Can batch retrieve specific comments by ID using comma-separated values (up to 50)
 
+#### Comment Collection Parameters
+
+YTDataHub provides two key parameters to optimize comment collection:
+
+1. **max_comments_per_video**: Controls how many top-level comments to collect per video (0-100)
+   - Each increment of ~20 comments requires approximately one additional API call
+   - Setting to 0 skips comment collection entirely
+
+2. **max_replies_per_comment**: Controls how many replies to collect per top-level comment (0-50)
+   - Higher values increase data completeness but also increase API usage
+   - Setting to 0 skips collecting replies
+
+**Quota Impact Formula:**
+```
+API calls ≈ (videos * (ceil(max_comments_per_video/100) + has_replies * ceil(top_comments_with_replies * max_replies_per_comment/100)))
+```
+
+**Optimization Strategy:**
+- For lightweight collection: max_comments_per_video=10, max_replies_per_comment=0
+- For balanced collection: max_comments_per_video=20, max_replies_per_comment=5
+- For comprehensive analysis: max_comments_per_video=50, max_replies_per_comment=20
+
 ## General Optimization Techniques
 
 ### Use Parts Parameter Wisely

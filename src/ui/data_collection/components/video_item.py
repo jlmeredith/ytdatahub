@@ -6,13 +6,16 @@ from datetime import datetime
 import re
 from ...data_collection.utils.data_conversion import format_number
 
-def render_video_item(video, index=0):
+def render_video_item(video, index=0, selectable=False):
     """
-    Render a single video item in a consistent, readable format
+    Render a single video item in a consistent, readable format, with optional selection checkbox.
     
     Args:
         video (dict): Video data to render
         index (int): Index of the video in the list (for unique keys)
+        selectable (bool): If True, show a checkbox for selecting this video
+    Returns:
+        bool or None: If selectable, returns whether the video is selected; else None
     """
     if not video:
         return
@@ -194,12 +197,17 @@ def render_video_item(video, index=0):
     
     # Create a card-like display
     col1, col2 = st.columns([1, 3])
-    
-    # Left column for thumbnail and primary stats
+    selection = None
     with col1:
         # Make the thumbnail clickable
         st.markdown(f"[![Thumbnail]({thumbnail_url})]({video_url})")
         st.caption(f"Published: {formatted_date}")
+        if selectable:
+            selection = st.checkbox(
+                "Select this video",
+                key=f"select_video_{video_id}_{index}",
+                value=False
+            )
 
     # Right column for title and details
     with col2:
@@ -277,3 +285,4 @@ def render_video_item(video, index=0):
                     st.caption("(Description truncated)")
                 else:
                     st.write(description)
+    return selection

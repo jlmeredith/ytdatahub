@@ -19,6 +19,11 @@ def render_collection_steps(channel_input, youtube_service):
         channel_input: Channel ID/URL input
         youtube_service: Instance of the YouTubeService
     """
+    print(f"[UI PRINT] At top of render_collection_steps. session_state keys: {list(st.session_state.keys())}")
+    debug_log(f"[UI DEBUG] At top of render_collection_steps. session_state keys: {list(st.session_state.keys())}")
+    print(f"[UI PRINT] session_state: {dict(st.session_state)}")
+    debug_log(f"[UI DEBUG] session_state: {dict(st.session_state)}")
+    
     # Get the channel info from session state with safe access
     channel_info = st.session_state.get('channel_info_temp')
     
@@ -241,7 +246,10 @@ def render_collection_steps(channel_input, youtube_service):
             
             # Display videos in a more user-friendly format
             for i, video in enumerate(videos_to_display):
+                comment_count = len(video.get('comments', [])) if 'comments' in video else 0
+                debug_log(f"[UI] Video '{video.get('title', 'Unknown')}' has {comment_count} comments fetched")
                 render_video_item(video, i)
+                st.write(f"💬 {comment_count} comments" if comment_count > 0 else "💬 No comments")
                 # Add a separator between videos
                 st.divider()
             
@@ -259,6 +267,8 @@ def render_collection_steps(channel_input, youtube_service):
         st.success("✅ Videos fetched successfully!")
         
         # STEP 3: COMMENTS DATA
+        print("[UI PRINT] Entering Step 3: Comments Data")
+        debug_log("[UI DEBUG] Entering Step 3: Comments Data")
         st.divider()
         st.subheader("Step 3: Comments Data")
         
@@ -371,54 +381,71 @@ def render_collection_steps(channel_input, youtube_service):
                 st.warning("No data available to save. Please complete the data collection steps first.")
         else:
             # Option to download comments
+            print("[UI PRINT] About to render Fetch Comments button")
+            debug_log("[UI DEBUG] About to render Fetch Comments button")
             st.write("Now you can fetch comments for the downloaded videos.")
-            col1, col2 = st.columns([3, 1])
+            # Enhanced comment collection configuration with clearer labels and explanations
+            st.write("### Configure Comment Collection Parameters")
+            
+            col1, col2 = st.columns([1, 1])
             with col1:
                 max_comments = st.slider(
-                    "Comments Per Video", 
+                    "Top-Level Comments Per Video", 
                     min_value=0, 
                     max_value=100, 
                     value=st.session_state.get('max_comments_per_video', 10),
-                    help="Maximum number of comments to import per video (0 to skip comments)"
+                    help="Maximum number of top-level comments to import per video (0 to skip comments)"
                 )
+                st.caption("Controls how many primary comments to collect for each video")
+            
             with col2:
-                fetch_all_comments = st.checkbox("Fetch All Available", help="Attempt to fetch all available comments (up to API limits)")
+                max_replies = st.slider(
+                    "Replies Per Top-Level Comment",
+                    min_value=0,
+                    max_value=50,  # Increased to support more replies
+                    value=st.session_state.get('max_replies_per_comment', 5),
+                    help="Maximum number of replies to fetch for each top-level comment"
+                )
+                st.caption("Controls how many replies to collect for each primary comment")
+            
+            # Add explanatory text about API quota impact
+            st.info("💡 Higher values will provide more comprehensive data but may consume more API quota.")
+            
+            # Option to fetch all available comments (up to API limits)
+            fetch_all_comments = st.checkbox("Fetch All Available Comments", 
+                                           help="Attempt to fetch all available comments (up to YouTube API limits)")
             
             if fetch_all_comments:
                 st.session_state.max_comments_per_video = 100  # Set to max API limit
+                st.session_state.max_replies_per_comment = 50  # Increased max replies
+                st.warning("⚠️ Fetching all comments may take longer and consume more API quota.")
             else:
                 st.session_state.max_comments_per_video = max_comments
-            
+                st.session_state.max_replies_per_comment = max_replies
+            print("[UI PRINT] Rendering Fetch Comments button now")
+            debug_log("[UI DEBUG] Rendering Fetch Comments button now")
             if st.button("Fetch Comments", type="primary"):
                 # Only proceed if we have videos
-                if videos:
-                    with st.spinner("Fetching comments from YouTube..."):
-                        # Create options with only comments retrieval enabled
-                        options = {
-                            'fetch_channel_data': False,
-                            'fetch_videos': False,
-                            'fetch_comments': True,
-                            'max_videos': 0,
-                            'max_comments_per_video': st.session_state.max_comments_per_video
-                        }
-                        
-                        debug_log(f"COMMENT UI DEBUG: Starting comment fetch with max_comments_per_video={st.session_state.max_comments_per_video}")
-                        
-                        # Use existing channel_info but update with comments
-                        updated_channel_info = youtube_service.collect_channel_data(channel_input, options, existing_data=channel_info)
-                        
-                        if updated_channel_info:
-                            # Store the updated channel info with comments
-                            st.session_state.channel_info_temp = updated_channel_info
-                            st.session_state.current_channel_data = updated_channel_info
-                            st.session_state.comments_fetched = True  # Mark comments as fetched
-                            
-                            # Force UI refresh to show the updated comment counts and summary view
-                            st.rerun()
-                        else:
-                            st.error("Failed to fetch comment data from YouTube.")
-                else:
-                    st.error("No videos available to fetch comments for.")
+                print(f"[UI PRINT] Fetch Comments button pressed. videos type={type(videos)}, len={len(videos)}, options={{'fetch_comments': True, 'max_comments_per_video': {st.session_state.max_comments_per_video}, 'max_replies_per_comment': {st.session_state.max_replies_per_comment}}}, channel_info keys={list(channel_info.keys()) if channel_info else 'None'}")
+                debug_log(f"[UI DEBUG] Fetch Comments button pressed. videos type={type(videos)}, len={len(videos)}, options={{'fetch_comments': True, 'max_comments_per_video': {st.session_state.max_comments_per_video}, 'max_replies_per_comment': {st.session_state.max_replies_per_comment}}}, channel_info keys={list(channel_info.keys()) if channel_info else 'None'}")
+                with st.spinner("Fetching comments from YouTube..."):
+                    options = {
+                        'fetch_channel_data': False,
+                        'fetch_videos': False,
+                        'fetch_comments': True,
+                        'max_videos': 0,
+                        'max_comments_per_video': st.session_state.max_comments_per_video,
+                        'max_replies_per_comment': st.session_state.max_replies_per_comment
+                    }
+                    # Always pass the current channel_info (with video_id) as existing_data
+                    updated_channel_info = youtube_service.collect_channel_data(channel_input, options, existing_data=channel_info)
+                    if updated_channel_info:
+                        st.session_state.channel_info_temp = updated_channel_info
+                        st.session_state.current_channel_data = updated_channel_info
+                        st.session_state.comments_fetched = True
+                        st.rerun()
+                    else:
+                        st.error("Failed to fetch comment data from YouTube.")
     else:
         # Video fetching options
         st.write("You need to fetch videos for this channel.")

@@ -334,18 +334,35 @@ for video in videos:
 ### Fetching Comments
 
 ```python
-# Get comments for a specific video
+# Get comments for a specific video with detailed control
 comments = api.get_video_comments(
-    video_id="VIDEO_ID",
-    max_comments=50  # Control how many comments to fetch
+    channel_info=channel_info,
+    max_comments_per_video=50,       # Control how many top-level comments to fetch
+    max_replies_per_comment=10       # Control how many replies to fetch per top-level comment
 )
 
 # Process comments
-for comment in comments:
-    print(f"Author: {comment['snippet']['authorDisplayName']}")
-    print(f"Comment: {comment['snippet']['textDisplay']}")
-    print(f"Likes: {comment['snippet']['likeCount']}")
+for video in comments['video_id']:
+    print(f"Video: {video['title']}")
+    
+    for comment in video['comments']:
+        # Check if comment is a top-level comment or reply
+        if 'parent_id' in comment:
+            print(f"  └─ Reply by {comment['comment_author']}: {comment['comment_text']}")
+        else:
+            print(f"Comment by {comment['comment_author']}: {comment['comment_text']}")
+            print(f"Likes: {comment['like_count']}")
 ```
+
+#### Optimizing Comment Collection
+
+You can customize how deep you want to collect comments based on your analysis needs:
+
+1. **Top-level comments only**: Set `max_replies_per_comment=0`
+2. **Limited replies**: For a representative sample, values between 3-10 are typically sufficient
+3. **Comprehensive collection**: For deeper analysis, use higher values (up to 50)
+
+Setting appropriate values helps balance data completeness against API quota usage.
 
 ## Best Practices Summary
 

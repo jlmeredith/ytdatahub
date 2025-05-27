@@ -16,6 +16,23 @@ def render_utilities_tab():
     st.info("Utilities tab loaded")
     st.header("Utilities")
     
+    # --- Full App Reset Button ---
+    st.divider()
+    if st.button("Reset App (Full)", type="primary"):
+        # 1. Clear all caches
+        clear_cache(clear_api_cache=True, clear_python_cache=True, clear_db_cache=True, verbose=True)
+        # 2. Clear and re-initialize the database
+        from src.config import SQLITE_DB_PATH
+        from src.database.sqlite import SQLiteDatabase
+        db = SQLiteDatabase(SQLITE_DB_PATH)
+        db.clear_all_data()
+        db.initialize_db()
+        # 3. Clear all session state
+        st.session_state.clear()
+        # 4. Rerun the app for a truly fresh state
+        st.success("App fully reset! All caches, database, and session state cleared.")
+        st.rerun()
+    
     # Cache Management Section
     try:
         st.subheader("Cache Management")
@@ -235,26 +252,23 @@ def render_utilities_tab():
                         
                         # Call the clear_all_data method
                         success = db.clear_all_data()
-                        
                         if success:
+                            # Re-initialize the schema after clearing
+                            db.initialize_db()
                             # Clear session state cache as well
                             if 'use_data_cache' in st.session_state:
                                 # Keep track of current cache setting
                                 current_cache_setting = st.session_state.use_data_cache
-                                
                                 # Clear all session state keys that start with 'channel_data_'
                                 keys_to_remove = [k for k in st.session_state.keys() if k.startswith('channel_data_')]
                                 for key in keys_to_remove:
                                     del st.session_state[key]
-                                
                                 # Clear the channels table cache if it exists
                                 if 'analysis_channels_table' in st.session_state:
                                     del st.session_state['analysis_channels_table']
-                                
                                 # Restore cache setting
                                 st.session_state.use_data_cache = current_cache_setting
-                            
-                            st.success("✅ Database successfully cleared! A backup was created before deletion.")
+                            st.success("✅ Database successfully cleared and schema re-initialized! A backup was created before deletion.")
                             st.info("The database has been reset and all tables have been recreated. You can now import new data.")
                         else:
                             st.error("❌ There was an error clearing the database. Please check the logs for details.")

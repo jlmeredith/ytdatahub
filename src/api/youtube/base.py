@@ -8,9 +8,23 @@ import time
 import random
 import googleapiclient.discovery
 import googleapiclient.errors
-import streamlit as st
 from datetime import datetime
 from typing import Dict, Any, Optional, Union
+
+# Try to import streamlit but don't fail if it's not available
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    STREAMLIT_AVAILABLE = False
+    # Create a dummy st module with cache_resource decorator for compatibility
+    class DummySt:
+        def cache_resource(self, func):
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper
+            
+    st = DummySt()
 
 from src.utils.helpers import debug_log
 

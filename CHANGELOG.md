@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive UI display system for channel data with collapsible field explorer
 - Save operation manager with detailed operation tracking and feedback
 - UI integration for comprehensive display and save operation components
+- Enhanced comment collection controls for specifying top-level comments and reply counts per video
+
+### Fixed
+
+- Comment collection workflow now properly retrieves video metadata if needed
+- Added missing `store_comment` method to CommentRepository for handling single comments
+- Fixed comment reply collection to properly store replies to top-level comments
+- Completed May 26, 2025: All temporary debug files and documentation related to comment collection fix removed
 
 ### Improved
 
@@ -44,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full API responses are now saved in both main and history tables for channels and playlists.
 - Fixed missing/mismatched fields and ensured all numeric fields are stored as integers.
 - Added/expanded tests to verify all required fields are saved and persisted.
+- Full YouTube API video data (including all fields and the raw JSON) is now reliably saved to the database for both new and refresh channel workflows. This resolves previous issues where only minimal data was stored.
+- Improved diagnostic logging for missing/partial video data and schema compliance.
 
 ## [0.9.0] - 2025-04-30
 
@@ -108,3 +118,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial API integration issues
 - Basic error handling for failed requests
+
+## [2024-06] Video Table Schema Alignment
+### Changed
+- The `videos` table schema now matches only the fields returned by the public YouTube API for non-owners.
+- All unnecessary, owner-only, or deprecated columns have been removed.
+- Ingestion and storage logic ensures only canonical fields are stored as columns, with all other data preserved in `videos_history` as full JSON.
+- This brings the schema and data flow into full alignment with the official API documentation.

@@ -276,3 +276,8 @@ st.session_state['update_in_progress'] = True|False
 - Backfill scripts are to be removed or archived after all environments are migrated and tests pass.
 - No migration or fix logic is left in production code after migration is complete.
 - The codebase is kept clean and modern, with no legacy cruft left behind.
+
+## Video Data Storage (2024-06 Update)
+- The `videos` table now only stores fields present in the public YouTube API response for non-owners.
+- All other/nested/rare fields are preserved in `videos_history` as full JSON.
+- The workflow now guarantees schema alignment with the official API and robust time series storage for all video data.

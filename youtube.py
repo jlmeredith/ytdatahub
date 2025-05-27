@@ -2,8 +2,12 @@
 YTDataHub - YouTube Data Collection, Storage, and Analysis Application.
 Entry point for the Streamlit application.
 """
-import streamlit as st
+import sys
 import os
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+import streamlit as st
 from pathlib import Path
 from dotenv import load_dotenv
 import urllib.parse

@@ -127,43 +127,78 @@ class SQLiteDatabase:
                 FOREIGN KEY (channel_id) REFERENCES channels (channel_id)
             )
             ''')
-            # Create the videos table (full schema)
+            # Create the videos table (full public YouTube API schema for non-owners)
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 youtube_id TEXT UNIQUE NOT NULL,
-                channel_id INTEGER,
+                kind TEXT,
+                etag TEXT,
+                channel_id TEXT,
                 title TEXT,
                 description TEXT,
                 published_at TEXT,
-                view_count INTEGER,
-                like_count INTEGER,
-                dislike_count INTEGER,
-                favorite_count INTEGER,
-                comment_count INTEGER,
-                duration TEXT,
-                dimension TEXT,
-                definition TEXT,
-                caption BOOLEAN,
-                licensed_content BOOLEAN,
-                projection TEXT,
-                privacy_status TEXT,
-                license TEXT,
-                embeddable BOOLEAN,
-                public_stats_viewable BOOLEAN,
-                made_for_kids BOOLEAN,
-                thumbnail_default TEXT,
-                thumbnail_medium TEXT,
-                thumbnail_high TEXT,
-                tags TEXT,
-                category_id INTEGER,
-                live_broadcast_content TEXT,
+                snippet_channel_id TEXT,
+                snippet_channel_title TEXT,
+                snippet_tags TEXT, -- JSON array
+                snippet_category_id TEXT,
+                snippet_live_broadcast_content TEXT,
+                snippet_default_language TEXT,
+                snippet_localized_title TEXT,
+                snippet_localized_description TEXT,
+                snippet_default_audio_language TEXT,
+                -- Thumbnails (all sizes as JSON)
+                snippet_thumbnails_default TEXT,
+                snippet_thumbnails_medium TEXT,
+                snippet_thumbnails_high TEXT,
+                snippet_thumbnails_standard TEXT,
+                snippet_thumbnails_maxres TEXT,
+                -- contentDetails
+                content_details_duration TEXT,
+                content_details_dimension TEXT,
+                content_details_definition TEXT,
+                content_details_caption TEXT,
+                content_details_licensed_content BOOLEAN,
+                content_details_region_restriction_allowed TEXT, -- JSON array
+                content_details_region_restriction_blocked TEXT, -- JSON array
+                content_details_content_rating TEXT, -- JSON object
+                content_details_projection TEXT,
+                content_details_has_custom_thumbnail BOOLEAN,
+                -- status
+                status_upload_status TEXT,
+                status_failure_reason TEXT,
+                status_rejection_reason TEXT,
+                status_privacy_status TEXT,
+                status_publish_at TEXT,
+                status_license TEXT,
+                status_embeddable BOOLEAN,
+                status_public_stats_viewable BOOLEAN,
+                status_made_for_kids BOOLEAN,
+                -- statistics
+                statistics_view_count INTEGER,
+                statistics_like_count INTEGER,
+                statistics_dislike_count INTEGER,
+                statistics_favorite_count INTEGER,
+                statistics_comment_count INTEGER,
+                -- player
+                player_embed_html TEXT,
+                player_embed_height INTEGER,
+                player_embed_width INTEGER,
+                -- topicDetails
+                topic_details_topic_ids TEXT, -- JSON array
+                topic_details_relevant_topic_ids TEXT, -- JSON array
+                topic_details_topic_categories TEXT, -- JSON array
+                -- liveStreamingDetails
+                live_streaming_details_actual_start_time TEXT,
+                live_streaming_details_actual_end_time TEXT,
+                live_streaming_details_scheduled_start_time TEXT,
+                live_streaming_details_scheduled_end_time TEXT,
+                live_streaming_details_concurrent_viewers INTEGER,
+                live_streaming_details_active_live_chat_id TEXT,
+                -- localizations
+                localizations TEXT, -- JSON object
                 fetched_at TEXT,
-                updated_at TEXT,
-                local_thumbnail_default TEXT,
-                local_thumbnail_medium TEXT,
-                local_thumbnail_high TEXT,
-                FOREIGN KEY (channel_id) REFERENCES channels (id)
+                updated_at TEXT
             )
             ''')
             # Create the comments table (full schema)

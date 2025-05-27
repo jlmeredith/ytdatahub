@@ -5,6 +5,7 @@ Provides methods for fetching and processing video data.
 import logging
 import time
 import json
+import copy
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -48,7 +49,7 @@ class VideoService(BaseService):
                 log(f"[ERROR] No playlist_id found in channel_data for channel: {channel_data.get('channel_id')}")
                 return {'video_id': [], 'error_videos': 'No playlist_id found. Cannot fetch videos.', 'debug_logs': debug_logs}
             log(f"[WORKFLOW] About to fetch videos using playlist_id: {playlist_id}")
-            response = self.api.video_client.get_channel_videos({'playlist_id': playlist_id}, max_results=max_results)
+            response = self.api.video_client.get_channel_videos({'playlist_id': playlist_id}, max_videos=max_results)
             log(f"[WORKFLOW] Video API response: {json.dumps(response)[:500]}")
             quota_used += 1  # Track quota usage
             if response and 'video_id' in response and isinstance(response['video_id'], list):
@@ -109,6 +110,9 @@ class VideoService(BaseService):
                 for metric in ['views', 'likes', 'comment_count']:
                     if metric in video and isinstance(video[metric], str) and video[metric].isdigit():
                         video[metric] = int(video[metric])
+                # Attach the full API response for this video
+                if 'raw_api_response' not in video:
+                    video['raw_api_response'] = copy.deepcopy(video)
                 # Always append the video, even if stats are missing
                 videos.append(video)
             
@@ -119,7 +123,7 @@ class VideoService(BaseService):
                 while next_page_token and len(videos) < max_results:
                     response = self.api.video_client.get_channel_videos(
                         channel_data,
-                        max_results=max_results,
+                        max_videos=max_results,
                         page_token=next_page_token
                     )
                     quota_used += 1
@@ -173,6 +177,10 @@ class VideoService(BaseService):
                         for metric in ['views', 'likes', 'comment_count']:
                             if metric in video and isinstance(video[metric], str) and video[metric].isdigit():
                                 video[metric] = int(video[metric])
+                        
+                        # Attach the full API response for this video
+                        if 'raw_api_response' not in video:
+                            video['raw_api_response'] = copy.deepcopy(video)
                         
                         videos.append(video)
                     

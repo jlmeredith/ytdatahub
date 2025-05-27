@@ -42,7 +42,10 @@ YTDataHub offers a structured approach to collecting YouTube data that ensures y
 
 ### Step 3: Comments Data
 
-1. Select how many comments to fetch per video (up to 100, or skip by setting to 0)
+1. Configure comment collection parameters:
+   - **Top-Level Comments Per Video**: Control how many primary comments to collect (0-100)
+   - **Replies Per Top-Level Comment**: Control how many replies to collect per comment (0-50)
+   - Enable "Fetch All Available" to attempt collecting maximum comments (up to API limits)
 2. Click "Fetch Comments" to download comment content
 3. After comments are fetched, a summary will show key statistics
 4. Click the "Go to Data Storage Tab" button to proceed to the next step

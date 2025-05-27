@@ -190,6 +190,9 @@ class VideoClient(YouTubeBaseClient):
                         video_data['comments_disabled'] = True
                         videos_with_comments_disabled += 1
                     
+                    # Attach the full API response for this video
+                    video_data['raw_api_response'] = video
+                    
                     # Add the video to the channel data
                     channel_info['video_id'].append(video_data)
                     total_videos_fetched += 1

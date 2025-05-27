@@ -82,13 +82,56 @@ class YouTubeAPI:
         """Get detailed information for a batch of videos by their IDs (backward compatible alias)"""
         return self.video_client.get_video_details_batch(video_ids)
     
-    def get_video_comments(self, channel_info, max_comments_per_video=10, page_token=None):
-        """Get comments for each video in the channel"""
-        return self.comment_client.get_video_comments(channel_info, max_comments_per_video, page_token=page_token)
+    def get_video_comments(self, channel_info, max_comments_per_video=10, max_replies_per_comment=2, page_token=None, optimize_quota=False):
+        """Get comments for each video in the channel, with support for limiting replies per top-level comment."""
+        return self.comment_client.get_video_comments(
+            channel_info,
+            max_comments_per_video,
+            max_replies_per_comment=max_replies_per_comment,
+            page_token=page_token,
+            optimize_quota=optimize_quota
+        )
     
     def resolve_custom_channel_url(self, custom_url_or_handle):
         """Resolve a custom URL or handle (@username) to a channel ID"""
         return self.channel_client.resolver.resolve_custom_channel_url(custom_url_or_handle)
+    
+    def get_playlist_id_for_channel(self, channel_id: str) -> str:
+        """
+        Fetch the uploads playlist ID for a channel using the YouTube API.
+        Returns the playlist ID string or empty string if not found or invalid.
+        
+        Args:
+            channel_id (str): YouTube channel ID
+            
+        Returns:
+            str: Uploads playlist ID or empty string if not found/invalid
+        """
+        try:
+            from src.utils.helpers import debug_log
+            debug_log(f"[API] Fetching uploads playlist ID for channel_id={channel_id}")
+            
+            # Use the channel client to get channel info
+            channel_info = self.channel_client.get_channel_info(channel_id)
+            if not channel_info:
+                debug_log(f"[API] No channel info found for channel_id={channel_id}")
+                return ''
+            
+            # Extract playlist ID from channel info
+            playlist_id = channel_info.get('playlist_id', '')
+            
+            # Validate playlist_id: must not be channel_id and must start with 'UU'
+            if not playlist_id or playlist_id == channel_id or not playlist_id.startswith('UU'):
+                debug_log(f"[API][ERROR] Invalid playlist_id fetched for channel_id={channel_id}: {playlist_id}")
+                return ''
+            
+            debug_log(f"[API] Found valid playlist_id={playlist_id} for channel_id={channel_id}")
+            return playlist_id
+            
+        except Exception as e:
+            from src.utils.helpers import debug_log
+            debug_log(f"[API] Error fetching playlist_id for channel_id={channel_id}: {str(e)}")
+            return ''
     
     def test_connection(self):
         """

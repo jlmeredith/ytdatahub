@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 from src.utils.helpers import debug_log
 from src.utils.video_standardizer import standardize_video_data, extract_standardized_videos
-from src.utils.video_formatter import extract_video_views
+from src.utils.video_formatter import extract_video_views, extract_video_comments
 from ..utils.data_conversion import format_number
 
 def render_video_section(videos_data, youtube_service, channel_id):
@@ -110,6 +110,10 @@ def render_video_section(videos_data, youtube_service, channel_id):
                 views_extracted = extract_video_views(first_video)
                 views_formatted = extract_video_views(first_video, format_number)
                 
+                # Get comment info using our improved utility function
+                comments_extracted = extract_video_comments(first_video)
+                comments_formatted = extract_video_comments(first_video, format_number)
+
                 # Display comprehensive debug info
                 st.code(f"Original 'views' field: {original_views}")
                 st.code(f"Original 'comment_count' field: {first_video.get('comment_count', 'Not found')}")
@@ -122,9 +126,12 @@ def render_video_section(videos_data, youtube_service, channel_id):
                 st.code(f"statistics.commentCount: {statistics_obj.get('commentCount', 'Not found') if has_statistics else 'No statistics object'}")
                 st.code(f"contentDetails.statistics.viewCount: {first_video.get('contentDetails', {}).get('statistics', {}).get('viewCount', 'Not found')}")
                 st.code(f"contentDetails.statistics.commentCount: {first_video.get('contentDetails', {}).get('statistics', {}).get('commentCount', 'Not found')}")
-                st.code(f"Extracted raw value: {views_extracted}")
-                st.code(f"Extracted formatted value: {views_formatted}")
-                st.code(f"Final used value: {views_extracted if views_extracted != '0' else 'No valid views found'}")
+                st.code(f"Extracted views raw value: {views_extracted}")
+                st.code(f"Extracted views formatted value: {views_formatted}")
+                st.code(f"Extracted comments raw value: {comments_extracted}")
+                st.code(f"Extracted comments formatted value: {comments_formatted}")
+                st.code(f"Final used views value: {views_extracted if views_extracted != '0' else 'No valid views found'}")
+                st.code(f"Final used comments value: {comments_extracted if comments_extracted != '0' else 'No valid comments found'}")
                 
                 # If we couldn't extract real views, show error
                 if views_extracted == '0' and original_views == '0':
@@ -169,8 +176,8 @@ def render_video_section(videos_data, youtube_service, channel_id):
         # Handle views data with better fallback navigation through structure 
         views = extract_video_views(video, format_func=None)  # Disable formatting for test compatibility
         
-        # Extract comment count
-        comment_count = video.get('comment_count', '0')
+        # Extract comment count with better extraction logic
+        comment_count = extract_video_comments(video)
         debug_log(f"Video {video_id} comment_count: {comment_count}")
         
         # Format comment count
@@ -244,12 +251,16 @@ def render_video_section(videos_data, youtube_service, channel_id):
             
             debug_log(f"Video {video_id} views for pagination: {views}")
             
+            # Extract comment count with better extraction logic
+            comment_count = extract_video_comments(video)
+            
             # Ensure all values are strings to prevent ArrowInvalid errors when creating dataframe
             row = {
                 "Video ID": str(video_id),
                 "Title": str(title),
                 "Published Date": str(published),
-                "Views": str(views)
+                "Views": str(views),
+                "Comments": str(comment_count)
             }
             if has_deltas:
                 row["View Δ"] = str(video.get("view_delta", ""))

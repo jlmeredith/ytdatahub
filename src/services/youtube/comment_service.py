@@ -32,24 +32,46 @@ class CommentService(BaseService):
         self.logger = logging.getLogger(__name__)
         self._last_comments_response = None
     
-    def collect_video_comments(self, channel_data: Dict, max_comments_per_video: int = 100, optimize_quota: bool = False) -> Dict:
+    def collect_video_comments(self, channel_data, **kwargs):
         """
-        Fetch and populate comments for videos in the channel data.
+        Collect comments for videos in the channel data.
         
         Args:
             channel_data: Dictionary containing channel data with videos
-            max_comments_per_video: Maximum number of comments per video to retrieve
-            optimize_quota: Whether to optimize quota usage
-            
-        Returns:
-            dict: Updated channel data with comments
+            **kwargs: Keyword arguments that can include:
+                - options: Dictionary of options
+                - max_comments_per_video: Maximum number of comments to fetch per video
+                - max_replies_per_comment: Maximum number of replies to fetch per comment
+                - optimize_quota: Whether to optimize quota usage
         """
-        videos = channel_data.get('video_id', [])
-        if not videos:
-            debug_log("No videos available to fetch comments")
+        # Handle both options dict and direct keyword arguments
+        options = kwargs.get('options', {})
+        if not options:
+            options = kwargs  # If no options dict provided, use kwargs directly
+            
+        debug_log(f"[COMMENT SERVICE] Starting comment collection with options: {options}")
+        
+        # Early debug check for videos
+        if 'video_id' not in channel_data:
+            debug_log(f"[COMMENT SERVICE] No videos found in channel_data. Keys: {list(channel_data.keys())}")
             return channel_data
         
-        debug_log(f"Fetching comments for {len(videos)} videos, max_comments_per_video: {max_comments_per_video}, optimize_quota: {optimize_quota}")
+        # Debug log the videos we have
+        debug_log(f"[COMMENT SERVICE] Found {len(channel_data['video_id'])} videos for comment collection")
+        for i, video in enumerate(channel_data['video_id'][:2]):  # Log first 2 videos
+            video_id = video.get('id') or video.get('video_id')
+            debug_log(f"[COMMENT SERVICE] Video {i+1}: ID={video_id}, Title={video.get('snippet', {}).get('title', 'Unknown')}")
+            if 'statistics' in video:
+                debug_log(f"[COMMENT SERVICE] Video {i+1} statistics: {video['statistics']}")
+    
+        # Extract parameters from options
+        videos = channel_data['video_id']
+        max_comments_per_video = options.get('max_comments_per_video', 100)  # Default to 100
+        max_replies_per_comment = options.get('max_replies_per_comment', 5)  # Default to 5 replies
+        optimize_quota = options.get('optimize_quota', True)  # Default to True
+        
+        debug_log(f"Fetching comments for {len(videos)} videos, max_comments_per_video: {max_comments_per_video}, max_replies_per_comment: {max_replies_per_comment}, optimize_quota: {optimize_quota}")
+        print(f"[COMMENT SERVICE] Found {len(videos)} videos, calling API get_video_comments")
         
         try:
             # Track quota if quota service is provided
@@ -57,7 +79,13 @@ class CommentService(BaseService):
                 self.quota_service.track_quota_usage('commentThreads.list')
                 
             # Use the API's get_video_comments method which returns both comments and stats
-            comments_response = self.api.get_video_comments(channel_data, max_comments_per_video=max_comments_per_video, optimize_quota=optimize_quota)
+            print(f"[COMMENT SERVICE] About to call self.api.get_video_comments")
+            comments_response = self.api.get_video_comments(
+                channel_data, 
+                max_comments_per_video=max_comments_per_video,
+                max_replies_per_comment=max_replies_per_comment,
+                optimize_quota=optimize_quota
+            )
             
             # Store response for delta calculations
             self._last_comments_response = comments_response
@@ -84,6 +112,9 @@ class CommentService(BaseService):
             # Update videos with comments if available
             if 'video_id' in comments_response:
                 self._process_comment_response(channel_data, comments_response)
+            
+            # Always clean up comment tracking data before returning or storing
+            self.cleanup_comment_tracking_data(channel_data)
             
             # Special case for the test_sentiment_delta_tracking test
             if (channel_data.get('channel_id') == 'UC_test_channel' and 

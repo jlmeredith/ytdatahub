@@ -64,6 +64,74 @@ This document provides solutions for common issues you might encounter when usin
    - Try using date ranges to break up collection into smaller chunks
    - Use the "Fetch All Videos" option, which implements pagination for large collections
 
+## Comment Collection Issues
+
+### Missing Comment Storage
+
+**Symptoms**: 
+- Comments not appearing in database after collection
+- Error: `CommentRepository errors: object has no attribute 'store_comment'`
+
+**Solution**:
+If you encounter this issue in an older version, ensure the CommentRepository class has a `store_comment` method to handle storing a single comment. The standard implementation should delegate to the existing `store_comments` method like this:
+
+```python
+def store_comment(self, comment, video_db_id, fetched_at):
+    """Store a single comment by calling the plural form with a list of one item."""
+    return self.store_comments([comment], video_db_id, fetched_at)
+```
+
+### Customizing Comment Collection Depth
+
+**Feature**:
+YTDataHub allows you to control how many comments are collected:
+
+- **Top-Level Comments Per Video**: Controls how many primary comments to collect for each video (0-100)
+- **Replies Per Top-Level Comment**: Controls how many replies to collect for each primary comment (0-50)
+
+**Usage Tips**:
+- Setting either value to 0 will skip collecting that level of comments
+- Higher values provide more comprehensive data but consume more API quota
+- For a representative sample, 10-25 top comments and 5-10 replies is often sufficient
+- For in-depth analysis, use higher values or the "Fetch All Available" option
+
+**Common Configurations**:
+
+| Focus Area                 | Top-Level Comments | Replies Per Comment | Best For                              |
+|----------------------------|--------------------|--------------------|---------------------------------------|
+| Quick Overview             | 10                 | 0                  | Basic sentiment analysis              |
+| General Analysis           | 20                 | 5                  | Balanced data collection              |
+| Detailed Engagement        | 50                 | 10                 | Engagement metrics and trends         |
+| Comprehensive Research     | 100                | 20                 | Academic research, audience studies   |
+
+**Advanced Usage**:
+For detailed examples and scenarios, see the [Comment Collection Scenarios](../guides/comment-collection-scenarios.md) guide.
+
+**Troubleshooting Collection Issues**:
+- If no comments are collected, check if comments are disabled on the videos
+- For videos with large comment sections, pagination is handled automatically
+- If "Fetch All Available" returns fewer comments than expected, the remaining comments might require additional API quota
+
+### Missing Video Metadata When Collecting Comments
+
+**Symptoms**:
+- Error when trying to collect comments for a video ID that exists in the comments table but not in the videos table
+- Missing related video data when analyzing comments
+
+**Solution**:
+Make sure the comment collection workflow checks for the existence of the video metadata and fetches it if needed before attempting to collect comments.
+
+### Missing Comment Replies
+
+**Symptoms**:
+- Only top-level comments appear in the database
+- Reply counts show non-zero values but no replies are stored
+
+**Solution**:
+Check that the comment collection process includes a specific call to fetch replies using the YouTube API's `commentThreads.list` method with the `part=replies` parameter.
+
+Note: These issues were addressed and fixed in version 2.3.0 (May 2025) of YTDataHub.
+
 ## Database Issues
 
 1. **Connection Errors**:

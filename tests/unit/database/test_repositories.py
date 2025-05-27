@@ -155,6 +155,16 @@ class TestRepositories(unittest.TestCase):
         )
         ''')
         
+        # Create the comments_history table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS comments_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id TEXT,
+            fetched_at TEXT,
+            raw_comment_info TEXT
+        )
+        ''')
+        
         # Insert test data
         # Channel
         cursor.execute('''
@@ -257,6 +267,47 @@ class TestRepositories(unittest.TestCase):
         # For DatabaseUtility, get_by_id should always return None
         result = self.db_util.get_by_id(1)
         self.assertIsNone(result)
+        
+    def test_end_to_end_comment_ingestion(self):
+        """Test full pipeline: insert video, store comments, verify DB and analytics."""
+        # Insert a new test video
+        conn = sqlite3.connect(self.test_db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO videos (youtube_id, title, fetched_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now'))", ('test_vid_123', 'End-to-End Test Video'))
+        conn.commit()
+        cursor.execute("SELECT id FROM videos WHERE youtube_id = ?", ('test_vid_123',))
+        video_db_id = cursor.fetchone()[0]
+        conn.close()
+        # Simulate fetched comments
+        comments = [
+            {
+                'comment_id': f'cmt_{i}',
+                'comment_text': f'Test comment {i}',
+                'comment_author': f'User{i}',
+                'comment_published_at': '2024-01-01T00:00:00Z',
+                'like_count': str(i),
+                'parent_id': '',
+                'is_reply': False,
+                'author_profile_image_url': '',
+                'author_channel_id': f'chan_{i}',
+            } for i in range(5)
+        ]
+        # Store comments
+        self.comment_repo.create_comment_ingestion_stats_table()
+        self.comment_repo.store_comments(comments, video_db_id=video_db_id)
+        self.comment_repo.log_comment_ingestion_stats(video_db_id, len(comments), len(comments))
+        # Verify comments in DB
+        stored_comments = self.comment_repo.get_video_comments(video_db_id)
+        self.assertEqual(len(stored_comments), 5)
+        # Verify analytics
+        conn = sqlite3.connect(self.test_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT fetched_count, stored_count FROM comment_ingestion_stats WHERE video_id = ?", (video_db_id,))
+        row = cursor.fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], 5)
+        self.assertEqual(row[1], 5)
         
 if __name__ == '__main__':
     unittest.main()

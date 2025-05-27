@@ -6,6 +6,9 @@ from typing import List, Dict, Optional, Any, Union
 import json
 import os
 
+import pandas as pd
+import streamlit as st
+
 from src.utils.helpers import debug_log
 from src.database.base_repository import BaseRepository
 
@@ -108,6 +111,33 @@ class ChannelRepository(BaseRepository):
             row_count = cursor.fetchone()[0]
             debug_log(f"[DB] Row count for channel_id={flat_api.get('channel_id') or flat_api.get('id')} after save: {row_count}")
             conn.close()
+            
+            # Process and store videos if present in the data
+            if 'video_id' in data and data['video_id']:
+                videos = data['video_id']
+                debug_log(f"[DB] Processing {len(videos)} videos for storage")
+                videos_stored = 0
+                for video in videos:
+                    try:
+                        video_store_result = self.video_repository.store_video_data(video)
+                        if video_store_result:
+                            videos_stored += 1
+                            # --- Store comments for this video if present ---
+                            # Try both 'youtube_id' and 'video_id' for DB lookup
+                            yt_id = video.get('youtube_id') or video.get('video_id') or video.get('id')
+                            video_db_id = self.video_repository.get_video_db_id(yt_id)
+                            comments = video.get('comments', [])
+                            debug_log(f"[DB] Video: yt_id={yt_id}, db_id={video_db_id}, comments={len(comments)}")
+                            if comments and video_db_id:
+                                debug_log(f"[DB] First comment for video {yt_id}: {comments[0] if comments else 'None'}")
+                                comment_store_result = self.video_repository.store_comments(comments, video_db_id, fetched_at=None)
+                                debug_log(f"[DB] Stored {len(comments)} comments for video {yt_id}, result: {comment_store_result}")
+                            elif comments and not video_db_id:
+                                debug_log(f"[DB WARNING] Comments present but could not find DB ID for video {yt_id}")
+                    except Exception as e:
+                        debug_log(f"[DB ERROR] Failed to store video {video.get('video_id', 'unknown')}: {str(e)}")
+                debug_log(f"[DB] Successfully stored {videos_stored} out of {len(videos)} videos")
+            
             return True
         except Exception as e:
             import traceback

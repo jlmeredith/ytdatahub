@@ -227,6 +227,41 @@ class YouTubeAPI(ModularYouTubeAPI):
             # Handle general exceptions
             raise YouTubeAPIError(str(e), status_code=500, error_type="serverError")
 
+    def get_playlist_id_for_channel(self, channel_id: str) -> str:
+        """
+        Fetch the uploads playlist ID for a channel using the YouTube API.
+        Returns the playlist ID string or empty string if not found or invalid.
+        
+        Args:
+            channel_id (str): YouTube channel ID
+            
+        Returns:
+            str: Uploads playlist ID or empty string if not found/invalid
+        """
+        try:
+            debug_log(f"[API] Fetching uploads playlist ID for channel_id={channel_id}")
+            
+            response = self.youtube.channels().list(
+                part="snippet,contentDetails,statistics,brandingSettings,status,topicDetails,localizations",
+                id=channel_id
+            ).execute()
+            
+            if response and 'items' in response and response['items']:
+                playlist_id = response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+                # Validate playlist_id: must not be channel_id and must start with 'UU'
+                if not playlist_id or playlist_id == channel_id or not playlist_id.startswith('UU'):
+                    debug_log(f"[API][ERROR] Invalid playlist_id fetched for channel_id={channel_id}: {playlist_id}")
+                    return ''
+                
+                debug_log(f"[API] Found valid playlist_id={playlist_id} for channel_id={channel_id}")
+                return playlist_id
+            else:
+                debug_log(f"[API] No playlist_id found for channel_id={channel_id}")
+                return ''
+        except Exception as e:
+            debug_log(f"[API] Error fetching playlist_id for channel_id={channel_id}: {str(e)}")
+            return ''
+
     def execute_api_request(self, operation, **kwargs):
         """
         Execute an API request with the given operation and parameters.

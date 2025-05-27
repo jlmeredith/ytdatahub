@@ -49,6 +49,39 @@ def configure_comment_collection():
     """
     st.subheader("Comment Collection Options")
     
+    # Enhanced UI controls for comment collection settings
+    st.write("Configure how many comments to collect:")
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        max_comments_per_video = st.slider(
+            "Top-Level Comments Per Video",
+            min_value=0,
+            max_value=100,
+            value=20,
+            help="Set to 0 to skip comment collection entirely"
+        )
+        st.caption("Controls how many primary comments to collect for each video")
+    
+    with col2:
+        max_replies_per_comment = st.slider(
+            "Replies Per Top-Level Comment",
+            min_value=0,
+            max_value=50, 
+            value=5,
+            help="Set to 0 to skip fetching replies"
+        )
+        st.caption("Controls how many replies to collect for each primary comment")
+    
+    # Add explanatory text about API quota impact
+    st.info("💡 Higher values will provide more comprehensive data but may consume more API quota.")
+    
+    optimize_quota = st.checkbox(
+        "Optimize API quota usage",
+        value=True,
+        help="When enabled, only videos with comments will be queried"
+    )
+    
     # Create options for comments
     options = {
         'fetch_channel_data': False,
@@ -56,7 +89,9 @@ def configure_comment_collection():
         'fetch_comments': True,
         'analyze_sentiment': False,
         'max_videos': 10,  # Limit for comments collection
-        'max_comments_per_video': 20  # Reasonable number of comments per video
+        'max_comments_per_video': max_comments_per_video,
+        'max_replies_per_comment': max_replies_per_comment,
+        'optimize_quota': optimize_quota
     }
     
     return options

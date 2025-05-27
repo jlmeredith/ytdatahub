@@ -169,3 +169,8 @@ st.session_state['videos_data_saved'] = True|False
 - [Service Layer Architecture](workflow-service-layer.md)
 - [YouTube API Integration](youtube-api-guide.md)
 - [Data Storage Format](database-operations.md)
+
+## Video Data Storage (2024-06 Update)
+- The `videos` table now only stores fields present in the public YouTube API response for non-owners.
+- All other/nested/rare fields are preserved in `videos_history` as full JSON.
+- The workflow now guarantees schema alignment with the official API and robust time series storage for all video data.

@@ -58,87 +58,104 @@ def standardize_video_data(videos_data):
     
     # Additional normalization to ensure all required fields exist with proper types
     standardized_videos = []
+    expected_fields = {
+        'video_id': '',
+        'title': '',
+        'description': '',
+        'duration': 'Unknown duration',
+        'published_at': '',
+        'likes': '0',
+        'views': '0',
+        'comment_count': '0',
+        'thumbnail_url': '',
+        'snippet': {},
+        'statistics': {},
+        'contentDetails': {},
+    }
     for video in fixed_videos:
         if not isinstance(video, dict):
             debug_log(f"standardize_video_data: Skipping non-dict video item of type {type(video)}")
             continue
-            
-        video_id = video.get('video_id', video.get('id', ''))
+        # Robustly extract video_id from all possible locations
+        video_id = (
+            video.get('video_id') or
+            video.get('youtube_id') or
+            video.get('id') if isinstance(video.get('id'), str) else None or
+            (video.get('id', {}).get('videoId') if isinstance(video.get('id'), dict) else None) or
+            (video.get('contentDetails', {}).get('videoId') if isinstance(video.get('contentDetails'), dict) else None) or
+            (video.get('snippet', {}).get('resourceId', {}).get('videoId') if isinstance(video.get('snippet', {}).get('resourceId'), dict) else None)
+        )
         if not video_id:
-            # Try to extract from other possible locations
-            if isinstance(video.get('contentDetails'), dict) and 'videoId' in video['contentDetails']:
-                video_id = video['contentDetails']['videoId']
-            elif isinstance(video.get('snippet'), dict) and 'resourceId' in video['snippet']:
-                if isinstance(video['snippet']['resourceId'], dict) and 'videoId' in video['snippet']['resourceId']:
-                    video_id = video['snippet']['resourceId']['videoId']
-            elif isinstance(video.get('id'), dict) and 'videoId' in video['id']:
-                video_id = video['id']['videoId']
-                
-        if not video_id:
-            debug_log("Skipping video with no ID")
+            debug_log(f"standardize_video_data: Skipping video with no valid ID. Video keys: {list(video.keys())}")
             continue
-        
-        # Make a copy to avoid modifying the original
         std_video = video.copy()
-        
-        # Ensure required fields exist
-        std_video['video_id'] = video_id
+        std_video['video_id'] = video_id  # Always set video_id
+        # Ensure all expected fields exist with sensible defaults
+        for field, default in expected_fields.items():
+            if field not in std_video or std_video[field] is None:
+                std_video[field] = default
+                debug_log(f"standardize_video_data: Field '{field}' missing in video {video_id}, defaulting to {repr(default)}")
+        # Title
         std_video['title'] = video.get('title', video.get('snippet', {}).get('title', 'Untitled'))
-        
-        # Ensure metrics are strings to prevent type errors
-        for metric in ['views', 'likes', 'comment_count']:
-            # Convert to string if not already
-            if metric in std_video:
-                std_video[metric] = str(std_video[metric])
+        # Description
+        std_video['description'] = video.get('description', video.get('snippet', {}).get('description', ''))
+        # Duration
+        if 'duration' not in std_video or not std_video['duration'] or std_video['duration'] == 'Unknown duration':
+            if 'contentDetails' in std_video and isinstance(std_video['contentDetails'], dict):
+                std_video['duration'] = std_video['contentDetails'].get('duration', 'Unknown duration')
             else:
-                std_video[metric] = '0'
-                
-        # Normalize published date
-        if 'published_at' not in std_video:
-            # Try multiple paths for published date
-            if 'snippet' in std_video and 'publishedAt' in std_video['snippet']:
-                std_video['published_at'] = std_video['snippet']['publishedAt']
-            elif 'published' in std_video:
-                std_video['published_at'] = std_video['published']
-                
-        # Normalize thumbnail
-        if 'thumbnail_url' not in std_video:
+                std_video['duration'] = 'Unknown duration'
+        # Published at
+        std_video['published_at'] = video.get('published_at', video.get('snippet', {}).get('publishedAt', ''))
+        # Likes
+        if 'likes' not in std_video or not std_video['likes']:
+            if 'statistics' in std_video and isinstance(std_video['statistics'], dict):
+                std_video['likes'] = str(std_video['statistics'].get('likeCount', '0'))
+            else:
+                std_video['likes'] = '0'
+        # Views
+        if 'views' not in std_video or not std_video['views']:
+            if 'statistics' in std_video and isinstance(std_video['statistics'], dict):
+                std_video['views'] = str(std_video['statistics'].get('viewCount', '0'))
+            else:
+                std_video['views'] = '0'
+        # Comment count
+        if 'comment_count' not in std_video or not std_video['comment_count']:
+            if 'statistics' in std_video and isinstance(std_video['statistics'], dict):
+                std_video['comment_count'] = str(std_video['statistics'].get('commentCount', '0'))
+            else:
+                std_video['comment_count'] = '0'
+        # Thumbnail URL
+        if not std_video['thumbnail_url']:
             # Try all possible thumbnail paths
-            
-            # Path 1: snippet.thumbnails (YouTube API standard)
+            thumb_url = ''
             if 'snippet' in std_video and 'thumbnails' in std_video['snippet']:
                 thumbnails = std_video['snippet']['thumbnails']
-                if 'medium' in thumbnails and 'url' in thumbnails['medium']:
-                    std_video['thumbnail_url'] = thumbnails['medium']['url']
-                elif 'default' in thumbnails and 'url' in thumbnails['default']:
-                    std_video['thumbnail_url'] = thumbnails['default']['url']
-                elif 'high' in thumbnails and 'url' in thumbnails['high']:
-                    std_video['thumbnail_url'] = thumbnails['high']['url']
-            
-            # Path 2: Direct thumbnails property
-            elif 'thumbnails' in std_video:
+                for size in ['medium', 'default', 'high']:
+                    if size in thumbnails and 'url' in thumbnails[size]:
+                        thumb_url = thumbnails[size]['url']
+                        break
+            elif 'thumbnails' in std_video and isinstance(std_video['thumbnails'], dict):
                 thumbnails = std_video['thumbnails']
-                if isinstance(thumbnails, dict):
-                    if 'medium' in thumbnails and 'url' in thumbnails['medium']:
-                        std_video['thumbnail_url'] = thumbnails['medium']['url']
-                    elif 'default' in thumbnails and 'url' in thumbnails['default']:
-                        std_video['thumbnail_url'] = thumbnails['default']['url']
-                    elif 'high' in thumbnails and 'url' in thumbnails['high']:
-                        std_video['thumbnail_url'] = thumbnails['high']['url']
-            
-            # Path 3: thumbnail property
-            elif 'thumbnail' in std_video:
-                if isinstance(std_video['thumbnail'], str):
-                    std_video['thumbnail_url'] = std_video['thumbnail']
-                    
-            # Path 4: Construct from video ID as last resort
-            if 'thumbnail_url' not in std_video and video_id:
-                std_video['thumbnail_url'] = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+                for size in ['medium', 'default', 'high']:
+                    if size in thumbnails and 'url' in thumbnails[size]:
+                        thumb_url = thumbnails[size]['url']
+                        break
+            elif 'thumbnail' in std_video and isinstance(std_video['thumbnail'], str):
+                thumb_url = std_video['thumbnail']
+            if not thumb_url and video_id:
+                thumb_url = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
                 debug_log(f"Generated thumbnail URL for video {video_id}")
-                    
+            std_video['thumbnail_url'] = thumb_url
+        # Nested fields: ensure dicts/arrays are not None
+        for nested in ['snippet', 'statistics', 'contentDetails']:
+            if std_video[nested] is None:
+                std_video[nested] = {} if nested != 'tags' else []
         standardized_videos.append(std_video)
-        
     debug_log(f"standardize_video_data: Returning {len(standardized_videos)} standardized videos")
+    # Diagnostic: print first 3 video dicts and their video_id fields
+    for i, v in enumerate(standardized_videos[:3]):
+        debug_log(f"standardize_video_data: Video {i+1} video_id: {v.get('video_id')}, keys: {list(v.keys())}")
     return standardized_videos
 
 
