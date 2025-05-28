@@ -120,6 +120,7 @@ class ChannelRepository(BaseRepository):
                 for video in videos:
                     try:
                         video_store_result = self.video_repository.store_video_data(video)
+                        debug_log(f"[DB] store_video_data result for video {video.get('video_id')}: {video_store_result}")
                         if video_store_result:
                             videos_stored += 1
                             # --- Store comments for this video if present ---
@@ -186,28 +187,28 @@ class ChannelRepository(BaseRepository):
             is_id = channel_identifier.startswith('UC')
             debug_log(f"Loading data for channel: {channel_identifier} from database")
             conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             # Get channel info - using either ID or title depending on what was provided
             if is_id:
                 cursor.execute("""
-                    SELECT id, channel_id FROM channels WHERE channel_id = ?
+                    SELECT * FROM channels WHERE channel_id = ?
                 """, (channel_identifier,))
             else:
                 cursor.execute("""
-                    SELECT id, channel_id FROM channels WHERE channel_title = ?
+                    SELECT * FROM channels WHERE channel_title = ?
                 """, (channel_identifier,))
-            channel_row = cursor.fetchone()
-            if not channel_row:
+            row = cursor.fetchone()
+            if not row:
                 debug_log(f"Channel not found in database: {channel_identifier}")
                 return None
-            channel_db_id = channel_row[0]
-            channel_youtube_id = channel_row[1]
+            record = dict(row)
             # Load full API response if present
             cursor.execute("PRAGMA table_info(channels)")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns = [r[1] for r in cursor.fetchall()]
             raw_info = None
             if 'raw_channel_info' in columns:
-                cursor.execute("SELECT raw_channel_info FROM channels WHERE id = ?", (channel_db_id,))
+                cursor.execute("SELECT raw_channel_info FROM channels WHERE id = ?", (record['id'],))
                 raw_info_row = cursor.fetchone()
                 if raw_info_row and raw_info_row[0]:
                     try:
@@ -216,15 +217,15 @@ class ChannelRepository(BaseRepository):
                     except Exception as e:
                         debug_log(f"Error loading raw_channel_info JSON: {str(e)}")
             # Fetch uploads playlist from playlists table
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_youtube_id,))
+            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (record['channel_id'],))
             playlist_row = cursor.fetchone()
-            uploads_playlist_id = playlist_row[0] if playlist_row else ''
-            # Return only the parsed raw_channel_info, channel_id, and playlist_id
-            return {
-                'raw_channel_info': raw_info,
-                'channel_id': channel_youtube_id,
-                'playlist_id': uploads_playlist_id,
-            }
+            uploads_playlist_id = playlist_row[0] if playlist_row else record.get('uploads_playlist_id', '')
+            # Always set playlist_id from uploads_playlist_id if present
+            record['uploads_playlist_id'] = uploads_playlist_id
+            record['playlist_id'] = uploads_playlist_id
+            record['raw_channel_info'] = raw_info
+            debug_log(f"[DB] get_channel_data returning: {record}")
+            return record
         except Exception as e:
             debug_log(f"Exception in get_channel_data: {str(e)}")
             return None

@@ -23,15 +23,50 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
         return
     elif previous_data is None:
         st.info("No previous data available. This appears to be new data.")
-        if updated_data:
-            st.write("New data:")
-            st.json(updated_data)
+        if updated_data and st.session_state.get('debug_mode', False):
+            st.write("New data (Debug):")
+            # Safely display JSON data
+            try:
+                if isinstance(updated_data, dict) and "ERROR" in updated_data:
+                    st.error(f"Error in updated data: {updated_data.get('ERROR', {}).get('message', 'Unknown error')}")
+                else:
+                    st.json(updated_data)
+            except Exception as e:
+                st.error(f"Error displaying updated data: {str(e)}")
+                st.text(str(updated_data)[:1000])
         return
     elif updated_data is None:
         st.info("No updated data available for comparison.")
-        if previous_data:
-            st.write("Previous data:")
-            st.json(previous_data)
+        if previous_data and st.session_state.get('debug_mode', False):
+            st.write("Previous data (Debug):")
+            # Safely display JSON data
+            try:
+                if isinstance(previous_data, dict) and "ERROR" in previous_data:
+                    st.error(f"Error in previous data: {previous_data.get('ERROR', {}).get('message', 'Unknown error')}")
+                else:
+                    st.json(previous_data)
+            except Exception as e:
+                st.error(f"Error displaying previous data: {str(e)}")
+                st.text(str(previous_data)[:1000])
+        return
+    
+    # Check for error objects in the data
+    if isinstance(previous_data, dict) and "ERROR" in previous_data:
+        st.error(f"Error in previous data: {previous_data.get('ERROR', {}).get('message', 'Unknown error')}")
+        return
+    
+    if isinstance(updated_data, dict) and "ERROR" in updated_data:
+        st.error(f"Error in updated data: {updated_data.get('ERROR', {}).get('message', 'Unknown error')}")
+        return
+    
+    # Validate data before comparison
+    if not isinstance(previous_data, dict) or not isinstance(updated_data, dict):
+        st.error(f"Invalid data format for comparison. Previous data type: {type(previous_data)}, Updated data type: {type(updated_data)}")
+        if st.session_state.get('debug_mode', False):
+            st.write("Previous data preview:")
+            st.text(str(previous_data)[:500])
+            st.write("Updated data preview:")
+            st.text(str(updated_data)[:500])
         return
     
     # Handle empty dictionaries
@@ -40,76 +75,92 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
             st.info("Both previous and updated data sets are empty.")
             return
         st.info("Previous data is empty. Showing only updated data.")
-        st.json(updated_data)
+        if st.session_state.get('debug_mode', False):
+            try:
+                st.json(updated_data)
+            except Exception as e:
+                st.error(f"Error displaying updated data: {str(e)}")
+                st.text(str(updated_data)[:1000])
         return
     elif isinstance(updated_data, dict) and not updated_data:
         st.info("Updated data is empty. Showing only previous data.")
-        st.json(previous_data)
+        if st.session_state.get('debug_mode', False):
+            try:
+                st.json(previous_data)
+            except Exception as e:
+                st.error(f"Error displaying previous data: {str(e)}")
+                st.text(str(previous_data)[:1000])
         return
     
+    # Try to use DeepDiff for comparison
     try:
-        # Attempt to use DeepDiff for more detailed comparison
         from deepdiff import DeepDiff
         
-        # For video and comment comparisons, only look at specific fields
-        if data_type == "video":
-            exclude_paths = ["root['data_source']", "root['channel_id']", "root['channel_name']", 
-                            "root['subscribers']", "root['views']", "root['total_videos']"]
+        # Set appropriate exclusion paths based on data type
+        exclude_paths = []
+        if data_type == "channel":
+            exclude_paths = ["root['raw_channel_info']", "root['data_source']", "root['video_id']"]
+        elif data_type == "video":
+            exclude_paths = ["root['comments']", "root['data_source']"]
         elif data_type == "comment":
-            exclude_paths = ["root['data_source']", "root['channel_id']", "root['channel_name']", 
-                            "root['subscribers']", "root['views']", "root['total_videos']",
-                            "root['video_id'][*]['video_id']", "root['video_id'][*]['title']"]
-        else:
             exclude_paths = ["root['data_source']"]
-            
-        # Perform the deep comparison
-        diff = DeepDiff(previous_data, updated_data, exclude_paths=exclude_paths)
+        
+        # Sanitize data before comparison to avoid "src property" errors
+        previous_data_clean = _sanitize_for_deepdiff(previous_data)
+        updated_data_clean = _sanitize_for_deepdiff(updated_data)
+        
+        # Generate the diff
+        diff = DeepDiff(previous_data_clean, updated_data_clean, exclude_paths=exclude_paths)
         
         if not diff:
-            # No differences found
-            st.info("No changes detected in the data.")
-            
-            # Show summary of what was checked
-            if data_type == "channel":
-                st.write("Channel data remains unchanged.")
-                st.caption(f"Last checked: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # For video data, show a summary of the videos that were checked
-            elif data_type == "video":
-                video_count = len(updated_data.get('video_id', []))
-                if video_count > 0:
-                    st.write(f"All {video_count} videos remain unchanged.")
-                    
-                    # Show a sample of video titles
-                    sample_size = min(5, video_count)
-                    if sample_size > 0:
-                        st.write(f"Sample videos checked:")
-                        for i in range(sample_size):
-                            video = updated_data['video_id'][i]
-                            st.write(f"- {video.get('title', 'Unknown')}")
-                        
-                        if video_count > sample_size:
-                            st.write(f"... and {video_count - sample_size} more videos.")
-            
+            st.success("✅ No changes detected between the datasets.")
             return
-            
-        # Display differences in a readable format
-        st.subheader("Changes Detected")
         
-        # Display added items
+        # Show a summary of changes
+        categories = []
         if 'dictionary_item_added' in diff:
-            st.markdown("#### Added Items")
-            for item in diff['dictionary_item_added']:
-                item_path = item.replace("root['", "").replace("']", "")
-                st.write(f"- Added: {item_path}")
-                
-        # Display removed items
+            categories.append(f"**{len(diff['dictionary_item_added'])}** new items added")
         if 'dictionary_item_removed' in diff:
-            st.markdown("#### Removed Items")
-            for item in diff['dictionary_item_removed']:
-                item_path = item.replace("root['", "").replace("']", "")
-                st.write(f"- Removed: {item_path}")
+            categories.append(f"**{len(diff['dictionary_item_removed'])}** items removed")
+        if 'values_changed' in diff:
+            categories.append(f"**{len(diff['values_changed'])}** values changed")
+        
+        if categories:
+            st.write("### Changes Summary")
+            st.write(", ".join(categories))
+        
+        # Display added values
+        if 'dictionary_item_added' in diff:
+            st.markdown("#### New Fields")
+            for item in diff['dictionary_item_added']:
+                # Clean up the path for display
+                clean_path = item.replace("root['", "").replace("']", "")
                 
+                # Get the value from the updated data
+                import re
+                keys = re.findall(r"\['([^']+)'\]", item)
+                value = updated_data
+                for key in keys:
+                    if isinstance(value, dict) and key in value:
+                        value = value[key]
+                    else:
+                        value = "Unable to extract value"
+                        break
+                
+                # Format value for display
+                if isinstance(value, (int, float)):
+                    value = format_number(value)
+                
+                st.write(f"- {clean_path}: {value}")
+        
+        # Display removed values
+        if 'dictionary_item_removed' in diff:
+            st.markdown("#### Removed Fields")
+            for item in diff['dictionary_item_removed']:
+                # Clean up the path for display
+                clean_path = item.replace("root['", "").replace("']", "")
+                st.write(f"- {clean_path}")
+        
         # Display changed values
         if 'values_changed' in diff:
             st.markdown("#### Changed Values")
@@ -138,15 +189,74 @@ def render_delta_report(previous_data, updated_data, data_type="channel"):
     except ImportError:
         # Fallback if DeepDiff is not available
         st.warning("DeepDiff library not found. Using basic comparison.")
-        st.write("Previous data:")
-        st.json(previous_data)
-        st.write("Updated data:")
-        st.json(updated_data)
+        if st.session_state.get('debug_mode', False):
+            st.write("Previous data (Debug):")
+            st.json(previous_data)
+            st.write("Updated data (Debug):")
+            st.json(updated_data)
+        else:
+            # Basic comparison for non-debug mode
+            st.write("Basic comparison (DeepDiff library not available):")
+            if isinstance(previous_data, dict) and isinstance(updated_data, dict):
+                for key in set(list(previous_data.keys()) + list(updated_data.keys())):
+                    if key in previous_data and key in updated_data:
+                        if previous_data[key] != updated_data[key]:
+                            st.write(f"- {key}: {previous_data[key]} → {updated_data[key]}")
+                    elif key in updated_data:
+                        st.write(f"- {key}: (added) {updated_data[key]}")
+                    elif key in previous_data:
+                        st.write(f"- {key}: (removed) {previous_data[key]}")
     except Exception as e:
-        # Handle other errors
-        debug_log(f"Error in delta report: {str(e)}")
-        st.error(f"Error generating delta report: {str(e)}")
-        st.write("Previous data:")
-        st.json(previous_data)
-        st.write("Updated data:")
-        st.json(updated_data)
+        # Handle other exceptions during comparison
+        st.error(f"Error comparing data: {str(e)}")
+        debug_log(f"Delta comparison error: {str(e)}")
+        
+        # In debug mode, show more detailed error information
+        if st.session_state.get('debug_mode', False):
+            st.write("Error occurred during comparison. Raw data preview:")
+            st.write("Previous data sample:")
+            st.text(str(previous_data)[:500])
+            st.write("Updated data sample:")
+            st.text(str(updated_data)[:500])
+
+def _sanitize_for_deepdiff(data):
+    """
+    Sanitize data structure to avoid common DeepDiff errors
+    like "src property must be a valid json object"
+    
+    Args:
+        data (dict): Data structure to sanitize
+        
+    Returns:
+        dict: Sanitized copy of the data
+    """
+    if not isinstance(data, dict):
+        return data
+        
+    result = {}
+    for key, value in data.items():
+        # Skip problematic keys that might cause JSON serialization issues
+        if key in ['src', 'source', 'raw_data']:
+            if isinstance(value, (dict, list)):
+                # Try to convert to string to avoid serialization errors
+                try:
+                    import json
+                    result[key] = json.dumps(value)
+                except:
+                    result[key] = str(value)
+            else:
+                result[key] = str(value)
+        # Recursively sanitize nested dictionaries
+        elif isinstance(value, dict):
+            result[key] = _sanitize_for_deepdiff(value)
+        # Handle lists with dictionaries inside
+        elif isinstance(value, list):
+            if value and isinstance(value[0], dict):
+                result[key] = [_sanitize_for_deepdiff(item) if isinstance(item, dict) else item for item in value]
+            else:
+                result[key] = value
+        # Keep other values as is
+        else:
+            result[key] = value
+            
+    return result

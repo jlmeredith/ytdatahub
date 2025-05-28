@@ -4,7 +4,7 @@ New channel workflow implementation for data collection.
 import streamlit as st
 from src.utils.helpers import debug_log
 from src.ui.data_collection.workflow_base import BaseCollectionWorkflow
-from .components.video_item import render_video_item
+from .components.video_item import render_video_item, render_video_table_row
 from .utils.data_conversion import format_number
 from .utils.error_handling import handle_collection_error
 from src.utils.queue_tracker import render_queue_status_sidebar, add_to_queue, get_queue_stats
@@ -16,6 +16,7 @@ from src.database.channel_repository import ChannelRepository
 from src.ui.data_collection.utils.delta_reporting import render_delta_report
 import math
 from src.ui.data_collection.components.save_operation_manager import SaveOperationManager
+from src.ui.data_collection.components.video_selection_table import render_video_selection_table
 
 def flatten_dict(d, parent_key='', sep='.'):
     """Recursively flattens a nested dictionary."""
@@ -180,7 +181,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
         st.write("### Channel Overview")
         render_channel_overview_card(channel_info)
         
-        # Show detailed channel fields in collapsible section - only for advanced users
+        # Get raw channel info
         raw_info = channel_info.get('raw_channel_info')
         if raw_info:
             import json
@@ -191,46 +192,56 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.error("Error parsing channel data.")
                     return
             
-            if isinstance(raw_info, dict):
-                render_collapsible_field_explorer(raw_info, "Advanced: All Channel Fields")
+            # Advanced field explorer - only visible if explicitly expanded by user
+            with st.expander("Advanced: View All Channel Fields", expanded=False):
+                if isinstance(raw_info, dict):
+                    render_collapsible_field_explorer(raw_info, "Channel Fields", no_expander=True)
         
-        # Action buttons
-        col1, col2, col3 = st.columns(3)
+        # Store raw/delta in debug state
+        if 'debug_raw_data' not in st.session_state:
+            st.session_state['debug_raw_data'] = {}
+        if 'debug_delta_data' not in st.session_state:
+            st.session_state['debug_delta_data'] = {}
+        st.session_state['debug_raw_data']['channel'] = {
+            'api': raw_info,
+            'db': None  # No DB in new channel step
+        }
+        st.session_state['debug_delta_data']['channel'] = {
+            'delta': None  # If you have a delta, store it here
+        }
+        
+        # Navigation buttons
+        col1, col2 = st.columns(2)
         with col1:
-            if st.button("Save Channel Data", key="save_channel_data_btn"):
-                with st.spinner("Saving channel data..."):
-                    try:
-                        channel_data = st.session_state.get('channel_info_temp', {})
-                        save_manager = SaveOperationManager()
-                        success = save_manager.perform_save_operation(
-                            youtube_service=self.youtube_service,
-                            api_data=channel_data,
-                            total_videos=0,
-                            total_comments=0
-                        )
-                        
-                        if success:
-                            st.session_state['channel_data_saved'] = True
-                            st.success("✅ Channel data saved successfully!")
-                            st.info("📋 You can now proceed to collect videos data or continue to the next step.")
-                            # Auto-advance to next step after successful save
-                            st.session_state['collection_step'] = 2
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to save channel data. Please try again.")
-                    except Exception as e:
-                        st.error(f"❌ Error saving data: {str(e)}")
-                        
+            if st.button("🔙 Back", key="channel_data_back_btn"):
+                # Clear temporary data
+                if 'channel_info_temp' in st.session_state:
+                    del st.session_state['channel_info_temp']
+                # Go back to channel input
+                st.session_state['collection_step'] = 1
+                st.rerun()
         with col2:
-            if st.button("Continue to Videos Data", key="continue_to_videos_btn"):
+            if st.button("📥 Save Channel", key="save_channel_btn"):
+                # Save channel to database
+                try:
+                    from src.ui.data_collection.components.save_operation_manager import SaveOperationManager
+                    save_manager = SaveOperationManager()
+                    success = save_manager.perform_save_operation(
+                        youtube_service=self.youtube_service,
+                        api_data=channel_info,
+                        total_videos=0,  # No videos yet
+                        total_comments=0  # No comments yet
+                    )
+                    if success:
+                        st.session_state['channel_data_saved'] = True
+                        st.success("Channel data saved successfully!")
+                        st.session_state['collection_step'] = 2
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving channel data: {str(e)}")
+            if st.button("▶️ Continue to Videos", key="continue_to_videos_btn"):
                 st.session_state['collection_step'] = 2
                 st.rerun()
-                
-        with col3:
-            if st.button("Save to Queue for Later", key="queue_channel_btn"):
-                channel_data = st.session_state.get('channel_info_temp', {})
-                add_to_queue('channels', channel_data.get('channel_id'), channel_data)
-                st.success("📋 Channel added to queue for later processing.")
     
     def render_step_2_playlist_review(self):
         """Render playlist review step in a user-friendly way."""
@@ -281,6 +292,19 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 privacy_status = playlist_api.get('status', {}).get('privacyStatus', 'Unknown')
                 st.write(f"🔒 **Privacy:** {privacy_status.title()}")
         
+        # Store raw/delta in debug state
+        if 'debug_raw_data' not in st.session_state:
+            st.session_state['debug_raw_data'] = {}
+        if 'debug_delta_data' not in st.session_state:
+            st.session_state['debug_delta_data'] = {}
+        st.session_state['debug_raw_data']['playlist'] = {
+            'db': None,  # No DB in new channel step
+            'api': playlist_api
+        }
+        st.session_state['debug_delta_data']['playlist'] = {
+            'delta': None
+        }
+        
         # Initialize session state for playlist actions
         if 'playlist_saved' not in st.session_state:
             st.session_state['playlist_saved'] = False
@@ -329,6 +353,36 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
         channel_info = st.session_state.get('channel_info_temp', {})
         channel_id = channel_info.get('channel_id', '')
         videos_data = channel_info.get('video_id', []) if 'video_id' in channel_info else []
+        
+        # Standardize video data if we have videos
+        if videos_data:
+            debug_log(f"[NEW CHANNEL] Before standardization: videos_data type={type(videos_data)}, length={len(videos_data) if isinstance(videos_data, list) else 'not a list'}")
+            if videos_data and len(videos_data) > 0:
+                first_video = videos_data[0]
+                debug_log(f"[NEW CHANNEL] First video before standardization: type={type(first_video)}")
+                if isinstance(first_video, dict):
+                    debug_log(f"[NEW CHANNEL] First video keys: {list(first_video.keys())}")
+                    debug_log(f"[NEW CHANNEL] First video sample: {str(first_video)[:300]}...")
+                    # Check all possible video ID locations
+                    debug_log(f"[NEW CHANNEL] video_id field: {first_video.get('video_id')}")
+                    debug_log(f"[NEW CHANNEL] id field: {first_video.get('id')}")
+                    debug_log(f"[NEW CHANNEL] youtube_id field: {first_video.get('youtube_id')}")
+            
+            videos_data = standardize_video_data(videos_data)
+            debug_log(f"[NEW CHANNEL] After standardization: videos_data length={len(videos_data)}")
+        
+        # Store raw/delta in debug state
+        if 'debug_raw_data' not in st.session_state:
+            st.session_state['debug_raw_data'] = {}
+        if 'debug_delta_data' not in st.session_state:
+            st.session_state['debug_delta_data'] = {}
+        st.session_state['debug_raw_data']['video'] = {
+            'db': None,  # No DB in new channel step
+            'api': videos_data
+        }
+        st.session_state['debug_delta_data']['video'] = {
+            'delta': None
+        }
         
         # Check if videos have been fetched
         if not st.session_state.get('videos_fetched', False):
@@ -522,7 +576,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.rerun()
                     
         else:
-            # Videos have been fetched, show them
+            # Videos have been fetched, show them in the new AgGrid table
             if not videos_data:
                 st.info("📹 No videos were fetched for this channel.")
                 col1, col2 = st.columns(2)
@@ -535,54 +589,19 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                         st.session_state['collection_step'] = 4
                         st.rerun()
                 return
-            
-            # Standardize all video data for consistent UI rendering
-            videos_data = standardize_video_data(videos_data)
 
-            # Pagination setup
-            page_size = 10
-            total_videos = len(videos_data)
-            total_pages = math.ceil(total_videos / page_size)
-            page = st.session_state.get('video_overview_page', 1)
-            if total_pages > 1:
-                page = st.number_input('Page', min_value=1, max_value=total_pages, value=page, step=1, key='video_overview_page')
-            start_idx = (page - 1) * page_size
-            end_idx = min(start_idx + page_size, total_videos)
-            paginated_videos = videos_data[start_idx:end_idx]
-
-            # Show video summary
-            videos_with_comments = sum(1 for video in videos_data if video.get('comments'))
-            total_comments = sum(len(video.get('comments', [])) for video in videos_data)
-            total_videos_in_channel = 'Unknown'
-            if 'channel_info' in channel_info and 'statistics' in channel_info['channel_info']:
-                stats = channel_info['channel_info']['statistics']
-                if 'videoCount' in stats:
-                    total_videos_in_channel = int(stats['videoCount'])
-            if total_videos_in_channel != 'Unknown':
-                if total_videos >= total_videos_in_channel:
-                    st.success(f"✅ **Complete collection**: All **{total_videos:,}** videos from this channel")
-                else:
-                    completion_percent = (total_videos / total_videos_in_channel) * 100
-                    st.success(f"✅ Found **{total_videos:,}** videos (**{completion_percent:.1f}%** of {total_videos_in_channel:,} total)")
-            else:
-                st.success(f"✅ Found **{total_videos:,}** videos for this channel")
-            if total_comments > 0:
-                st.info(f"💬 **{total_comments:,}** comments found across **{videos_with_comments:,}** videos")
-            # Show paginated video overview
-            st.subheader("📋 Video Overview")
-            selected_video_ids = []
-            for idx, video in enumerate(paginated_videos, start=start_idx+1):
-                # Use the refactored video item with selection
-                selected = render_video_item(video, index=idx, selectable=True)
-                if selected:
-                    video_id = video.get('video_id')
-                    if video_id:
-                        selected_video_ids.append(video_id)
+            # Use the new AgGrid-based video selection table
+            selection_result = render_video_selection_table(
+                videos_data, 
+                selected_ids=st.session_state.get('selected_video_ids', []),
+                key="new_channel_video_selection"
+            )
+            selected_video_ids = selection_result.get("selected_ids", [])
             st.session_state['selected_video_ids'] = selected_video_ids
-            st.caption(f"Showing videos {start_idx+1} to {end_idx} of {total_videos}")
+
             # Action buttons
             st.markdown("---")
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("💾 Save Selected Videos Data", key="save_videos_btn"):
                     if not selected_video_ids:
@@ -617,15 +636,6 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 if st.button("🔄 Refetch Videos", key="refetch_videos_btn"):
                     st.session_state['videos_fetched'] = False
                     st.rerun()
-            with col4:
-                if st.button("Queue Selected Videos for Later", key="queue_selected_videos_btn"):
-                    if not selected_video_ids:
-                        st.warning("Please select at least one video to queue.")
-                    else:
-                        from src.utils.queue_tracker import add_to_queue
-                        selected_videos = [v for v in videos_data if v.get('video_id') in selected_video_ids]
-                        add_to_queue('videos', channel_id, selected_videos)
-                        st.success("Selected videos added to queue for later processing.")
     
     def render_step_3_comment_collection(self):
         """Render step 3: Collect and display comment data in a user-friendly way."""
@@ -652,6 +662,26 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
             total_videos = len(videos)
             st.write(f"📹 Found **{total_videos}** videos to collect comments from")
             
+            # Add comment import controls above the video table
+            st.markdown("### Comment Import Controls")
+            max_top_level_comments = st.slider(
+                "Top-Level Comments Per Video",
+                min_value=0,
+                max_value=100,
+                value=st.session_state.get('max_top_level_comments', 20),
+                key='max_top_level_comments',
+                help="Maximum number of top-level comments to import per video (0 to skip comments)"
+            )
+            max_replies_per_comment = st.slider(
+                "Replies Per Top-Level Comment",
+                min_value=0,
+                max_value=50,
+                value=st.session_state.get('max_replies_per_comment', 5),
+                key='max_replies_per_comment',
+                help="Maximum number of replies to fetch for each top-level comment"
+            )
+            st.caption("Adjust these to control comment import granularity before proceeding.")
+            
             # Comment collection controls
             max_comments = st.slider(
                 "Maximum number of comments to fetch per video",
@@ -676,7 +706,9 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                                     'fetch_channel_data': False,
                                     'fetch_videos': False,
                                     'fetch_comments': True,
-                                    'max_comments_per_video': max_comments
+                                    'max_comments_per_video': max_comments,
+                                    'max_top_level_comments': max_top_level_comments,
+                                    'max_replies_per_comment': max_replies_per_comment
                                 }
                                 updated_data = self.youtube_service.collect_channel_data(
                                     channel_id,
@@ -737,6 +769,19 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
             else:
                 st.info("💬 No comments were found for any videos in this channel")
             
+            # Store raw/delta in debug state
+            if 'debug_raw_data' not in st.session_state:
+                st.session_state['debug_raw_data'] = {}
+            if 'debug_delta_data' not in st.session_state:
+                st.session_state['debug_delta_data'] = {}
+            st.session_state['debug_raw_data']['comment'] = {
+                'db': None,  # No DB in new channel step
+                'api': videos
+            }
+            st.session_state['debug_delta_data']['comment'] = {
+                'delta': None
+            }
+            
             # Action buttons
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
@@ -758,14 +803,14 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 if st.button("🔙 Back to Videos", key="back_to_videos_final_btn"):
                     st.session_state['collection_step'] = 3
                     st.rerun()
-    
+
     def save_data(self):
         """Save collected data to the database with user-friendly feedback."""
         channel_info = st.session_state.get('channel_info_temp')
         if not channel_info:
             st.error("❌ No data to save.")
             return
-            
+        
         with st.spinner("💾 Saving all collected data to database..."):
             try:
                 save_manager = SaveOperationManager()
@@ -806,7 +851,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                             st.rerun()
                 else:
                     st.error("❌ Failed to save data. Please try again or contact support.")
-                    
+                
             except Exception as e:
                 st.error(f"❌ Error during save operation: {str(e)}")
                 st.info("💡 Try saving again or add the data to the processing queue for later.")

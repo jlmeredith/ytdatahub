@@ -4,6 +4,10 @@ This module defines a common interface for both new channel and refresh workflow
 """
 import streamlit as st
 from abc import ABC, abstractmethod
+from src.utils.helpers import debug_log
+from .utils.delta_reporting import render_delta_report
+from .state_management import toggle_debug_mode
+from .debug_ui import render_debug_panel, generate_unique_key
 
 class BaseCollectionWorkflow(ABC):
     """
@@ -68,6 +72,9 @@ class BaseCollectionWorkflow(ABC):
             self.render_step_3_comment_collection()
         else:
             st.error(f"Unknown step: {current_step}")
+        
+        # Add debug mode toggle and panel at the bottom of all workflows
+        self.render_debug_controls()
     
     def _get_current_step(self):
         """
@@ -295,3 +302,39 @@ class BaseCollectionWorkflow(ABC):
             # Show raw data in an expandable section
             with st.expander("View Raw Data"):
                 st.json(video_data)
+
+    def render_debug_controls(self):
+        """Render debug mode toggle and debug panel if enabled."""
+        # Make sure debug module imports are at function level to avoid circular imports
+        from .debug_ui import generate_unique_key, render_debug_panel
+        from .state_management import toggle_debug_mode
+        
+        # Add divider to separate workflow content from debug controls
+        st.divider()
+        
+        # Initialize debug_mode in session state if not present
+        if 'debug_mode' not in st.session_state:
+            st.session_state.debug_mode = False
+        
+        # Create a container for debug controls
+        debug_container = st.container()
+        
+        with debug_container:
+            # Use a unique key for the debug mode toggle to prevent duplicate ID errors
+            toggle_key = generate_unique_key("debug_mode_toggle")
+            
+            # Add debug mode toggle with on_change callback
+            debug_enabled = st.checkbox(
+                "Debug Mode", 
+                value=st.session_state.debug_mode,
+                key=toggle_key
+            )
+            
+            # Check if debug mode changed and update session state
+            if debug_enabled != st.session_state.debug_mode:
+                st.session_state.debug_mode = debug_enabled
+                toggle_debug_mode()  # Call this to handle side effects
+            
+            # Show debug panel when debug mode is enabled
+            if st.session_state.debug_mode:
+                render_debug_panel()

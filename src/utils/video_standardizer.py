@@ -7,6 +7,7 @@ across the application regardless of where the data came from.
 from src.utils.helpers import debug_log
 from src.utils.video_processor import process_video_data
 from src.utils.video_formatter import fix_missing_views
+import json
 
 def standardize_video_data(videos_data):
     """
@@ -86,7 +87,7 @@ def standardize_video_data(videos_data):
             (video.get('snippet', {}).get('resourceId', {}).get('videoId') if isinstance(video.get('snippet', {}).get('resourceId'), dict) else None)
         )
         if not video_id:
-            debug_log(f"standardize_video_data: Skipping video with no valid ID. Video keys: {list(video.keys())}")
+            debug_log(f"standardize_video_data: WARNING - Skipping video with no valid ID. Video keys: {list(video.keys())}, sample data: {str(video)[:200]}...")
             continue
         std_video = video.copy()
         std_video['video_id'] = video_id  # Always set video_id
@@ -156,6 +157,8 @@ def standardize_video_data(videos_data):
     # Diagnostic: print first 3 video dicts and their video_id fields
     for i, v in enumerate(standardized_videos[:3]):
         debug_log(f"standardize_video_data: Video {i+1} video_id: {v.get('video_id')}, keys: {list(v.keys())}")
+        if i < 2:
+            debug_log(f"standardize_video_data: Video {i+1} full dict: {json.dumps(v, default=str)[:1000]}")
     return standardized_videos
 
 

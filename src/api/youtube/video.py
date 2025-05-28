@@ -141,9 +141,9 @@ class VideoClient(YouTubeBaseClient):
                 if max_videos > 0 and total_videos_fetched + len(existing_video_ids) >= max_videos:
                     break
                 
-                # Request detailed video information
+                # Request detailed video information (fetch all public fields)
                 video_request = self.youtube.videos().list(
-                    part="snippet,contentDetails,statistics",
+                    part="snippet,contentDetails,statistics,status,topicDetails,player,liveStreamingDetails,localizations",
                     id=','.join(batch_ids)
                 )
                 
@@ -160,40 +160,16 @@ class VideoClient(YouTubeBaseClient):
                 for video in video_response.get('items', []):
                     if max_videos > 0 and total_videos_fetched + len(existing_video_ids) >= max_videos:
                         break
-                        
-                    # Get video ID for tracking
-                    video_id = video['id']                            # Build video data with improved view and comment handling
-                    video_data = {
-                        'video_id': video_id,
-                        'title': video['snippet'].get('title', ''),
-                        'video_description': video['snippet'].get('description', ''),
-                        'published_at': video['snippet'].get('publishedAt', ''),
-                        'published_date': video['snippet'].get('publishedAt', '')[:10] if video['snippet'].get('publishedAt', '') else '',
-                        'views': video['statistics'].get('viewCount', '0'),
-                        'likes': video['statistics'].get('likeCount', '0'),
-                        'comment_count': video['statistics'].get('commentCount', '0'),
-                        'duration': video['contentDetails'].get('duration', ''),
-                        'thumbnails': video['snippet'].get('thumbnails', {}).get('high', {}).get('url', ''),
-                        'comments': []
-                    }
-                    
-                    # Store the full statistics object for later reference and ensure consistent data
-                    video_data['statistics'] = video.get('statistics', {})
-                    
-                    # Double-check comment_count is correctly populated from statistics
-                    if 'commentCount' in video_data['statistics'] and (not video_data['comment_count'] or video_data['comment_count'] == '0'):
-                        video_data['comment_count'] = video_data['statistics']['commentCount']
-                        debug_log(f"Set comment_count to {video_data['comment_count']} from statistics for video {video_id}")
-                    
-                    # Track if comments are disabled
-                    if video['contentDetails'].get('commentStatus') == 'disabled':
-                        video_data['comments_disabled'] = True
-                        videos_with_comments_disabled += 1
-                    
+                    video_id = video['id']
                     # Attach the full API response for this video
+                    video_data = video.copy()
+                    video_data['video_id'] = video_id
                     video_data['raw_api_response'] = video
-                    
-                    # Add the video to the channel data
+                    # Add debug logging for missing expected fields
+                    expected_fields = ['snippet', 'contentDetails', 'statistics', 'status', 'player', 'topicDetails', 'liveStreamingDetails', 'localizations']
+                    for field in expected_fields:
+                        if field not in video:
+                            debug_log(f"[VIDEO FETCH] Field '{field}' missing in video {video_id} API response.")
                     channel_info['video_id'].append(video_data)
                     total_videos_fetched += 1
                     new_videos += 1

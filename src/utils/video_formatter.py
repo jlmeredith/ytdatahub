@@ -290,7 +290,14 @@ def fix_missing_views(videos):
     from src.utils.helpers import debug_log
         
     for video in videos:
-        video_id = video.get('video_id', 'unknown')
+        # Robust identifier for logging
+        video_id = (
+            video.get('video_id') or
+            video.get('id') or
+            video.get('title') or
+            video.get('snippet', {}).get('title') or
+            'unknown'
+        )
         debug_log(f"Processing video {video_id} in fix_missing_views")
         debug_log(f"Initial state: views={video.get('views')}, statistics={video.get('statistics')}")
         

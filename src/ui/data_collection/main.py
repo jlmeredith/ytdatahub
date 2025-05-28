@@ -61,11 +61,22 @@ def render_data_collection_tab():
         background-color: rgba(255, 255, 0, 0.2);
         font-weight: 600;
     }
+
+    /* Add styling for debug panel */
+    .debug-container {
+        margin-top: 30px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
     
     # Initialize session state variables if they don't exist
     initialize_session_state()
+    
+    # Ensure debug_mode is initialized
+    if 'debug_mode' not in st.session_state:
+        st.session_state.debug_mode = False
     
     # API Key input
     api_key = os.getenv('YOUTUBE_API_KEY', '')
@@ -93,6 +104,29 @@ def render_data_collection_tab():
                 if 'refresh_workflow_step' in st.session_state:
                     st.session_state.refresh_workflow_step = 1
                 st.rerun()
+                
+            # Add debug mode toggle at the bottom for comparison view
+            st.divider()
+            from .debug_ui import generate_unique_key
+            debug_toggle_key = generate_unique_key("debug_mode_toggle_comparison")
+            
+            # Add debug mode toggle
+            debug_enabled = st.checkbox(
+                "Debug Mode", 
+                value=st.session_state.get('debug_mode', False),
+                key=debug_toggle_key
+            )
+            
+            # Update debug_mode in session state
+            if debug_enabled != st.session_state.get('debug_mode', False):
+                st.session_state.debug_mode = debug_enabled
+                toggle_debug_mode()
+                st.rerun()
+            
+            # Show debug panel when debug mode is enabled
+            if st.session_state.get('debug_mode', False):
+                from .debug_ui import render_debug_panel
+                render_debug_panel()
         else:
             # Normal view with tabs
             tabs = st.tabs(["New Collection", "Update Channel", "Queue Status"])
@@ -160,6 +194,29 @@ def render_data_collection_tab():
                         
                         Tip: Start with a small number of videos and comments to save quota.
                         """)
+                    
+                    # Add debug toggle at bottom of the new collection form
+                    st.divider()
+                    from .debug_ui import generate_unique_key
+                    debug_toggle_key = generate_unique_key("debug_mode_toggle_new_channel")
+                    
+                    # Add debug mode toggle
+                    debug_enabled = st.checkbox(
+                        "Debug Mode", 
+                        value=st.session_state.get('debug_mode', False),
+                        key=debug_toggle_key
+                    )
+                    
+                    # Update debug_mode in session state
+                    if debug_enabled != st.session_state.get('debug_mode', False):
+                        st.session_state.debug_mode = debug_enabled
+                        toggle_debug_mode()
+                        st.rerun()
+                    
+                    # Show debug panel when debug mode is enabled
+                    if st.session_state.get('debug_mode', False):
+                        from .debug_ui import render_debug_panel
+                        render_debug_panel()
             
             # Tab 2: Update Channel (Refresh)
             with tabs[1]:
@@ -188,14 +245,28 @@ def render_data_collection_tab():
                     st.session_state.update_tab_initialized = False
                 
                 render_queue_status_sidebar()
-        
-        # Debug mode toggle at the bottom
-        st.divider()
-        # Use on_change callback to properly update logging when checkbox changes
-        st.session_state.debug_mode = st.checkbox("Debug Mode", value=st.session_state.get('debug_mode', False), on_change=toggle_debug_mode)
-        
-        # When debug mode is enabled, show debug information
-        if st.session_state.debug_mode:
-            render_debug_panel()
+                
+                # Add debug mode toggle for this tab
+                st.divider()
+                from .debug_ui import generate_unique_key
+                debug_toggle_key = generate_unique_key("debug_mode_toggle_queue_tab")
+                
+                # Add debug mode toggle
+                debug_enabled = st.checkbox(
+                    "Debug Mode", 
+                    value=st.session_state.get('debug_mode', False),
+                    key=debug_toggle_key
+                )
+                
+                # Update debug_mode in session state
+                if debug_enabled != st.session_state.get('debug_mode', False):
+                    st.session_state.debug_mode = debug_enabled
+                    toggle_debug_mode()
+                    st.rerun()
+                
+                # Show debug panel when debug mode is enabled
+                if st.session_state.get('debug_mode', False):
+                    from .debug_ui import render_debug_panel
+                    render_debug_panel()
     else:
         st.error("Please enter a YouTube API Key")

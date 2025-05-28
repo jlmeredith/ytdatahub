@@ -23,86 +23,78 @@ This document provides a detailed breakdown of the Refresh Channel Workflow for 
 1. **Channel Selection**: User selects from dropdown
 2. **Comparison Initiation**: "Compare with YouTube API" button triggers:
 
-**`TODO: Update the compare options to be more verbose, such as making sure to compare all api fields regardess of content.  This is important as we want to be able to query channels daily and then surface significant changes in metrics.  This is particularly important for:  channel take overs, channels that get shutdown, change ownership, shift in message or content density, Changes in channel descriptions that update copyright or disclaimers, increase in usage of certain keywords or phrases.  Additionally, this ensures that our logic is consistant through the full workflow process and that all data is available at all points for compare as needed.`**
-
-   ```python
-   options = {
-       'fetch_channel_data': True,
-       'fetch_videos': False, 
-       'fetch_comments': False,
-       'max_videos': 0,
-       'max_comments_per_video': 0
-   }
-   comparison_data = youtube_service.update_channel_data(channel_id, options, interactive=False)
-   ```
-
-#### Session State Setup
-```python
-st.session_state['db_data'] = comparison_data.get('db_data', {})
-st.session_state['api_data'] = comparison_data.get('api_data', {})
-st.session_state['delta'] = comparison_data.get('delta', {})
-st.session_state['existing_channel_id'] = channel_id
-st.session_state['collection_mode'] = "refresh_channel"
-st.session_state['refresh_workflow_step'] = 2
-```
-
-### Step 2: Channel Data Review & Update
-
-#### Data Display
-1. **Channel Metrics Display** (3-column layout):
-   - **Column 1**: Channel name + YouTube link
-   - **Column 2**: Current subscriber count
-   - **Column 3**: Current total video count
-
-2. **Expandable Details**:
-`TODO: Make sure all api details are returned here`
-   - Channel description
-   - Total view count
-   - Channel ID
-   - Last update timestamp
-
-#### Delta Calculation & Display
-1. **Channel-Level Deltas** automatically calculated:
-   ```python
-   delta = compare_data(db_data, api_data)
-   ```
-2. **Delta Summary Display**:
-`TODO: Make sure all api details are returned here`
-   - Subscriber changes: `old → new ⬆️/⬇️`
-   - View count changes: `old → new ⬆️/⬇️`
-   - Video count changes: `old → new ⬆️/⬇️`
-
-#### Manual Refresh Option
-**"Refresh Channel Info from API"** button triggers:
 ```python
 options = {
     'fetch_channel_data': True,
     'fetch_videos': False,
-    'fetch_comments': False
+    'fetch_comments': False,
+    'max_videos': 0,
+    'max_comments_per_video': 0,
+    'comparison_level': 'comprehensive',  # Always use comprehensive for complete analysis
+    'track_keywords': [
+        'copyright', 'disclaimer', 'new owner', 'ownership', 'management', 
+        'rights', 'policy', 'terms', 'agreement', 'takeover', 'acquired',
+        'shutdown', 'closing', 'terminated', 'notice', 'warning'
+    ],
+    'alert_on_significant_changes': True,
+    'persist_change_history': True,
+    'compare_all_fields': True  # Ensure all fields are compared regardless of content
 }
-channel_info_response = youtube_service.update_channel_data(channel_id, options, interactive=False)
 ```
 
-#### User Actions
-- **"Save Channel Data"**: Updates database with fresh channel info
-`TODO: Make sure that we have visual ui confirmation of what was saved after the operation is completed.  May need to abstract this out into a method that will be used for all save operations.  This may already be present in the codebase but we need to locate and update to always return in the UI. `
+3. **API Call**: `youtube_service.update_channel_data(channel_id, options, interactive=False)`
+4. **Extract & Validate**: Fields are extracted and validated for UI parity
+5. **Delta Processing**: Delta information is promoted to top-level in API data
 
-- **"Continue to Videos Data"**: Advances to Step 3
+### Step 2: Channel Data Review (Updated with Save Confirmation)
 
-### Step 3: Video Collection & Update
+#### Data Comparison Display
+1. **Side-by-Side View**: Database and API data shown in columns
+2. **Detailed Delta Analysis**: Field-by-field changes highlighted
+3. **Change Dashboard**: Comprehensive display of metrics changes with indicators
+
+#### Save Operation
+1. **Save Button**: User initiates save operation with "Save Channel Data"
+2. **Database Update**: `youtube_service.save_channel_data(api_data, "sqlite")`
+3. **Visual Confirmation**: UI displays success message with details of saved data:
+   ```
+   Channel data for 'Channel Name' saved successfully!
+   
+   Data saved to database:
+   Channel Name: Example Channel
+   Channel ID: UC12345
+   Subscribers: 1,234,567
+   Views: 98,765,432
+   Videos: 250
+   Last Updated: 2023-06-01 14:30:45
+   ```
+
+### Step 3: Video Collection & Update (Enhanced)
 
 #### Video Data Refresh
-TODO: Apply all of the same TODO: items from channels to this workflow pattern to ensure parity of returned and visible information at each step of the process.  The only exception would be making sure that the ability to select the video and comment count should be selectable with a slider of all possible values from the prior channel api response and the response from when videos are fetched.  The same would be true for comments which should be applied below. 
-1. **API Call Configuration**:
+1. **Video Collection Controls**: User can adjust:
+   - Maximum number of videos to collect (slider up to channel's video count)
+   - Comparison detail level (basic/standard/comprehensive) 
+   - Keywords to track (comma-separated list)
+   - Alert preferences for significant changes
+
+2. **API Call Configuration**:
    ```python
    options = {
        'fetch_channel_data': False,
        'fetch_videos': True,
        'fetch_comments': False,
-       'max_videos': 50  # or user-defined
+       'max_videos': user_selected_count,
+       'comparison_level': user_selected_level,
+       'track_keywords': user_selected_keywords,
+       'alert_on_significant_changes': user_preference,
+       'persist_change_history': True,
+       'compare_all_fields': True  # Ensure all fields are compared
    }
    ```
-2. **Service Call**: `youtube_service.update_channel_data(channel_id, options, interactive=False)`
+
+3. **Service Call**: `youtube_service.update_channel_data(channel_id, options)`
+4. **Success Confirmation**: Displays count of videos collected and summary statistics
 
 #### Video-Level Delta Calculation
 1. **Video Comparison Process**:
@@ -116,166 +108,47 @@ TODO: Apply all of the same TODO: items from channels to this workflow pattern t
    - View count delta: `new_views - old_views`
    - Like count delta: `new_likes - old_likes`
    - Comment count delta: `new_comments - old_comments`
+   - Custom fields delta (when compare_all_fields=True)
 
-3. **Change Summary Generation**:
-   ```python
-   video_delta = {
-       'video': video,
-       'old_views': old.get('views', 0),
-       'new_views': video.get('views', 0),
-       'old_likes': old.get('likes', 0), 
-       'new_likes': video.get('likes', 0),
-       'old_comments': old.get('comment_count', 0),
-       'new_comments': video.get('comment_count', 0)
-   }
-   ```
+### Step 4: Comment Collection & Sentiment Analysis
 
-#### User Interface Display
-1. **Video Grid** with delta indicators:
-   - Thumbnail + title + video ID
-   - Current metrics (views, likes, comments)
-   - Change indicators for modified videos
-
-2. **Change Summary**: `"Videos with changes: X"`
-
-#### User Actions
-- **"Save Video Data"**: Updates database with refreshed video data
-- **"Continue to Comments Data"**: Advances to Step 4
-
-### Step 4: Comment Collection & Update
-
-#### Comment Data Refresh
 1. **API Call Configuration**:
    ```python
    options = {
        'fetch_channel_data': False,
        'fetch_videos': False,
        'fetch_comments': True,
-       'max_comments_per_video': user_defined
+       'analyze_sentiment': True,
+       'max_comments_per_video': 100  # or user-defined
    }
    ```
 
-#### Comment Delta Processing
-1. **Comment Comparison**: Compare existing vs. new comments
-2. **New Comment Detection**: Identify comments added since last update
-3. **Comment Count Updates**: Update comment counts per video
-4. **Comment Content Analysis**: Process new comment text and metadata
+2. **Service Call**: `youtube_service.update_channel_data(channel_id, options)`
 
-#### User Interface Display
-1. **Comment Summary Statistics**:
-   - Total new comments collected
-   - Videos with new comments
-   - Comment count changes per video
+3. **Comment-Level Delta Calculation**:
+   - Comment text changes
+   - Likes on comments
+   - Reply count changes
+   - Sentiment score changes
 
-2. **Sample New Comments**: Display recently added comments
+## Enhanced Features
 
-#### Completion Actions
-- **"Complete Update and Save"**: Final save of all updated data
-- **"View Delta Report"**: Detailed change summary
+### Comprehensive Comparison
+- The system now compares all available fields regardless of content type through the `compare_all_fields` option
+- This ensures capturing changes in important fields like channel ownership, descriptions, etc.
 
-## Advanced Features
+### Visual Save Confirmation
+- After save operations, detailed summaries are displayed showing what was saved
+- This includes key metrics and timestamps to confirm the successful operation
 
-### Interactive Mode
-The refresh workflow supports interactive mode with iteration prompts:
-```python
-updated_data = youtube_service.update_channel_data(
-    channel_id, 
-    options, 
-    interactive=True,
-    callback=iteration_prompt_callback
-)
-```
-
-### Delta Reporting
-Comprehensive delta tracking includes:
-- **Numerical Changes**: Exact count differences
-- **Percentage Changes**: Relative change calculations  
-- **Directional Indicators**: ⬆️ for increases, ⬇️ for decreases
-- **Time-Based Averages**: Daily/weekly change rates
-
-### Comparison View
-Side-by-side comparison of:
-- Database data (before update)
-- Fresh API data (after update)
-- Calculated deltas (changes)
-
-## Technical Implementation
-
-### Service Method Integration
-```python
-# Main update method
-youtube_service.update_channel_data(channel_id, options, interactive, existing_data)
-
-# Returns structured comparison data:
-{
-    'db_data': {...},      # Original database data
-    'api_data': {...},     # Fresh API data  
-    'delta': {...},        # Calculated changes
-    'channel': {...}       # Combined data with deltas
-}
-```
-
-### Delta Calculation Process
-1. **Data Retrieval**: Fetch both database and API data
-2. **Structure Normalization**: Ensure consistent data formats
-3. **Comparison Logic**: Use DeepDiff library for detailed comparison
-4. **Delta Generation**: Calculate numerical and percentage changes
-5. **Change Categorization**: Group changes by type and significance
-
-### Session State Management
-```python
-# Workflow tracking
-st.session_state['refresh_workflow_step'] = 1|2|3|4
-
-# Data comparison
-st.session_state['db_data'] = {...}
-st.session_state['api_data'] = {...} 
-st.session_state['delta'] = {...}
-
-# Interactive features
-st.session_state['show_iteration_prompt'] = True|False
-st.session_state['iteration_choice'] = True|False|None
-st.session_state['update_in_progress'] = True|False
-```
-
-## Error Handling & Edge Cases
-
-### Common Scenarios
-1. **No Changes Detected**: Inform user that data is current
-2. **Partial Update Failures**: Save successful portions, report failures
-3. **API Rate Limiting**: Graceful degradation with retry mechanisms
-4. **Database Conflicts**: Merge conflict resolution strategies
-
-### Data Integrity
-1. **Validation Checks**: Ensure data consistency before saving
-2. **Rollback Mechanisms**: Ability to revert problematic updates
-3. **Audit Trail**: Track all changes for debugging purposes
-
-## Best Practices
-
-### For Users
-1. **Regular Updates**: Refresh channels weekly or monthly
-2. **Review Deltas**: Examine changes before saving
-3. **Selective Updates**: Choose specific data types to refresh
-4. **Monitor Trends**: Track changes over time for analysis
-
-### For Developers
-1. **Delta Accuracy**: Ensure comparison logic handles edge cases
-2. **Performance**: Optimize for large channels with many videos
-3. **User Experience**: Provide clear feedback during long operations
-4. **Data Consistency**: Maintain referential integrity during updates
+### Dynamic Video Collection
+- Video collection now uses dynamic sliders based on the channel's actual video count
+- Enhanced comparison options for videos mirror those available for channel data
 
 ## Related Documentation
-- [Delta Calculation System](delta-calculation-system.md)
 - [Service Layer Architecture](workflow-service-layer.md)
-- [Data Comparison Methods](data-comparison-methods.md)
-
-## Migration Health Checks and Zero-Cruft Policy
-
-- After any schema or data migration, a test is added to ensure all records are migrated (e.g., all channels have uploads_playlist_id).
-- Backfill scripts are to be removed or archived after all environments are migrated and tests pass.
-- No migration or fix logic is left in production code after migration is complete.
-- The codebase is kept clean and modern, with no legacy cruft left behind.
+- [YouTube API Integration](youtube-api-guide.md)
+- [Data Storage Format](database-operations.md)
 
 ## Video Data Storage (2024-06 Update)
 - The `videos` table now only stores fields present in the public YouTube API response for non-owners.

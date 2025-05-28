@@ -66,11 +66,12 @@ class CommentService(BaseService):
     
         # Extract parameters from options
         videos = channel_data['video_id']
-        max_comments_per_video = options.get('max_comments_per_video', 100)  # Default to 100
-        max_replies_per_comment = options.get('max_replies_per_comment', 5)  # Default to 5 replies
+        max_top_level_comments = options.get('max_top_level_comments', 10)  # Default to 10
+        max_replies_per_comment = options.get('max_replies_per_comment', 5)  # Default to 5
+        max_comments_per_video = options.get('max_comments_per_video', 0)  # 0 means no cap
         optimize_quota = options.get('optimize_quota', True)  # Default to True
         
-        debug_log(f"Fetching comments for {len(videos)} videos, max_comments_per_video: {max_comments_per_video}, max_replies_per_comment: {max_replies_per_comment}, optimize_quota: {optimize_quota}")
+        debug_log(f"Fetching comments for {len(videos)} videos, max_top_level_comments: {max_top_level_comments}, max_replies_per_comment: {max_replies_per_comment}, max_comments_per_video: {max_comments_per_video}, optimize_quota: {optimize_quota}")
         print(f"[COMMENT SERVICE] Found {len(videos)} videos, calling API get_video_comments")
         
         try:
@@ -82,8 +83,9 @@ class CommentService(BaseService):
             print(f"[COMMENT SERVICE] About to call self.api.get_video_comments")
             comments_response = self.api.get_video_comments(
                 channel_data, 
-                max_comments_per_video=max_comments_per_video,
+                max_top_level_comments=max_top_level_comments,
                 max_replies_per_comment=max_replies_per_comment,
+                max_comments_per_video=max_comments_per_video,
                 optimize_quota=optimize_quota
             )
             

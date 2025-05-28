@@ -27,8 +27,24 @@ def process_video_data(videos_data):
         if not isinstance(video, dict):
             continue
             
-        # Get video ID - handle different formats
-        video_id = video.get('video_id', video.get('id', f"video_{i}"))
+        # Get video ID - handle different formats with robust extraction
+        video_id = (
+            video.get('video_id') or
+            video.get('youtube_id') or
+            video.get('id') if isinstance(video.get('id'), str) else None or
+            (video.get('id', {}).get('videoId') if isinstance(video.get('id'), dict) else None) or
+            (video.get('contentDetails', {}).get('videoId') if isinstance(video.get('contentDetails'), dict) else None) or
+            (video.get('snippet', {}).get('resourceId', {}).get('videoId') if isinstance(video.get('snippet', {}).get('resourceId'), dict) else None) or
+            f"video_{i}"
+        )
+        
+        # Always ensure video_id is set
+        if video_id and video_id != f"video_{i}":
+            video['video_id'] = video_id
+        elif not video.get('video_id'):
+            video['video_id'] = f"video_{i}"
+            debug_log(f"WARNING: No valid video ID found, using fallback: video_{i}")
+        
         debug_log(f"Processing video {video_id}")
         
         # Store original values for diagnostic purposes

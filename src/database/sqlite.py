@@ -177,8 +177,6 @@ class SQLiteDatabase:
                 -- statistics
                 statistics_view_count INTEGER,
                 statistics_like_count INTEGER,
-                statistics_dislike_count INTEGER,
-                statistics_favorite_count INTEGER,
                 statistics_comment_count INTEGER,
                 -- player
                 player_embed_html TEXT,

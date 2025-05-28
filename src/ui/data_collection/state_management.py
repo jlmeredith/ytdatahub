@@ -3,44 +3,69 @@ Session state management for data collection UI.
 Handles initialization and toggling of session state variables.
 """
 import streamlit as st
+import logging
 from src.utils.helpers import debug_log
 
 def initialize_session_state():
-    """Initialize all session state variables needed for data collection."""
+    """
+    Initialize all session state variables needed for data collection.
+    """
+    # Basic data collection state
     if 'collection_step' not in st.session_state:
-        st.session_state.collection_step = 1  # Step 1: Channel, Step 2: Videos, Step 3: Comments
+        st.session_state['collection_step'] = 1
+    
+    # API state
+    if 'api_initialized' not in st.session_state:
+        st.session_state['api_initialized'] = False
+    if 'api_client_initialized' not in st.session_state:
+        st.session_state['api_client_initialized'] = False
+    
+    # Channel data state
     if 'channel_data_fetched' not in st.session_state:
-        st.session_state.channel_data_fetched = False
-    if 'videos_fetched' not in st.session_state:
-        st.session_state.videos_fetched = False
-    if 'comments_fetched' not in st.session_state:
-        st.session_state.comments_fetched = False
-    if 'show_all_videos' not in st.session_state:
-        st.session_state.show_all_videos = False
-    if 'collection_mode' not in st.session_state:
-        st.session_state.collection_mode = "new_channel"  # "new_channel", "existing_channel", or "refresh_channel"
-    if 'previous_channel_data' not in st.session_state:
-        st.session_state.previous_channel_data = None
-    if 'api_call_status' not in st.session_state:
-        st.session_state.api_call_status = None
-    if 'compare_data_view' not in st.session_state:
-        st.session_state.compare_data_view = False
-    if 'db_data' not in st.session_state:
-        st.session_state.db_data = None
-    if 'api_data' not in st.session_state:
-        st.session_state.api_data = None
+        st.session_state['channel_data_fetched'] = False
+    if 'channel_fetch_failed' not in st.session_state:
+        st.session_state['channel_fetch_failed'] = False
+    
+    # Debug mode
+    if 'debug_mode' not in st.session_state:
+        st.session_state['debug_mode'] = False
+    if 'debug_raw_data' not in st.session_state:
+        st.session_state['debug_raw_data'] = {}
+    if 'debug_delta_data' not in st.session_state:
+        st.session_state['debug_delta_data'] = {}
 
 def toggle_debug_mode():
     """
     Toggle the debug mode and configure logging accordingly.
     This function is called when the debug mode checkbox state changes.
     """
-    if st.session_state.debug_mode:
+    # Ensure debug_mode exists in session state
+    if 'debug_mode' not in st.session_state:
+        st.session_state.debug_mode = False
+    
+    # Get the new state from the checkbox
+    debug_enabled = st.session_state.get('debug_mode_toggle', st.session_state.debug_mode)
+    
+    # Update the primary debug_mode flag
+    st.session_state.debug_mode = debug_enabled
+    
+    # Set appropriate log level based on debug mode
+    if debug_enabled:
         # Set log level to DEBUG
+        if 'log_level' not in st.session_state:
+            st.session_state.log_level = logging.DEBUG
         debug_log("Debug mode enabled")
     else:
         # Set log level to INFO
+        if 'log_level' not in st.session_state:
+            st.session_state.log_level = logging.INFO
         debug_log("Debug mode disabled")
+    
+    # Display status message (will only be shown when rerun happens)
+    if debug_enabled:
+        st.success("Debug mode enabled - detailed information will be shown")
+    else:
+        st.info("Debug mode disabled - detailed information hidden")
         
 def reset_collection_state():
     """Reset collection-related session state variables."""

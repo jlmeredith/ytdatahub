@@ -205,7 +205,7 @@ class VideoRepository(BaseRepository):
                     db_row['fetched_at'] = now
                 if 'updated_at' in existing_cols and not db_row.get('updated_at'):
                     db_row['updated_at'] = now
-                debug_log(f"[DB VIDEO ROW] {db_row}")
+                debug_log(f"[DB] Final db_row for video {data.get('video_id') or data.get('id')}: {json.dumps(db_row, default=str)[:1000]}")
                 columns = []
                 values = []
                 for col in existing_cols:
@@ -235,6 +235,12 @@ class VideoRepository(BaseRepository):
                     INSERT INTO videos_history (video_id, fetched_at, raw_video_info) VALUES (?, ?, ?)
                 ''', (db_row.get('youtube_id'), fetched_at, raw_video_info))
                 conn.commit()
+                # Save comments if present
+                comments = data.get('comments', [])
+                if comments:
+                    debug_log(f"[DB] Saving {len(comments)} comments for video {data.get('video_id') or data.get('id')}")
+                    comment_store_result = self.store_comments(comments, db_row.get('youtube_id'), fetched_at=None)
+                    debug_log(f"[DB] store_comments result: {comment_store_result}")
                 return True
         except sqlite3.OperationalError as e:
             error_msg = str(e).lower()

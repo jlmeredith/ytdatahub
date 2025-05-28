@@ -82,12 +82,13 @@ class YouTubeAPI:
         """Get detailed information for a batch of videos by their IDs (backward compatible alias)"""
         return self.video_client.get_video_details_batch(video_ids)
     
-    def get_video_comments(self, channel_info, max_comments_per_video=10, max_replies_per_comment=2, page_token=None, optimize_quota=False):
-        """Get comments for each video in the channel, with support for limiting replies per top-level comment."""
+    def get_video_comments(self, channel_info, max_top_level_comments=10, max_replies_per_comment=2, max_comments_per_video=0, page_token=None, optimize_quota=False):
+        """Get comments for each video in the channel, with support for limiting replies per top-level comment and a total cap."""
         return self.comment_client.get_video_comments(
             channel_info,
-            max_comments_per_video,
+            max_top_level_comments=max_top_level_comments,
             max_replies_per_comment=max_replies_per_comment,
+            max_comments_per_video=max_comments_per_video,
             page_token=page_token,
             optimize_quota=optimize_quota
         )

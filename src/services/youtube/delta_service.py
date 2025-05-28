@@ -27,7 +27,8 @@ class DeltaService(BaseService):
             'comparison_level': 'standard',  # 'basic', 'standard', or 'comprehensive'
             'track_keywords': [],  # List of keywords to track in text fields
             'alert_on_significant_changes': True,  # Whether to flag significant changes
-            'persist_change_history': True  # Whether to store historical changes
+            'persist_change_history': True,  # Whether to store historical changes
+            'compare_all_fields': False  # Whether to compare all fields regardless of content
         }
     
     def calculate_deltas(self, channel_data: Dict, original_data: Dict, options: Dict = None) -> Dict:
@@ -42,6 +43,7 @@ class DeltaService(BaseService):
                 - track_keywords: List of keywords to track in text fields
                 - alert_on_significant_changes: Whether to flag significant changes
                 - persist_change_history: Whether to store historical changes
+                - compare_all_fields: Whether to compare all fields regardless of content
             
         Returns:
             dict: The updated channel data with delta information
@@ -103,6 +105,7 @@ class DeltaService(BaseService):
         current_values = {}
         delta_options = channel_data.get('_delta_options', self.default_options)
         comparison_level = delta_options.get('comparison_level', 'standard')
+        compare_all_fields = delta_options.get('compare_all_fields', False)
         
         # Define fields to compare based on comparison level
         core_metrics = ['subscribers', 'views', 'total_videos']
@@ -115,24 +118,39 @@ class DeltaService(BaseService):
             'made_for_kids', 'self_declared_made_for_kids', 'language'
         ]
         
-        # Determine which fields to compare based on comparison_level
+        # Add all possible fields from raw_channel_info if it exists
+        if 'raw_channel_info' in channel_data and isinstance(channel_data['raw_channel_info'], dict):
+            raw_info = channel_data['raw_channel_info']
+            if 'snippet' in raw_info and isinstance(raw_info['snippet'], dict):
+                comprehensive_metrics.extend([f"snippet_{k}" for k in raw_info['snippet'].keys()])
+            if 'statistics' in raw_info and isinstance(raw_info['statistics'], dict):
+                comprehensive_metrics.extend([f"statistics_{k}" for k in raw_info['statistics'].keys()])
+            if 'contentDetails' in raw_info and isinstance(raw_info['contentDetails'], dict):
+                comprehensive_metrics.extend([f"contentDetails_{k}" for k in raw_info['contentDetails'].keys()])
+            if 'status' in raw_info and isinstance(raw_info['status'], dict):
+                comprehensive_metrics.extend([f"status_{k}" for k in raw_info['status'].keys()])
+            if 'brandingSettings' in raw_info and isinstance(raw_info['brandingSettings'], dict):
+                comprehensive_metrics.extend([f"brandingSettings_{k}" for k in raw_info['brandingSettings'].keys()])
+        
+        # Choose metrics based on comparison level
         if comparison_level == 'basic':
-            fields_to_compare = core_metrics
+            metrics_to_compare = core_metrics
         elif comparison_level == 'standard':
-            fields_to_compare = standard_metrics
-        else:  # comprehensive - compare all fields
-            # Start with all known comprehensive fields
-            fields_to_compare = comprehensive_metrics
+            metrics_to_compare = standard_metrics
+        else:  # comprehensive
+            metrics_to_compare = comprehensive_metrics
             
-            # Then add any additional fields from either data source
-            all_possible_fields = list(set(list(channel_data.keys()) + list(original_values.keys())))
-            
-            # Filter out special fields that shouldn't be compared
-            fields_to_compare = list(set(fields_to_compare + [f for f in all_possible_fields 
-                                if not f.startswith('_') and f != 'delta']))
-            
+        # If compare_all_fields is True, add all fields from both channel_data and original_values
+        if compare_all_fields:
+            all_fields = set(metrics_to_compare)
+            for key in list(channel_data.keys()) + list(original_values.keys()):
+                if (not key.startswith('_') and not isinstance(channel_data.get(key), (dict, list)) 
+                    and not isinstance(original_values.get(key), (dict, list))):
+                    all_fields.add(key)
+            metrics_to_compare = list(all_fields)
+        
         # Extract current values
-        for key in fields_to_compare:
+        for key in metrics_to_compare:
             if key in channel_data:
                 if key in core_metrics:
                     # For core metrics, ensure they're treated as integers
@@ -145,7 +163,7 @@ class DeltaService(BaseService):
                     current_values[key] = channel_data[key]
         
         # Calculate the differences
-        for key in fields_to_compare:
+        for key in metrics_to_compare:
             # For numeric fields, calculate arithmetic difference
             if key in core_metrics:
                 if key in original_values and key in current_values:
@@ -249,10 +267,17 @@ class DeltaService(BaseService):
         # Get comparison level from options
         delta_options = channel_data.get('_delta_options', self.default_options)
         comparison_level = delta_options.get('comparison_level', 'standard')
+        compare_all_fields = delta_options.get('compare_all_fields', False)
         
         # Define metrics to compare based on comparison level
         core_metrics = ['views', 'likes', 'comment_count']
         standard_metrics = core_metrics + ['title', 'description', 'tags', 'duration']
+        comprehensive_metrics = standard_metrics + [
+            'published_at', 'channel_id', 'channel_title', 'thumbnail_url', 
+            'definition', 'caption', 'licensed_content', 'projection', 
+            'privacy_status', 'license', 'embeddable', 'public_stats_viewable',
+            'made_for_kids', 'self_declared_made_for_kids', 'live_status'
+        ]
         
         # Determine which fields to compare based on comparison_level
         if comparison_level == 'basic':
@@ -260,8 +285,27 @@ class DeltaService(BaseService):
         elif comparison_level == 'standard':
             metrics_to_compare = standard_metrics
         else:  # comprehensive
-            # For comprehensive, we'll compare all available fields except special ones
-            metrics_to_compare = None  # Will dynamically determine for each video
+            metrics_to_compare = comprehensive_metrics
+            
+        # If compare_all_fields is True, we'll dynamically determine for each video
+        if compare_all_fields:
+            # Start with the predefined set based on level
+            base_metrics = set(metrics_to_compare)
+            # We'll add all fields from the first video (if any) to ensure complete coverage
+            current_videos = channel_data.get('video_id', [])
+            if current_videos and isinstance(current_videos, list) and len(current_videos) > 0:
+                first_video = current_videos[0]
+                for key in first_video.keys():
+                    if not key.startswith('_') and not isinstance(first_video.get(key), (dict, list)):
+                        base_metrics.add(key)
+            # Also add any fields from original videos
+            if original_videos and isinstance(original_videos, list) and len(original_videos) > 0:
+                first_orig = original_videos[0]
+                for key in first_orig.keys():
+                    if not key.startswith('_') and not isinstance(first_orig.get(key), (dict, list)):
+                        base_metrics.add(key)
+            # Update the metrics to compare
+            metrics_to_compare = list(base_metrics)
         
         # Process videos and detect changes
         current_videos = channel_data.get('video_id', [])
@@ -292,12 +336,6 @@ class DeltaService(BaseService):
             # Check for updated metrics in existing videos
             original_video = original_videos[video_id]
             updates = {'video_id': video_id, 'title': video.get('title', 'Untitled')}
-            
-            # For comprehensive comparison, dynamically determine metrics to compare
-            if comparison_level == 'comprehensive':
-                # Compare all fields present in either video
-                all_fields = set(list(video.keys()) + list(original_video.keys()))
-                metrics_to_compare = [field for field in all_fields if not field.startswith('_') and field != 'video_id']
             
             # Check numeric metrics
             numeric_metrics = ['views', 'likes', 'comment_count', 'dislike_count', 'favorite_count']

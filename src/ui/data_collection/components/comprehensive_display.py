@@ -8,13 +8,14 @@ import json
 from typing import Dict, Any, List, Optional, Union
 from ..utils.data_conversion import format_number
 
-def render_collapsible_field_explorer(data: Dict[str, Any], title: str = "All Channel Fields") -> None:
+def render_collapsible_field_explorer(data: Dict[str, Any], title: str = "All Channel Fields", no_expander: bool = False) -> None:
     """
     Renders a collapsible explorer for all API fields with hierarchical navigation.
     
     Args:
         data: Dictionary containing all the API fields
         title: Title for the collapsible section
+        no_expander: If True, renders without wrapping in an expander (for use in existing expanders)
     """
     if not data:
         st.info("No data available to display.")
@@ -23,11 +24,13 @@ def render_collapsible_field_explorer(data: Dict[str, Any], title: str = "All Ch
     # Remove internal fields from display
     display_data = {k: v for k, v in data.items() if not k.startswith('_') and k != 'delta'}
     
-    # Create collapsible section
-    with st.expander(title, expanded=False):
-        # Add filtering option
+    # Conditional expander creation based on no_expander flag
+    if no_expander:
+        # Add filtering option directly without expander
+        st.subheader(title)
         filter_term = st.text_input("Filter fields:", key=f"filter_{title.replace(' ', '_').lower()}")
         
+        # Continue with the rest of the function
         # Group fields by category
         categories = {
             "Basic Info": ["channel_id", "channel_name", "description", "country", "published_at"],
@@ -36,6 +39,69 @@ def render_collapsible_field_explorer(data: Dict[str, Any], title: str = "All Ch
             "Metadata": ["tags", "category", "language", "custom_url"],
             "Other": []  # Will hold all other fields
         }
+        
+        categorized_data = {cat: {} for cat in categories}
+        
+        # Categorize each field
+        for field, value in display_data.items():
+            placed = False
+            for cat, fields in categories.items():
+                if field in fields:
+                    categorized_data[cat][field] = value
+                    placed = True
+                    break
+            
+            if not placed:
+                categorized_data["Other"][field] = value
+        
+        # Display each category
+        for category, fields in categorized_data.items():
+            if not fields:
+                continue
+                
+            # Skip this category if it doesn't match the filter
+            if filter_term and filter_term.lower() not in category.lower() and not any(
+                filter_term.lower() in str(field).lower() or 
+                (isinstance(value, (str, int, float)) and filter_term.lower() in str(value).lower())
+                for field, value in fields.items()
+            ):
+                continue
+                
+            st.subheader(category)
+            
+            # Format fields for display
+            for field, value in fields.items():
+                # Skip this field if it doesn't match the filter
+                if filter_term and filter_term.lower() not in field.lower() and not (
+                    isinstance(value, (str, int, float)) and filter_term.lower() in str(value).lower()
+                ):
+                    continue
+                    
+                # Format value for display - avoid nested expanders
+                if isinstance(value, dict):
+                    # Use columns instead of nested expanders
+                    st.markdown(f"**{field.capitalize()}**:")
+                    st.json(value)
+                elif isinstance(value, list):
+                    # Use columns instead of nested expanders
+                    st.markdown(f"**{field.capitalize()}** ({len(value)} items):")
+                    st.write(value)
+                else:
+                    st.metric(label=field.capitalize(), value=value)
+    else:
+        # Create collapsible section
+        with st.expander(title, expanded=False):
+            # Add filtering option
+            filter_term = st.text_input("Filter fields:", key=f"filter_{title.replace(' ', '_').lower()}")
+            
+            # Group fields by category
+            categories = {
+                "Basic Info": ["channel_id", "channel_name", "description", "country", "published_at"],
+                "Statistics": ["subscribers", "views", "total_videos", "total_playlists"],
+                "Engagement": ["likes", "comments", "shares"],
+                "Metadata": ["tags", "category", "language", "custom_url"],
+                "Other": []  # Will hold all other fields
+            }
         
         categorized_data = {cat: {} for cat in categories}
         

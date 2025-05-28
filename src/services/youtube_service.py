@@ -292,6 +292,7 @@ class YouTubeService(YouTubeServiceImpl):
                 - track_keywords (list, optional): List of keywords to track in text fields
                 - alert_on_significant_changes (bool, optional): Whether to alert on major changes
                 - persist_change_history (bool, optional): Whether to save change history
+                - compare_all_fields (bool, optional): Whether to compare all fields regardless of content
                 - max_videos (int, optional): Maximum number of videos to fetch
                 - max_comments_per_video (int, optional): Maximum comments per video to fetch
             interactive (bool): Whether to run in interactive mode which may
@@ -319,6 +320,7 @@ class YouTubeService(YouTubeServiceImpl):
         track_keywords = options.get('track_keywords', ['copyright', 'disclaimer', 'new owner', 'policy', 'terms'])
         alert_on_significant_changes = options.get('alert_on_significant_changes', True)
         persist_change_history = options.get('persist_change_history', True)
+        compare_all_fields = options.get('compare_all_fields', False)  # New option
         
         # Attach delta info to api_data for refresh workflow
         if db_data and api_data:
@@ -330,7 +332,8 @@ class YouTubeService(YouTubeServiceImpl):
                 'comparison_level': comparison_level,
                 'track_keywords': track_keywords,
                 'alert_on_significant_changes': alert_on_significant_changes,
-                'persist_change_history': persist_change_history
+                'persist_change_history': persist_change_history,
+                'compare_all_fields': compare_all_fields  # Add the new option
             }
             
             # Calculate deltas with enhanced options

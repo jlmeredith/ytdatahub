@@ -49,21 +49,16 @@ except (ImportError, ModuleNotFoundError):
 class CommentClient(YouTubeBaseClient):
     """YouTube Data API client focused on comment operations"""
     
-    def get_video_comments(self, channel_info: Dict[str, Any], max_comments_per_video: int = 10, max_replies_per_comment: int = 2, page_token: str = None, optimize_quota: bool = False) -> Optional[Dict[str, Any]]:
+    def get_video_comments(self, channel_info: Dict[str, Any], max_top_level_comments: int = 10, max_replies_per_comment: int = 2, max_comments_per_video: int = 0, page_token: str = None, optimize_quota: bool = False) -> Optional[Dict[str, Any]]:
         """
         Get comments for each video in the channel with optimal quota usage.
-        
-        This method efficiently retrieves comments by:
-        1. Using maxResults=100 to minimize API calls
-        2. Implementing pagination to retrieve more comments per video if needed
-        3. Checking for disabled comments before making API calls
-        4. Using ETag caching for repeat retrievals
-        5. Properly handling and including replies
+        Enforces a hard cap of max_comments_per_video (if > 0) on the total number of comments (top-level + replies) per video.
         
         Args:
             channel_info: Dictionary containing channel information with videos
-            max_comments_per_video: Maximum number of top-level comments to fetch per video (0 to skip)
+            max_top_level_comments: Maximum number of top-level comments to fetch per video (0 to skip)
             max_replies_per_comment: Maximum number of replies to fetch per top-level comment
+            max_comments_per_video: Maximum total comments (top-level + replies) per video (0 means no cap)
             page_token: Token for pagination support across multiple calls
             optimize_quota: Whether to optimize quota usage (currently unused)
             
@@ -72,8 +67,9 @@ class CommentClient(YouTubeBaseClient):
         """
         # Enhanced debugging at the start
         print(f"🔍 [DEBUG] get_video_comments called with:")
-        print(f"  - max_comments_per_video: {max_comments_per_video}")
+        print(f"  - max_top_level_comments: {max_top_level_comments}")
         print(f"  - max_replies_per_comment: {max_replies_per_comment}")
+        print(f"  - max_comments_per_video: {max_comments_per_video}")
         print(f"  - page_token: {page_token}")
         print(f"  - optimize_quota: {optimize_quota}")
         print(f"  - API client initialized: {self.is_initialized()}")
@@ -100,13 +96,13 @@ class CommentClient(YouTubeBaseClient):
                 st.warning("No videos found to fetch comments for.")
             return channel_info
             
-        # Zero max_comments means skip comment fetching
-        if max_comments_per_video <= 0:
-            debug_log("COMMENT DEBUG: max_comments_per_video is 0 or negative, skipping comment fetching")
+        # Zero max_top_level_comments means skip comment fetching
+        if max_top_level_comments <= 0:
+            debug_log("COMMENT DEBUG: max_top_level_comments is 0 or negative, skipping comment fetching")
             return channel_info
         
-        debug_log(f"COMMENT DEBUG: Starting to fetch comments for {len(videos)} videos, max {max_comments_per_video} per video")
-        print(f"INFO: Fetching comments for {len(videos)} videos, max {max_comments_per_video} per video")
+        debug_log(f"COMMENT DEBUG: Starting to fetch comments for {len(videos)} videos, max {max_top_level_comments} top-level comments per video")
+        print(f"INFO: Fetching comments for {len(videos)} videos, max {max_top_level_comments} top-level comments per video")
         if STREAMLIT_AVAILABLE:
             st.info("ℹ️ Fetching comments. This may take some time depending on the number of videos.")
         
@@ -235,111 +231,31 @@ class CommentClient(YouTubeBaseClient):
                         
                     debug_log(f"COMMENT DEBUG: Video '{video_title}' has {comment_count} comments according to statistics")
                     
-                    # Now retrieve comments with pagination to get up to max_comments_per_video
-                    comments = []
-                    total_added = 0  # Track total comments added for this video
-                    # First check if this video already has a nextPageToken from a previous call
-                    # This is important for continuing pagination where we left off
+                    # Now retrieve comments with pagination to get up to max_top_level_comments
+                    top_level_fetched = 0
+                    total_comments_fetched = 0
                     next_page_token = None
-                    
-                    # Option 1: Check if the video has a nextPageToken property directly
-                    if 'nextPageToken' in video:
-                        next_page_token = video.get('nextPageToken')
-                        debug_log(f"COMMENT DEBUG: Found video-specific nextPageToken: {next_page_token}")
-                    
-                    # Option 2: If no token in the video object, use the provided page_token parameter 
-                    # This is from the service-level pagination
-                    if not next_page_token and page_token:
-                        next_page_token = page_token
-                        debug_log(f"COMMENT DEBUG: Using service-provided page_token: {next_page_token}")
-                        
-                    # Store the page token on the video object to ensure it's preserved across calls
-                    if next_page_token:
-                        video['nextPageToken'] = next_page_token
-                        
-                    comments_to_fetch = max_comments_per_video
-                    
-                    # Initialize comment tracking counters
-                    existing_top_level_count = 0
-                    
-                    # If this video already has comments (from previous pagination), include them in our count
-                    if 'comments' in video and isinstance(video['comments'], list) and len(video['comments']) > 0:
-                        # Count only top-level comments (no parent_id)
-                        existing_top_level_count = sum(1 for c in video['comments'] if 'parent_id' not in c)
-                        debug_log(f"COMMENT DEBUG: Video already has {existing_top_level_count} top-level comments from previous pagination")
-                        
-                        # Adjust our fetch count based on existing top-level comments
-                        if max_comments_per_video > 0:  # Only adjust if we have a limit
-                            comments_to_fetch = max(0, max_comments_per_video - existing_top_level_count)
-                            debug_log(f"COMMENT DEBUG: Adjusted comments_to_fetch to {comments_to_fetch} (max={max_comments_per_video}, existing={existing_top_level_count})")
-                    
-                    # Check if we have an ETag for this video's comments
-                    etag_key = f"etag_comments_{vid_id}"
-                    etag = st.session_state.etag_cache.get(etag_key)
-                    
-                    # If we already have enough comments, skip the API call
-                    if comments_to_fetch <= 0:
-                        debug_log(f"COMMENT DEBUG: Already have enough top-level comments for video '{video_title}' ({existing_top_level_count}/{max_comments_per_video}), skipping API call")
-                        continue
-                        
-                    # Continue fetching until we have enough comments or run out of pages
-                    while comments_to_fetch > 0:
-                        # Request can fetch up to 100 comments at a time
-                        current_fetch_count = min(100, comments_to_fetch)
-                        
-                        # Create base request
+                    while top_level_fetched < max_top_level_comments:
+                        fetch_count = min(100, max_top_level_comments - top_level_fetched)
                         request_params = {
-                            "part": "snippet,replies",  # Get both top-level comments and their replies
+                            "part": "snippet,replies",
                             "videoId": vid_id,
-                            "maxResults": current_fetch_count,
-                            "textFormat": "plainText",   
+                            "maxResults": fetch_count,
+                            "textFormat": "plainText",
                             "order": "relevance"
                         }
-                        
-                        # Add page token if we're paginating
                         if next_page_token:
                             request_params["pageToken"] = next_page_token
-                            debug_log(f"COMMENT DEBUG: Using page token {next_page_token} for pagination")
-                            
-                        print(f"🔍 [DEBUG] About to call commentThreads().list() with params: {request_params}")
                         comments_request = self.youtube.commentThreads().list(**request_params)
-                        
-                        # Add ETag for conditional request if available
-                        if etag:
-                            debug_log(f"COMMENT DEBUG: Using ETag for video '{video_title}': {etag}")
-                            comments_request.headers['If-None-Match'] = etag
-                        
-                        debug_log(f"COMMENT DEBUG: Sending API request for comments on video '{video_title}' (max: {current_fetch_count})")
-                        print(f"🌐 [DEBUG] Making API call to YouTube commentThreads.list()...")
                         comments_response = comments_request.execute()
-                        print(f"🔍 [DEBUG] API call completed. Response keys: {list(comments_response.keys())}")
-                        print(f"🔍 [DEBUG] Items in response: {len(comments_response.get('items', []))}")
-                        
-                        # Store new ETag if present
-                        if 'etag' in comments_response:
-                            st.session_state.etag_cache[etag_key] = comments_response['etag']
-                            debug_log(f"COMMENT DEBUG: Stored new ETag for video '{video_title}': {comments_response['etag']}")
-                        
-                        # Log detailed API response for debugging
-                        debug_log(f"COMMENT DEBUG: Raw API response keys: {list(comments_response.keys())}")
-                        
-                        # Extract comment data
                         response_items = comments_response.get('items', [])
-                        comments_fetched_this_page = len(response_items)
-                        debug_log(f"COMMENT DEBUG: Response contains {comments_fetched_this_page} comments for video '{video_title}'")
-                        
                         if not response_items:
-                            debug_log(f"COMMENT DEBUG: No comments found in API response for video '{video_title}'")
                             break
-                        
-                        # Process comments from this page
-                        # Start with existing top-level count if any
-                        top_level_count = existing_top_level_count
-                        debug_log(f"[COMMENT PROCESSING] Starting with {top_level_count} existing top-level comments out of max {max_comments_per_video}")
-                        
                         for item in response_items:
-                            if top_level_count >= max_comments_per_video:
-                                debug_log(f"[COMMENT FETCH LIMIT] Reached max_comments_per_video={max_comments_per_video} for video {vid_id} (top-level: {top_level_count})")
+                            if top_level_fetched >= max_top_level_comments:
+                                break
+                            if max_comments_per_video > 0 and total_comments_fetched >= max_comments_per_video:
+                                debug_log(f"[COMMENT CAP] Reached max_comments_per_video ({max_comments_per_video}) for video {vid_id}. Stopping fetch.")
                                 break
                             try:
                                 comment = item['snippet']['topLevelComment']['snippet']
@@ -350,56 +266,47 @@ class CommentClient(YouTubeBaseClient):
                                     'comment_published_at': comment['publishedAt'],
                                     'like_count': comment.get('likeCount', 0)
                                 }
-                                comments.append(comment_data)
-                                top_level_count += 1
-                                # Add up to max_replies_per_comment replies
-                                if 'replies' in item and item['replies']['comments']:
-                                    reply_count = 0
-                                    for reply in item['replies']['comments']:
-                                        if reply_count >= max_replies_per_comment:
-                                            debug_log(f"[COMMENT FETCH LIMIT] Reached max_replies_per_comment={max_replies_per_comment} for top-level comment {item['id']}")
-                                            break
-                                        reply_snippet = reply['snippet']
-                                        reply_data = {
-                                            'comment_id': reply['id'],
-                                            'comment_text': f"[REPLY] {reply_snippet['textDisplay']}",
-                                            'comment_author': reply_snippet['authorDisplayName'],
-                                            'comment_published_at': reply_snippet['publishedAt'],
-                                            'like_count': reply_snippet.get('likeCount', 0),
-                                            'parent_id': item['id']
-                                        }
-                                        comments.append(reply_data)
-                                        reply_count += 1
+                                if max_comments_per_video > 0 and total_comments_fetched + 1 > max_comments_per_video:
+                                    debug_log(f"[COMMENT CAP] Would exceed max_comments_per_video with top-level comment, skipping.")
+                                    break
+                                video['comments'].append(comment_data)
+                                top_level_fetched += 1
+                                total_comments_fetched += 1
+                                # Strictly limit replies
+                                replies = item.get('replies', {}).get('comments', [])
+                                for reply in replies[:max_replies_per_comment]:
+                                    if max_comments_per_video > 0 and total_comments_fetched >= max_comments_per_video:
+                                        debug_log(f"[COMMENT CAP] Reached max_comments_per_video ({max_comments_per_video}) for video {vid_id} (in replies). Stopping fetch.")
+                                        break
+                                    reply_snippet = reply['snippet']
+                                    reply_data = {
+                                        'comment_id': reply['id'],
+                                        'comment_text': f"[REPLY] {reply_snippet['textDisplay']}",
+                                        'comment_author': reply_snippet['authorDisplayName'],
+                                        'comment_published_at': reply_snippet['publishedAt'],
+                                        'like_count': reply_snippet.get('likeCount', 0),
+                                        'parent_id': item['id']
+                                    }
+                                    video['comments'].append(reply_data)
+                                    total_comments_fetched += 1
+                                if max_comments_per_video > 0 and total_comments_fetched >= max_comments_per_video:
+                                    debug_log(f"[COMMENT CAP] Reached max_comments_per_video ({max_comments_per_video}) for video {vid_id} (after replies). Stopping fetch.")
+                                    break
                             except KeyError as ke:
                                 debug_log(f"COMMENT DEBUG: KeyError accessing comment structure: {ke}. Item structure: {item}")
                                 continue
-                        # If we've reached the limit, break out of the while loop
-                        if top_level_count >= max_comments_per_video:
+                        if max_comments_per_video > 0 and total_comments_fetched >= max_comments_per_video:
+                            debug_log(f"[COMMENT CAP] Reached max_comments_per_video ({max_comments_per_video}) for video {vid_id} (end of page). Stopping fetch.")
                             break
-                        
-                        # Update remaining comments to fetch
-                        comments_to_fetch -= comments_fetched_this_page
-                        
-                        # Check if there are more pages of comments
-                        if 'nextPageToken' in comments_response and comments_to_fetch > 0:
+                        if 'nextPageToken' in comments_response and top_level_fetched < max_top_level_comments:
                             next_page_token = comments_response['nextPageToken']
-                            # Store the next page token on the video for subsequent pagination
-                            video['nextPageToken'] = next_page_token
-                            debug_log(f"COMMENT DEBUG: More comments available, storing pageToken on video: {next_page_token}")
                         else:
-                            # Clear the nextPageToken if we've reached the end
-                            if 'nextPageToken' in video:
-                                del video['nextPageToken']
-                            debug_log(f"COMMENT DEBUG: No more comment pages or reached max limit for video '{video_title}'")
                             break
-                    
-                    # Add comments to the video - if there are already comments, append to them
-                    if 'comments' not in video:
-                        video['comments'] = []  # Initialize to empty list first
+                    debug_log(f"[COMMENT CAP] For video {vid_id}: top_level_fetched={top_level_fetched}, total_comments_fetched={total_comments_fetched}, cap={max_comments_per_video}")
                     
                     # Log reply statistics
                     reply_counts = {}
-                    for comment in comments:
+                    for comment in video['comments']:
                         if 'parent_id' in comment:
                             parent_id = comment['parent_id']
                             if parent_id not in reply_counts:
@@ -411,40 +318,8 @@ class CommentClient(YouTubeBaseClient):
                         debug_log(f"COMMENT DEBUG: Reply distribution: {reply_counts}")
                         debug_log(f"COMMENT DEBUG: Max replies: {max(reply_counts.values()) if reply_counts else 0}, Limit: {max_replies_per_comment}")
                     
-                    # Always extend with comments from this page
-                    video['comments'].extend(comments)
-                    
-                    # Double-check that we haven't exceeded our limit for top-level comments
-                    top_level = [c for c in video['comments'] if 'parent_id' not in c]
-                    if max_comments_per_video > 0 and len(top_level) > max_comments_per_video:
-                        debug_log(f"COMMENT DEBUG: Too many top-level comments ({len(top_level)}/{max_comments_per_video}), trimming...")
-                        # Find indices of top-level comments after the limit
-                        indices_to_remove = []
-                        top_level_count = 0
-                        for i, comment in enumerate(video['comments']):
-                            if 'parent_id' not in comment:
-                                top_level_count += 1
-                                if top_level_count > max_comments_per_video:
-                                    indices_to_remove.append(i)
-                        
-                        # Remove excess comments (in reverse order to maintain indices)
-                        for i in sorted(indices_to_remove, reverse=True):
-                            video['comments'].pop(i)
-                    
-                    debug_log(f"COMMENT DEBUG: Added/Updated to total of {len(video['comments'])} comments for video '{video_title}' (limit was {max_comments_per_video})")
-                    
-                    # Update statistics
-                    comments_fetched_total += len(comments)
-                    if len(comments) > 0:
-                        videos_with_comments += 1
-                    
-                    # Log comment breakdown
-                    top_level = [c for c in comments if 'parent_id' not in c]
-                    replies = [c for c in comments if 'parent_id' in c]
-                    debug_log(f"COMMENT DEBUG: Final count for video '{video_title}': {len(top_level)} top-level comments, {len(replies)} replies")
-                    
                     # Store in cache
-                    self.store_in_cache(cache_key, comments)
+                    self.store_in_cache(cache_key, video['comments'])
                     
                 except googleapiclient.errors.HttpError as e:
                     error_text = str(e)

@@ -60,7 +60,7 @@ class YouTubeChannelClient(YouTubeBaseClient):
                 st.session_state.api_last_response = response
                 st.session_state.api_call_status = "API call completed successfully"
             
-            debug_log(f"API response received. Items count: {len(response.get('items', []))}")
+            debug_log(f"API response received: {response}")
             
             # Process the response to extract channel data
             if 'items' in response and len(response['items']) > 0:
@@ -72,13 +72,16 @@ class YouTubeChannelClient(YouTubeBaseClient):
                     'playlist_id': channel_item.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads', ''),
                 }
             else:
-                debug_log(f"No channel found with ID: {channel_id}")
+                debug_log(f"No channel found with ID: {channel_id}. Full response: {response}")
                 if hasattr(st, 'session_state'):
                     st.session_state.api_call_status = f"No channel found with ID: {channel_id}"
-                    st.session_state.api_last_error = "Channel not found"
+                    st.session_state.api_last_error = f"No channel found. API response: {response}"
                 return None
                 
         except Exception as e:
+            debug_log(f"Exception in get_channel_info: {str(e)}")
+            if hasattr(st, 'session_state'):
+                st.session_state.api_last_error = str(e)
             self._handle_api_error(e, f"get_channel_info({channel_id})")
             return None
 

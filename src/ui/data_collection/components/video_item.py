@@ -286,3 +286,45 @@ def render_video_item(video, index=0, selectable=False):
                 else:
                     st.write(description)
     return selection
+
+def render_video_table_row(video, index=0, selected=False, on_select=None):
+    """
+    Render a single video as a row in a compact table for selection.
+    Args:
+        video (dict): Video data
+        index (int): Row index
+        selected (bool): Whether this video is selected
+        on_select (callable): Optional callback for selection change
+    Returns:
+        bool: Whether the video is selected
+    """
+    import streamlit as st
+    from ...data_collection.utils.data_conversion import format_number
+    from datetime import datetime
+    video_id = video.get('video_id', '')
+    title = video.get('title', 'No Title')
+    views = video.get('views', 0)
+    comment_count = video.get('comment_count', 0)
+    if not comment_count and 'statistics' in video and 'commentCount' in video['statistics']:
+        try:
+            comment_count = int(video['statistics']['commentCount'])
+        except Exception:
+            comment_count = 0
+    published_at = video.get('published_at', '')
+    try:
+        if published_at and 'T' in published_at:
+            published_at = published_at.split('T')[0]
+    except Exception:
+        pass
+    col1, col2, col3, col4, col5 = st.columns([1, 4, 2, 2, 2])
+    with col1:
+        checked = st.checkbox("", value=selected, key=f"table_select_{video_id}_{index}")
+    with col2:
+        st.markdown(f"[{title}](https://www.youtube.com/watch?v={video_id})")
+    with col3:
+        st.write(format_number(views, short=True))
+    with col4:
+        st.write(format_number(comment_count, short=True))
+    with col5:
+        st.write(published_at)
+    return checked
