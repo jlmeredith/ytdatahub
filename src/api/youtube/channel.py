@@ -95,6 +95,7 @@ class ChannelClient(YouTubeBaseClient):
             
             # Format channel info with all available fields from the API
             channel_info = {
+                'raw_channel_info': channel_data,  # Store the complete raw API response
                 'channel_id': validated_channel_id,
                 'channel_name': channel_data['snippet']['title'],
                 'channel_description': channel_data['snippet']['description'],

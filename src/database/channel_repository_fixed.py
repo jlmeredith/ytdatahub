@@ -1,5 +1,9 @@
 """
-Channel repository module for interacting with YouTube channel data in the SQLite database.
+Fixed Channel Repository with proper field mapping and missing value handling.
+This addresses the missing YouTube API fields issue by:
+1. Correctly mapping database columns to flattened API field names
+2. Adding proper handling for missing API fields vs mapping issues
+3. Adding enhanced logging for debugging
 """
 import sqlite3
 from typing import List, Dict, Optional, Any, Union
@@ -38,6 +42,52 @@ def serialize_for_sqlite(val):
         return json.dumps(val)
     return val
 
+def handle_missing_api_field(field_name, column_type=None):
+    """
+    Handle missing API fields by returning appropriate default values
+    based on the database column type and field semantics.
+    
+    Args:
+        field_name: The name of the missing field
+        column_type: The database column type
+    
+    Returns:
+        Appropriate default value or special marker for missing data
+    """
+    # For fields that should explicitly indicate "not provided by API"
+    # These are optional fields that may not be present in API response
+    if field_name in [
+        'snippet_defaultLanguage',
+        'snippet_country',
+        'brandingSettings_channel_keywords',
+        'brandingSettings_channel_country',
+        'brandingSettings_image_bannerExternalUrl'
+    ]:
+        return "NOT_PROVIDED_BY_API"
+    
+    # For fields that should be null when not available
+    # These represent optional nested data
+    if field_name in [
+        'snippet_localized_title',
+        'snippet_localized_description', 
+        'contentDetails_relatedPlaylists_likes',
+        'contentDetails_relatedPlaylists_favorites',
+        'topicDetails_topicIds'
+    ]:
+        return None
+    
+    # For complex fields that should be empty objects/arrays
+    if field_name in ['localizations']:
+        return "{}"  # Empty JSON object
+    
+    # Default handling based on column type
+    if column_type == 'BOOLEAN':
+        return False
+    elif column_type == 'INTEGER':
+        return 0
+    else:  # TEXT
+        return None
+
 class ChannelRepository(BaseRepository):
     """Repository for managing YouTube channel data in the SQLite database."""
     
@@ -61,15 +111,18 @@ class ChannelRepository(BaseRepository):
             debug_log(f"[DB] Using database at: {abs_db_path}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
             # --- Flatten the actual raw API response ---
             raw_api = data.get('raw_channel_info') or data.get('channel_info', data)
             flat_api = flatten_dict(raw_api)
+            
             # --- Merge in extra fields from the wrapper dict (e.g., channel_id, channel_title) ---
             extra_fields = {k: v for k, v in data.items() if k not in ['raw_channel_info', 'channel_info']}
             flat_api.update(extra_fields)
+            
             # --- Map dot notation to underscores for DB columns ---
             flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
-            debug_log(f"[DB DEBUG] flat_api_underscore: {flat_api_underscore}")
+            
             # --- Get all columns in the channels table ---
             cursor.execute("PRAGMA table_info(channels)")
             column_info = cursor.fetchall()
@@ -86,7 +139,7 @@ class ChannelRepository(BaseRepository):
             for col in existing_cols:
                 if col in ['id', 'created_at', 'updated_at']:
                     continue
-                
+                    
                 api_key = CANONICAL_FIELD_MAP.get(col, col)
                 v = flat_api_underscore.get(api_key, None)
                 
@@ -109,11 +162,12 @@ class ChannelRepository(BaseRepository):
             
             debug_log(f"[DB INSERT] Final channel insert columns: {columns}")
             debug_log(f"[DB INSERT] Final channel insert values (first 5): {values[:5]}{'...' if len(values) > 5 else ''}")
-            debug_log(f"[DB INSERT] Final channel insert values: {values}")
+            
             if not columns:
                 debug_log("[DB WARNING] No columns to insert for channel.")
                 conn.close()
                 return False
+                
             placeholders = ','.join(['?'] * len(columns))
             update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
             cursor.execute(f'''
@@ -122,6 +176,7 @@ class ChannelRepository(BaseRepository):
                 ON CONFLICT(channel_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
             ''', values)
             debug_log(f"Inserted/updated channel: {flat_api.get('channel_id') or flat_api.get('id')}")
+            
             # --- Insert full JSON into channel_history only ---
             self._ensure_channel_history_table(cursor)
             import datetime, json
@@ -130,7 +185,9 @@ class ChannelRepository(BaseRepository):
             cursor.execute('''
                 INSERT INTO channel_history (channel_id, fetched_at, raw_channel_info) VALUES (?, ?, ?)
             ''', (flat_api.get('channel_id') or flat_api.get('id'), fetched_at, raw_channel_info))
+            
             conn.commit()
+            
             # After commit, check if row exists
             cursor.execute("SELECT COUNT(*) FROM channels WHERE channel_id = ?", (flat_api.get('channel_id') or flat_api.get('id'),))
             row_count = cursor.fetchone()[0]
@@ -180,270 +237,157 @@ class ChannelRepository(BaseRepository):
             )
         ''')
 
-    def get_channel_db_id(self, channel_id):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM channels WHERE channel_id = ?", (channel_id,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else None
-    
-    def get_channels_list(self):
-        """Get a list of all channel names from the database"""
+    def get_all_channels(self):
+        """Get all channels from SQLite database"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT channel_id, channel_title FROM channels ORDER BY channel_title")
+            cursor.execute("SELECT * FROM channels")
+            columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            channels = [{'channel_id': row[0], 'channel_name': row[1]} for row in rows]
             conn.close()
-            debug_log(f"Retrieved {len(channels)} channels from database")
-            return channels
+            return [dict(zip(columns, row)) for row in rows]
         except Exception as e:
-            debug_log(f"Exception in get_channels_list: {str(e)}")
+            debug_log(f"Error getting all channels: {str(e)}")
             return []
-    
-    def get_channel_data(self, channel_identifier):
-        """Get full data for a specific channel, including all API fields from raw_channel_info if present."""
-        conn = None
+
+    def get_channel_by_id(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get full data for a specific channel, including all API fields from raw_channel_info if present.
+        """
         try:
-            abs_db_path = os.path.abspath(self.db_path)
-            debug_log(f"[DB] Using database at: {abs_db_path}")
-            is_id = channel_identifier.startswith('UC')
-            debug_log(f"Loading data for channel: {channel_identifier} from database")
             conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Get channel info - using either ID or title depending on what was provided
-            if is_id:
-                cursor.execute("""
-                    SELECT * FROM channels WHERE channel_id = ?
-                """, (channel_identifier,))
-            else:
-                cursor.execute("""
-                    SELECT * FROM channels WHERE channel_title = ?
-                """, (channel_identifier,))
+            
+            # Get the main channel record first
+            cursor.execute("SELECT * FROM channels WHERE channel_id = ?", (channel_id,))
+            columns = [desc[0] for desc in cursor.description]
             row = cursor.fetchone()
+            
             if not row:
-                debug_log(f"Channel not found in database: {channel_identifier}")
-                return None
-            record = dict(row)
-            # Load full API response if present
-            cursor.execute("PRAGMA table_info(channels)")
-            columns = [r[1] for r in cursor.fetchall()]
-            raw_info = None
-            if 'raw_channel_info' in columns:
-                cursor.execute("SELECT raw_channel_info FROM channels WHERE id = ?", (record['id'],))
-                raw_info_row = cursor.fetchone()
-                if raw_info_row and raw_info_row[0]:
-                    try:
-                        import json
-                        raw_info = json.loads(raw_info_row[0])
-                    except Exception as e:
-                        debug_log(f"Error loading raw_channel_info JSON: {str(e)}")
-            # Fetch uploads playlist from playlists table
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (record['channel_id'],))
-            playlist_row = cursor.fetchone()
-            uploads_playlist_id = playlist_row[0] if playlist_row else record.get('uploads_playlist_id', '')
-            # Always set playlist_id from uploads_playlist_id if present
-            record['uploads_playlist_id'] = uploads_playlist_id
-            record['playlist_id'] = uploads_playlist_id
-            record['raw_channel_info'] = raw_info
-            debug_log(f"[DB] get_channel_data returning: {record}")
-            return record
-        except Exception as e:
-            debug_log(f"Exception in get_channel_data: {str(e)}")
-            return None
-        finally:
-            if conn:
                 conn.close()
-    
-    def get_channel_id_by_title(self, title):
-        """Get the YouTube channel ID for a given channel title."""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT channel_id FROM channels WHERE channel_title = ?", (title,))
-            result = cursor.fetchone()
-            conn.close()
-            return result[0] if result else None
-        except Exception as e:
-            debug_log(f"Exception in get_channel_id_by_title: {str(e)}")
-            return None
-
-    def display_channels_data(self):
-        """Display all channels from SQLite database in a Streamlit interface"""
-        debug_log("Loading channels from SQLite")
-        
-        try:
-            # Connect to the database
-            conn = sqlite3.connect(self.db_path)
+                return None
             
-            # Query for channels data with video counts
-            query = '''
-            SELECT 
-                c.title as channel_name,
-                c.channel_id as channel_id,
-                c.subscriber_count as subscribers,
-                c.view_count as views,
-                c.video_count as total_videos,
-                COUNT(v.id) as fetched_videos,
-                CASE 
-                    WHEN COUNT(v.id) > 0 THEN c.view_count / COUNT(v.id)
-                    ELSE 0
-                END as avg_views_per_video
-            FROM 
-                channels c
-            LEFT JOIN 
-                videos v ON v.channel_id = c.id
-            GROUP BY 
-                c.id
-            '''
+            # Convert to dictionary
+            record = dict(zip(columns, row))
             
-            # Execute query and convert to DataFrame
-            df = pd.read_sql_query(query, conn)
-            
-            # Close the connection
-            conn.close()
-            
-            # Display the data
-            if not df.empty:
-                st.dataframe(df)
-            else:
-                st.info("No channels found in SQLite database.")
+            # Get the most recent raw API data for this channel from history
+            try:
+                cursor.execute("""
+                    SELECT raw_channel_info 
+                    FROM channel_history 
+                    WHERE channel_id = ? 
+                    ORDER BY fetched_at DESC 
+                    LIMIT 1
+                """, (channel_id,))
+                history_row = cursor.fetchone()
                 
+                if history_row and history_row[0]:
+                    raw_info = json.loads(history_row[0])
+                    # Merge raw API data into the record, giving priority to DB values
+                    record['raw_channel_info'] = raw_info
+                    
+                    # Add any additional fields from raw API that aren't in the DB
+                    flattened_raw = flatten_dict(raw_info)
+                    for key, value in flattened_raw.items():
+                        db_key = key.replace('.', '_')
+                        if db_key not in record and value is not None:
+                            record[db_key] = value
+                            
+            except json.JSONDecodeError as e:
+                debug_log(f"Error parsing raw_channel_info JSON for channel {channel_id}: {str(e)}")
+            
+            conn.close()
+            return record
+            
+        except Exception as e:
+            debug_log(f"Error getting channel by ID {channel_id}: {str(e)}")
+            return None
+
+    def delete_channel(self, channel_id: str) -> bool:
+        """Delete a channel and all its associated data"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # First, get all videos for this channel to delete their comments
+            cursor.execute("SELECT id FROM videos WHERE channel_id = ?", (channel_id,))
+            video_ids = [row[0] for row in cursor.fetchall()]
+            
+            # Delete comments for all videos of this channel
+            for video_id in video_ids:
+                cursor.execute("DELETE FROM comments WHERE video_id = ?", (video_id,))
+            
+            # Delete videos for this channel
+            cursor.execute("DELETE FROM videos WHERE channel_id = ?", (channel_id,))
+            
+            # Delete channel history
+            cursor.execute("DELETE FROM channel_history WHERE channel_id = ?", (channel_id,))
+            
+            # Delete the channel itself
+            cursor.execute("DELETE FROM channels WHERE channel_id = ?", (channel_id,))
+            
+            conn.commit()
+            conn.close()
+            
+            debug_log(f"Deleted channel {channel_id} and all associated data")
             return True
+            
         except Exception as e:
-            debug_log(f"Error loading data from SQLite: {str(e)}")
+            debug_log(f"Error deleting channel {channel_id}: {str(e)}")
             return False
-    
-    def list_channels(self):
-        """
-        Get a list of all channels from the database with their IDs and titles.
-        
-        Returns:
-            list: List of tuples containing (channel_id, title) for each channel
-        """
-        debug_log("Fetching list of all channels")
-        
+
+    def get_channel_statistics(self) -> Dict[str, Any]:
+        """Get statistics about channels in the database"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Query all channels, returning both ID and title
-            cursor.execute("SELECT channel_id, channel_title FROM channels ORDER BY channel_title")
-            channels = cursor.fetchall()
+            # Get total number of channels
+            cursor.execute("SELECT COUNT(*) FROM channels")
+            total_channels = cursor.fetchone()[0]
             
-            # Close the connection
-            conn.close()
+            # Get channels with most subscribers
+            cursor.execute("""
+                SELECT channel_id, channel_title, subscriber_count 
+                FROM channels 
+                WHERE subscriber_count IS NOT NULL 
+                ORDER BY subscriber_count DESC 
+                LIMIT 10
+            """)
+            top_channels = cursor.fetchall()
             
-            debug_log(f"Retrieved {len(channels)} channels from database")
-            return channels
-        except Exception as e:
-            debug_log(f"Exception in list_channels: {str(e)}")
-            return []
-
-    def get_by_id(self, id: int) -> Optional[Dict[str, Any]]:
-        """
-        Retrieve a channel by its database ID.
-        
-        Args:
-            id: The database ID of the channel
-            
-        Returns:
-            Optional[Dict[str, Any]]: The channel data as a dictionary, or None if not found
-        """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row  # Use Row to access by column name
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT * FROM channels WHERE id = ?", (id,))
-            row = cursor.fetchone()
+            # Get total videos and views across all channels
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(video_count), 0) as total_videos,
+                    COALESCE(SUM(view_count), 0) as total_views
+                FROM channels 
+                WHERE video_count IS NOT NULL AND view_count IS NOT NULL
+            """)
+            totals = cursor.fetchone()
             
             conn.close()
             
-            if row:
-                return dict(row)
-            return None
+            return {
+                'total_channels': total_channels,
+                'total_videos': totals[0] if totals else 0,
+                'total_views': totals[1] if totals else 0,
+                'top_channels': [
+                    {'channel_id': row[0], 'title': row[1], 'subscribers': row[2]}
+                    for row in top_channels
+                ]
+            }
+            
         except Exception as e:
-            debug_log(f"Error retrieving channel by ID {id}: {str(e)}", e)
-            return None
+            debug_log(f"Error getting channel statistics: {str(e)}")
+            return {'total_channels': 0, 'total_videos': 0, 'total_views': 0, 'top_channels': []}
 
-    def get_uploads_playlist_id(self, channel_id):
-        """Fetch the uploads playlist ID for a channel from the playlists table."""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_id,))
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                debug_log(f"Found uploads playlist_id for channel_id={channel_id}: {row[0]}")
-                return row[0]
-            debug_log(f"No uploads playlist_id found for channel_id={channel_id}")
-            return ''
-        except Exception as e:
-            debug_log(f"Exception in get_uploads_playlist_id: {str(e)}")
-            return ''
-
-# ... existing code ...
-
-def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
-    """
-    Handle missing API fields by returning appropriate default values.
-    This helps distinguish between fields that are truly missing from the API response
-    vs. fields that are not being mapped correctly.
-    
-    Args:
-        field_name: The database column name
-        column_type: The SQLite column type (TEXT, INTEGER, BOOLEAN, etc.)
-    
-    Returns:
-        Appropriate default value based on the field semantics
-    """
-    # Fields that should explicitly indicate "not provided by API"
-    api_provided_fields = {
-        'snippet_defaultLanguage', 'snippet_country', 'snippet_localized_title', 
-        'snippet_localized_description', 'contentDetails_relatedPlaylists_likes',
-        'contentDetails_relatedPlaylists_favorites', 'brandingSettings_channel_keywords',
-        'brandingSettings_channel_country', 'brandingSettings_image_bannerExternalUrl',
-        'topicDetails_topicIds'
-    }
-    
-    # Complex fields that should be empty objects/arrays when missing
-    complex_fields = {
-        'localizations': '{}',  # Empty JSON object
-        'topicDetails_topicCategories': '[]',  # Empty JSON array
-        'snippet_thumbnails_default_url': None,
-        'snippet_thumbnails_medium_url': None,
-        'snippet_thumbnails_high_url': None
-    }
-    
-    # Boolean fields that should default to False
-    boolean_fields = {
-        'statistics_hiddenSubscriberCount': False,
-        'status_isLinked': False,
-        'status_madeForKids': False
-    }
-    
-    if field_name in api_provided_fields:
-        return "NOT_PROVIDED_BY_API"
-    elif field_name in complex_fields:
-        return complex_fields[field_name]
-    elif field_name in boolean_fields:
-        return boolean_fields[field_name]
-    elif column_type == 'INTEGER':
-        return None  # Let SQLite handle NULL for numeric fields
-    elif column_type == 'BOOLEAN':
-        return False
-    else:
-        return None  # Default to NULL for text fields
-
+# Updated CANONICAL_FIELD_MAP - Maps database column names to their corresponding flattened API field names
 CANONICAL_FIELD_MAP = {
-    # Basic channel info - map DB columns to flattened API field names
-    'channel_id': 'id',  # API field 'id' maps to DB column 'channel_id'
-    'channel_title': 'snippet_title',  # API field 'snippet.title' -> 'snippet_title'
+    # Basic channel info
+    'channel_id': 'id',  # API 'id' field maps to DB 'channel_id'
+    'channel_title': 'snippet_title',
     'uploads_playlist_id': 'contentDetails_relatedPlaylists_uploads',
     
     # Kind and etag - direct mapping
@@ -496,27 +440,4 @@ CANONICAL_FIELD_MAP = {
     
     # Localizations - direct mapping
     'localizations': 'localizations',
-    
-    # Legacy/simplified field mappings for application compatibility
-    'channel_name': 'channel_title',
-    'channel_description': 'snippet_description',
-    'description': 'snippet_description',
-    'custom_url': 'snippet_customUrl',
-    'published_at': 'snippet_publishedAt',
-    'country': 'snippet_country',
-    'default_language': 'snippet_defaultLanguage',
-    'thumbnail_default': 'snippet_thumbnails_default_url',
-    'thumbnail_medium': 'snippet_thumbnails_medium_url',
-    'thumbnail_high': 'snippet_thumbnails_high_url',
-    'subscribers': 'statistics_subscriberCount',
-    'views': 'statistics_viewCount',
-    'total_videos': 'statistics_videoCount',
-    'privacy_status': 'status_privacyStatus',
-    'is_linked': 'status_isLinked',
-    'long_uploads_status': 'status_longUploadsStatus',
-    'made_for_kids': 'status_madeForKids',
-    'hidden_subscriber_count': 'statistics_hiddenSubscriberCount',
-    'keywords': 'brandingSettings_channel_keywords',
-    'topic_categories': 'topicDetails_topicCategories',
-    'playlist_id': 'uploads_playlist_id',
 }

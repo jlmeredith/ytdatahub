@@ -72,43 +72,18 @@ class ChannelRepository(BaseRepository):
             debug_log(f"[DB DEBUG] flat_api_underscore: {flat_api_underscore}")
             # --- Get all columns in the channels table ---
             cursor.execute("PRAGMA table_info(channels)")
-            column_info = cursor.fetchall()
-            existing_cols = set(row[1] for row in column_info)
-            column_types = {row[1]: row[2] for row in column_info}  # column_name -> column_type
-            
-            # Track missing fields for debugging
-            missing_fields = []
-            mapped_fields = []
-            
+            existing_cols = set(row[1] for row in cursor.fetchall())
             # --- Prepare columns and values for insert/update ---
             columns = []
             values = []
             for col in existing_cols:
                 if col in ['id', 'created_at', 'updated_at']:
                     continue
-                
                 api_key = CANONICAL_FIELD_MAP.get(col, col)
                 v = flat_api_underscore.get(api_key, None)
-                
-                if v is None:
-                    # Field is missing from API response - use appropriate default
-                    v = handle_missing_api_field(col, column_types.get(col))
-                    missing_fields.append(f"{col} (API field: {api_key})")
-                else:
-                    mapped_fields.append(f"{col} -> {api_key}")
-                
                 values.append(serialize_for_sqlite(v))
                 columns.append(col)
-            
-            # Enhanced logging for debugging field mapping
-            debug_log(f"[DB FIELD MAPPING] Channel ID: {flat_api.get('channel_id') or flat_api.get('id')}")
-            debug_log(f"[DB FIELD MAPPING] Successfully mapped {len(mapped_fields)} fields")
-            if missing_fields:
-                debug_log(f"[DB FIELD MAPPING] Missing from API response ({len(missing_fields)} fields): {missing_fields[:5]}{'...' if len(missing_fields) > 5 else ''}")
-            debug_log(f"[DB DEBUG] Available API fields: {list(flat_api_underscore.keys())[:10]}{'...' if len(flat_api_underscore) > 10 else ''}")
-            
             debug_log(f"[DB INSERT] Final channel insert columns: {columns}")
-            debug_log(f"[DB INSERT] Final channel insert values (first 5): {values[:5]}{'...' if len(values) > 5 else ''}")
             debug_log(f"[DB INSERT] Final channel insert values: {values}")
             if not columns:
                 debug_log("[DB WARNING] No columns to insert for channel.")
@@ -389,68 +364,17 @@ class ChannelRepository(BaseRepository):
 
 # ... existing code ...
 
-def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
-    """
-    Handle missing API fields by returning appropriate default values.
-    This helps distinguish between fields that are truly missing from the API response
-    vs. fields that are not being mapped correctly.
-    
-    Args:
-        field_name: The database column name
-        column_type: The SQLite column type (TEXT, INTEGER, BOOLEAN, etc.)
-    
-    Returns:
-        Appropriate default value based on the field semantics
-    """
-    # Fields that should explicitly indicate "not provided by API"
-    api_provided_fields = {
-        'snippet_defaultLanguage', 'snippet_country', 'snippet_localized_title', 
-        'snippet_localized_description', 'contentDetails_relatedPlaylists_likes',
-        'contentDetails_relatedPlaylists_favorites', 'brandingSettings_channel_keywords',
-        'brandingSettings_channel_country', 'brandingSettings_image_bannerExternalUrl',
-        'topicDetails_topicIds'
-    }
-    
-    # Complex fields that should be empty objects/arrays when missing
-    complex_fields = {
-        'localizations': '{}',  # Empty JSON object
-        'topicDetails_topicCategories': '[]',  # Empty JSON array
-        'snippet_thumbnails_default_url': None,
-        'snippet_thumbnails_medium_url': None,
-        'snippet_thumbnails_high_url': None
-    }
-    
-    # Boolean fields that should default to False
-    boolean_fields = {
-        'statistics_hiddenSubscriberCount': False,
-        'status_isLinked': False,
-        'status_madeForKids': False
-    }
-    
-    if field_name in api_provided_fields:
-        return "NOT_PROVIDED_BY_API"
-    elif field_name in complex_fields:
-        return complex_fields[field_name]
-    elif field_name in boolean_fields:
-        return boolean_fields[field_name]
-    elif column_type == 'INTEGER':
-        return None  # Let SQLite handle NULL for numeric fields
-    elif column_type == 'BOOLEAN':
-        return False
-    else:
-        return None  # Default to NULL for text fields
-
 CANONICAL_FIELD_MAP = {
-    # Basic channel info - map DB columns to flattened API field names
-    'channel_id': 'id',  # API field 'id' maps to DB column 'channel_id'
-    'channel_title': 'snippet_title',  # API field 'snippet.title' -> 'snippet_title'
-    'uploads_playlist_id': 'contentDetails_relatedPlaylists_uploads',
+    # Basic channel info
+    'channel_id': 'channel_id',
+    'channel_title': 'channel_title',
+    'uploads_playlist_id': 'uploads_playlist_id',
     
-    # Kind and etag - direct mapping
+    # Kind and etag
     'kind': 'kind',
     'etag': 'etag',
     
-    # Snippet fields - direct mapping to flattened API field names
+    # Snippet fields
     'snippet_title': 'snippet_title',
     'snippet_description': 'snippet_description', 
     'snippet_customUrl': 'snippet_customUrl',
@@ -463,12 +387,12 @@ CANONICAL_FIELD_MAP = {
     'snippet_localized_title': 'snippet_localized_title',
     'snippet_localized_description': 'snippet_localized_description',
     
-    # Content details - direct mapping
+    # Content details
     'contentDetails_relatedPlaylists_uploads': 'contentDetails_relatedPlaylists_uploads',
     'contentDetails_relatedPlaylists_likes': 'contentDetails_relatedPlaylists_likes',
     'contentDetails_relatedPlaylists_favorites': 'contentDetails_relatedPlaylists_favorites',
     
-    # Statistics - direct mapping plus backward compatibility
+    # Statistics (with backward compatibility)
     'subscriber_count': 'statistics_subscriberCount',
     'view_count': 'statistics_viewCount', 
     'video_count': 'statistics_videoCount',
@@ -477,24 +401,24 @@ CANONICAL_FIELD_MAP = {
     'statistics_hiddenSubscriberCount': 'statistics_hiddenSubscriberCount',
     'statistics_videoCount': 'statistics_videoCount',
     
-    # Branding settings - direct mapping
+    # Branding settings
     'brandingSettings_channel_title': 'brandingSettings_channel_title',
     'brandingSettings_channel_description': 'brandingSettings_channel_description',
     'brandingSettings_channel_keywords': 'brandingSettings_channel_keywords',
     'brandingSettings_channel_country': 'brandingSettings_channel_country',
     'brandingSettings_image_bannerExternalUrl': 'brandingSettings_image_bannerExternalUrl',
     
-    # Status - direct mapping
+    # Status
     'status_privacyStatus': 'status_privacyStatus',
     'status_isLinked': 'status_isLinked',
     'status_longUploadsStatus': 'status_longUploadsStatus',
     'status_madeForKids': 'status_madeForKids',
     
-    # Topic details - direct mapping
+    # Topic details
     'topicDetails_topicIds': 'topicDetails_topicIds',
     'topicDetails_topicCategories': 'topicDetails_topicCategories',
     
-    # Localizations - direct mapping
+    # Localizations
     'localizations': 'localizations',
     
     # Legacy/simplified field mappings for application compatibility
