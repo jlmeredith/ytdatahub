@@ -4,7 +4,7 @@ Video Data Standardization Utility
 This module provides functions to ensure consistent video data structure
 across the application regardless of where the data came from.
 """
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.utils.video_processor import process_video_data
 from src.utils.video_formatter import fix_missing_views
 import json

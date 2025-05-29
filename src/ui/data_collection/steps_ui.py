@@ -5,7 +5,7 @@ Provides functions to render the step-by-step data collection workflow.
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.config import Settings
 from .components.video_item import render_video_item
 from .utils.data_conversion import format_number

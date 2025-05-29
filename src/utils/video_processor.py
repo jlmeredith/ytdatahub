@@ -2,7 +2,7 @@
 Helper functions for processing YouTube video data consistently
 Extracts both views and comment counts in a unified way
 """
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def process_video_data(videos_data):
     """

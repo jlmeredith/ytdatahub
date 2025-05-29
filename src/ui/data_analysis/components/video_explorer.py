@@ -3,11 +3,10 @@ Video explorer component for the data analysis UI.
 """
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 from src.analysis.youtube_analysis import YouTubeAnalysis
-from src.utils.helpers import paginate_dataframe, render_pagination_controls
+from src.utils.ui_helpers import paginate_dataframe, render_pagination_controls
 from src.ui.data_analysis.utils.session_state import initialize_pagination, get_pagination_state, update_pagination_state
 from src.ui.data_analysis.components.data_coverage import render_data_coverage_summary
 
@@ -94,6 +93,9 @@ def render_video_explorer(channel_data):
         # Create a distribution chart of views
         if 'Views' in df.columns and len(df) > 0:
             try:
+                # Import numpy only when needed
+                import numpy as np
+                
                 # Set a reasonable upper limit to prevent skewing by outliers
                 views_upper_limit = np.percentile(df['Views'], 95) * 1.5
                 views_filtered = df[df['Views'] <= views_upper_limit]
@@ -132,6 +134,9 @@ def render_video_explorer(channel_data):
         # Create a ratio chart (likes/views)
         if 'Likes' in df.columns and 'Views' in df.columns and len(df) > 0:
             try:
+                # Import numpy only when needed
+                import numpy as np
+                
                 # Calculate like/view ratio and filter out NaN values
                 df['LikeViewRatio'] = df['Likes'] / df['Views'] * 100
                 # Remove infinite values and NaNs

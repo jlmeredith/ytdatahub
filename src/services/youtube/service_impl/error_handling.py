@@ -1,11 +1,14 @@
 """
 Error handling functionality for the YouTube service implementation.
+This is a wrapper around the centralized error handling service.
 """
 import logging
+from src.services.youtube.error_handling_service import error_handling_service
 
 class ErrorHandlingMixin:
     """
     Mixin class providing error handling functionality for the YouTube service.
+    Delegates to the centralized error handling service.
     """
     
     def handle_retriable_error(self, error, current_attempt, max_attempts):
@@ -20,16 +23,7 @@ class ErrorHandlingMixin:
         Returns:
             bool: True if the operation should be retried, False otherwise
         """
-        logger = logging.getLogger(__name__)
-        
-        # Determine if we can retry based on the attempt count
-        if current_attempt < max_attempts:
-            logger.warning(f"Error on attempt {current_attempt + 1}/{max_attempts + 1}: {str(error)}. Retrying...")
-            return True
-            
-        # We've exhausted our retry attempts
-        logger.error(f"Max retry attempts ({max_attempts}) exceeded: {str(error)}")
-        return False
+        return error_handling_service.handle_retriable_error(error, current_attempt, max_attempts)
     
     def handle_channel_request_error(self, error, channel_data, resolved_channel_id):
         """
@@ -43,28 +37,7 @@ class ErrorHandlingMixin:
         Returns:
             dict: Updated channel data with error information
         """
-        logger = logging.getLogger(__name__)
-        
-        # Log the error
-        logger.error(f"Error fetching channel data: {str(error)}")
-        
-        # Save error information to channel data
-        if not channel_data.get('error'):
-            channel_data['error'] = f"Error: {str(error)}"
-        
-        # Make sure channel_id is set
-        if 'channel_id' not in channel_data:
-            channel_data['channel_id'] = resolved_channel_id
-            
-        # Add status code if it exists
-        if hasattr(error, 'status_code'):
-            channel_data['error_status_code'] = error.status_code
-            
-        # Handle quota exceeded errors
-        if hasattr(error, 'error_type') and error.error_type == 'quotaExceeded':
-            channel_data['quota_exceeded'] = True
-            
-        return channel_data
+        return error_handling_service.handle_channel_request_error(error, channel_data, resolved_channel_id)
     
     def handle_video_request_error(self, error, channel_data, resolved_channel_id):
         """
@@ -78,26 +51,9 @@ class ErrorHandlingMixin:
         Returns:
             dict: Updated channel data with error information
         """
-        logger = logging.getLogger(__name__)
-        
-        # Log the error
-        logger.error(f"Error fetching videos: {str(error)}")
-        
-        # Save error information to channel data
-        channel_data['error_videos'] = f"Error: {str(error)}"
-        
-        # Try to save partial data to database
-        if hasattr(self, 'db'):
-            try:
-                self.db.store_channel_data(channel_data)
-                if not hasattr(self, '_db_channel_saved'):
-                    self._db_channel_saved = {}
-                self._db_channel_saved[resolved_channel_id] = True
-            except Exception as db_error:
-                logger.error(f"Failed to save partial data to DB: {str(db_error)}")
-                channel_data['error_database'] = str(db_error)
-                
-        return channel_data
+        # Pass the database if we have it
+        db = getattr(self, 'db', None)
+        return error_handling_service.handle_video_request_error(error, channel_data, resolved_channel_id, db)
     
     def handle_comment_request_error(self, error, channel_data, resolved_channel_id):
         """
@@ -111,21 +67,6 @@ class ErrorHandlingMixin:
         Returns:
             dict: Updated channel data with error information
         """
-        logger = logging.getLogger(__name__)
-        
-        # Log the error
-        logger.error(f"Error fetching comments: {str(error)}")
-        
-        # Save error information to channel data
-        channel_data['error_comments'] = f"Error: {str(error)}"
-        
-        # Try to save partial data to database
-        if hasattr(self, 'db') and not hasattr(self, '_db_channel_saved'):
-            try:
-                self.db.store_channel_data(channel_data)
-                self._db_channel_saved = {resolved_channel_id: True}
-            except Exception as db_error:
-                logger.error(f"Failed to save partial data to DB after comment error: {str(db_error)}")
-                channel_data['error_database'] = str(db_error)
-                
-        return channel_data
+        # Pass the database if we have it
+        db = getattr(self, 'db', None)
+        return error_handling_service.handle_comment_request_error(error, channel_data, resolved_channel_id, db)

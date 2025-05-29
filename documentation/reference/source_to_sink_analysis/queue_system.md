@@ -8,7 +8,7 @@ This section provides a full, code-validated breakdown of the YTDataHub Queue Sy
 
 ## Overview
 
-- **Queue Entrypoints:** [`src/utils/queue_manager.py`](../../../src/utils/queue_manager.py), [`src/utils/queue_tracker.py`](../../../src/utils/queue_tracker.py)
+- **Queue Entrypoint:** [`src/utils/queue_manager.py`](../../../src/utils/queue_manager.py)
 - **Service Integration:** [`src/services/youtube/service_impl/data_collection.py`](../../../src/services/youtube/service_impl/data_collection.py), [`src/services/youtube/service_impl/core.py`](../../../src/services/youtube/service_impl/core.py), [`src/services/youtube/storage_service.py`](../../../src/services/youtube/storage_service.py)
 - **Purpose:** Tracks, manages, and synchronizes items (channels, videos, comments) pending database operations, and ensures correct workflow state during data collection and storage.
 
@@ -18,8 +18,7 @@ This section provides a full, code-validated breakdown of the YTDataHub Queue Sy
 
 | File | Function/Class | Description | Used at Runtime? |
 |------|---------------|-------------|------------------|
-| [src/utils/queue_manager.py](../../../src/utils/queue_manager.py) | QueueManager, initialize_queue_manager, add_to_queue, remove_from_queue, clear_queue, get_queue_items, get_queue_status, request_queue_flush, check_and_reset_flush_request | Main queue management utilities | Yes |
-| [src/utils/queue_tracker.py](../../../src/utils/queue_tracker.py) | QueueTracker, set_test_mode, set_queue_hooks, clear_queue_hooks, add_to_queue, remove_from_queue, clear_queue, get_queue_stats, render_queue_status_sidebar | Queue tracking and test utilities | Yes |
+| [src/utils/queue_manager.py](../../../src/utils/queue_manager.py) | QueueManager, initialize_queue_state, add_to_queue, remove_from_queue, clear_queue, get_queue_items, get_queue_stats, render_queue_status_sidebar, set_test_mode, set_queue_hooks, clear_queue_hooks | Unified queue management and tracking utilities | Yes |
 | [src/services/youtube/service_impl/data_collection.py](../../../src/services/youtube/service_impl/data_collection.py) | add_to_queue, get_queue_stats | Adds channel to queue after info fetch, logs queue stats | Yes |
 | [src/services/youtube/service_impl/core.py](../../../src/services/youtube/service_impl/core.py) | add_to_queue, remove_from_queue | Used for workflow integration and storage | Yes |
 | [src/services/youtube/storage_service.py](../../../src/services/youtube/storage_service.py) | remove_from_queue | Removes channel from queue after successful save | Yes |
@@ -31,25 +30,16 @@ This section provides a full, code-validated breakdown of the YTDataHub Queue Sy
 
 ### [src/utils/queue_manager.py](../../../src/utils/queue_manager.py)
 - **QueueManager**: Class to manage queues for database operations.
-- **initialize_queue_manager**: Initialize the database queue manager.
-- **add_to_queue**: Add an item to the database queue.
-- **remove_from_queue**: Remove an item from the database queue.
-- **clear_queue**: Clear the database queue.
-- **get_queue_items**: Get items in the database queue.
-- **get_queue_status**: Get the current status of all database queues.
-- **request_queue_flush**: Request that the queue be flushed to the database.
-- **check_and_reset_flush_request**: Check and reset the flush request flag.
-
-### [src/utils/queue_tracker.py](../../../src/utils/queue_tracker.py)
-- **QueueTracker**: Class for tracking items in the queue and providing status updates.
+- **initialize_queue_state**: Initialize the queue system.
+- **add_to_queue**: Add an item to the queue.
+- **remove_from_queue**: Remove an item from the queue.
+- **clear_queue**: Clear the queue.
+- **get_queue_items**: Get items in the queue.
+- **get_queue_stats**: Get current queue statistics.
+- **render_queue_status_sidebar**: Render queue status in the sidebar.
 - **set_test_mode**: Enable or disable test mode for queue tracking.
 - **set_queue_hooks**: Set hooks for testing queue operations.
 - **clear_queue_hooks**: Clear any test hooks.
-- **add_to_queue**: Add an item to the tracked queue.
-- **remove_from_queue**: Remove an item from the tracked queue.
-- **clear_queue**: Clear the queue.
-- **get_queue_stats**: Get current queue statistics.
-- **render_queue_status_sidebar**: Render queue status in the sidebar.
 
 ### [src/services/youtube/service_impl/data_collection.py](../../../src/services/youtube/service_impl/data_collection.py)
 - **add_to_queue**: Adds channel to queue after info fetch.
@@ -80,6 +70,19 @@ This section provides a full, code-validated breakdown of the YTDataHub Queue Sy
 - **Recommendation:**
     - Consider consolidating queue management and tracking utilities to avoid confusion and ensure maintainability.
     - Review whether all legacy variables and functions are still needed, and document any deprecated code paths.
+
+---
+
+## Recent Refactoring
+
+The queue system has been refactored to consolidate all queue management and tracking functionality into a single module (`queue_manager.py`). Previously, this functionality was split between `queue_manager.py` and `queue_tracker.py`, which led to potential state synchronization issues and maintenance challenges.
+
+Key changes:
+- All functionality from `queue_tracker.py` has been merged into `queue_manager.py`
+- The `queue_tracker.py` module has been removed
+- All imports throughout the codebase have been updated to use the unified interface in `queue_manager.py`
+
+This refactoring reduces confusion, eliminates bugs from state desynchronization, and simplifies future maintenance.
 
 ---
 

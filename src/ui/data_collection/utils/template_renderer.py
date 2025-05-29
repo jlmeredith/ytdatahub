@@ -4,7 +4,7 @@ Template rendering utilities for data collection UI.
 import streamlit as st
 import jinja2
 import os
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def render_template_as_markdown(template_file, context):
     """

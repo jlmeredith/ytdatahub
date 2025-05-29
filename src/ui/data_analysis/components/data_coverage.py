@@ -10,7 +10,8 @@ import os
 import time
 
 from src.analysis.youtube_analysis import YouTubeAnalysis
-from src.utils.helpers import debug_log, format_number
+from src.utils.debug_utils import debug_log
+from src.utils.formatters import format_number
 from src.utils.background_tasks import queue_data_collection_task, get_all_task_statuses
 
 # Ensure all required session state variables are initialized
@@ -827,18 +828,6 @@ def render_data_coverage_dashboard(channel_data, db=None):
             with col3:
                 st.markdown("#### Update Settings")
                 save_immediately = st.checkbox("Save to database immediately", value=True, key="save_immediately")
-                
-                # Calculate API usage estimate
-                from src.utils.helpers import estimate_quota_usage
-                quota = estimate_quota_usage(
-                    fetch_channel=update_channel_info,
-                    fetch_videos=update_videos,
-                    fetch_comments=update_comments,
-                    video_count=max_videos if max_videos > 0 else max_videos_api,
-                    comments_count=max_comments
-                )
-                
-                st.info(f"Estimated API quota usage: {quota} units")
                 
                 # Add one-click update button with auto triggers for quick updates
                 if 'auto_update_data' in st.session_state and st.session_state.auto_update_data and not st.session_state.get('auto_update_triggered', False):

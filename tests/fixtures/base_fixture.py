@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 from src.services.youtube_service import YouTubeService
 from src.api.youtube_api import YouTubeAPI
 from src.database.sqlite import SQLiteDatabase
-from src.utils.queue_tracker import add_to_queue, remove_from_queue, set_test_mode
 
 
 class BaseYouTubeTestFixture:

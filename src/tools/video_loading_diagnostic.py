@@ -18,7 +18,7 @@ from src.api.youtube_api import YouTubeAPI
 from src.services.youtube.video_service import VideoService
 from src.utils.video_formatter import fix_missing_views
 from src.utils.video_processor import process_video_data
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.ui.data_collection.components.enhanced_video_list import render_enhanced_video_list
 
 st.title("Video Loading Diagnostic Tool")

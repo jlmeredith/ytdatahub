@@ -4,7 +4,6 @@ Trend analysis module for YTDataHub metrics tracking.
 import logging
 from typing import Dict, Any, List, Union, Optional, Tuple
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 
 class TrendAnalyzer:
@@ -41,6 +40,9 @@ class TrendAnalyzer:
             - significance: Statistical significance of trend
             - forecast: Projected values for next 7 days
         """
+        # Import numpy when needed
+        import numpy as np
+        
         result = {
             'slope': 0.0,
             'direction': 'stable',
@@ -327,6 +329,9 @@ class TrendAnalyzer:
         Returns:
             Dictionary with seasonality information
         """
+        # Import numpy when needed
+        import numpy as np
+        
         result = {
             'has_seasonality': False,
             'period': None,
@@ -479,6 +484,9 @@ class TrendAnalyzer:
         Returns:
             Dictionary with anomaly information
         """
+        # Import numpy when needed
+        import numpy as np
+        
         result = {
             'anomalies': [],
             'total_anomalies': 0,

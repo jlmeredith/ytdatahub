@@ -6,7 +6,7 @@ import logging
 from typing import Dict, List, Optional, Set, Any
 from datetime import datetime
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
 
 class DeltaService(BaseService):

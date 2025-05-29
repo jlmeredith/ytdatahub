@@ -23,15 +23,11 @@ from src.services.youtube_service import YouTubeService
 from src.storage.factory import StorageFactory
 from src.api.youtube_api import YouTubeAPI
 from src.database.sqlite import SQLiteDatabase
-from src.utils.queue_tracker import add_to_queue, remove_from_queue, set_test_mode
-from src.utils.queue_tracker import set_queue_hooks, clear_queue_hooks
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 # Import the base test case and test classes from their new locations
 from tests.fixtures.base_youtube_test_case import BaseYouTubeTestCase
 from tests.integration.workflow.test_data_collection_workflow_steps import TestDataCollectionWorkflow
-from tests.integration.services.test_slider_quota_management import TestSliderAndQuotaManagement
-from tests.integration.services.test_queue_management import TestQueueManagement 
 from tests.integration.database.test_delta_reporting import TestDeltaReporting
 from tests.integration.workflow.test_end_to_end_workflow import TestEndToEndWorkflow
 from tests.integration.api.test_api_db_comparison_view import TestApiDbComparisonView

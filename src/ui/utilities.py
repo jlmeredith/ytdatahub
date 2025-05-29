@@ -3,7 +3,10 @@ UI components for the Utilities tab.
 """
 import streamlit as st
 import os
-from src.utils.helpers import clear_cache, debug_log
+import pandas as pd
+import time
+from src.utils.cache_utils import clear_cache
+from src.utils.debug_utils import debug_log, get_ui_freeze_report
 from src.config import Settings
 from src.ui.components.ui_utils import render_template_as_markdown
 from dotenv import find_dotenv, set_key
@@ -287,7 +290,7 @@ def render_utilities_tab():
         
         # Get the current API key from environment
         from dotenv import load_dotenv, find_dotenv, set_key
-        from src.utils.helpers import validate_api_key, debug_log
+        from src.utils.validation import validate_api_key
         
         # Reload .env to ensure we have the latest values
         load_dotenv()
@@ -510,7 +513,6 @@ def render_utilities_tab():
                     st.success("Performance thresholds updated")
         if show_metrics and 'performance_metrics' in st.session_state:
             st.subheader("Recent Performance Metrics")
-            from src.utils.helpers import get_ui_freeze_report
             performance_df = get_ui_freeze_report()
             if not performance_df.empty:
                 st.dataframe(performance_df, use_container_width=True)
@@ -546,3 +548,16 @@ def render_utilities_tab():
                     st.error(f"Error reading log file: {str(e)}")
     except Exception as e:
         st.error(f"Error in Debug Settings section: {e}")
+
+def show_debug_metrics():
+    """Show debug metrics from the performance monitor"""
+    try:
+        # Get any UI freeze reports
+        freezes = get_ui_freeze_report()
+        # Display the freezes report
+        if freezes:
+            st.dataframe(freezes)
+        else:
+            st.info("No performance issues detected")
+    except Exception as e:
+        st.error(f"Error showing debug metrics: {e}")

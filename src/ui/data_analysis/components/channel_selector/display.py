@@ -5,7 +5,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-from src.utils.helpers import debug_log, format_number
+from src.utils.debug_utils import debug_log
+from src.utils.formatters import format_number
 
 def render_channel_table(channels_df):
     """

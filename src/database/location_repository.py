@@ -6,7 +6,7 @@ from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
 import json
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
 class LocationRepository(BaseRepository):

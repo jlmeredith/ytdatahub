@@ -1,7 +1,7 @@
 """
 Helper functions for formatting and fixing video data
 """
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 import json
 import sys
 
@@ -285,11 +285,15 @@ def extract_video_comments(video, format_func=None):
 def fix_missing_views(videos):
     """Fix missing views data in video list"""
     if not videos:
-        return videos
+        return []  # Return empty list instead of None
     
-    from src.utils.helpers import debug_log
+    from src.utils.debug_utils import debug_log
         
     for video in videos:
+        if video is None:
+            debug_log("Warning: Found None video object in videos list")
+            continue
+            
         # Robust identifier for logging
         video_id = (
             video.get('video_id') or

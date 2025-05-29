@@ -4,7 +4,7 @@ This module defines a common interface for both new channel and refresh workflow
 """
 import streamlit as st
 from abc import ABC, abstractmethod
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from .utils.delta_reporting import render_delta_report
 from .state_management import toggle_debug_mode
 from .debug_ui import render_debug_panel, generate_unique_key
@@ -195,7 +195,7 @@ class BaseCollectionWorkflow(ABC):
             video_data: The video data to diagnose
             title: Title for the diagnostic section
         """
-        from src.utils.helpers import debug_log
+        from src.utils.debug_utils import debug_log
         
         # Create an expandable section for the diagnostics
         with st.expander(f"🔍 {title}", expanded=False):

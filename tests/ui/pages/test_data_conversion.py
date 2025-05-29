@@ -1,17 +1,19 @@
 """
-Tests for data conversion functionality in the data collection UI.
+Tests for data conversion utilities.
 """
 import pytest
+from unittest.mock import MagicMock, patch
+import streamlit as st
 import pandas as pd
-import logging
+import json
 import os
 import sys
-from unittest.mock import MagicMock
 
 # Ensure working directory is correct for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.ui.data_collection import convert_db_to_api_format
+# Import from modern path
+from src.ui.data_collection.utils.data_conversion import convert_db_to_api_format
 
 
 class TestDataConversion:

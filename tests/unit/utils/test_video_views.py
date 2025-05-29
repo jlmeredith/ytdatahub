@@ -3,7 +3,7 @@ Unit tests for video view count extraction functionality
 """
 import pytest
 from src.utils.video_formatter import extract_video_views, fix_missing_views
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 # Sample video data from actual YouTube API - with the problematic view structure
 SAMPLE_VIDEO = {

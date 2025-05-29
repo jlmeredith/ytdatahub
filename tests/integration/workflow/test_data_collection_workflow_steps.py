@@ -4,7 +4,7 @@ Tests the step-by-step collection process from API to database.
 """
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from tests.fixtures.base_youtube_test_case import BaseYouTubeTestCase
 
 

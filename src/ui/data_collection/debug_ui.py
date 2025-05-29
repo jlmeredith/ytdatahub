@@ -8,7 +8,7 @@ import io
 import random
 import time
 import json
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 class StringIOHandler(logging.StreamHandler):
     """Custom logging handler that captures logs in a StringIO buffer."""
@@ -39,7 +39,9 @@ def render_debug_logs():
     
     log_content = st.session_state.debug_log_handler.getvalue()
     if log_content:
-        st.text_area("Debug Logs", log_content, height=400)
+        # Use a unique key for the text_area to avoid duplicate ID errors
+        key = generate_unique_key("debug_logs_text_area")
+        st.text_area("Debug Logs", log_content, height=400, key=key)
     else:
         st.info("No debug logs captured yet.")
 

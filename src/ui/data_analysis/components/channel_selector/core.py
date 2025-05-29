@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 import time
 from src.analysis.youtube_analysis import YouTubeAnalysis
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 from .filter import filter_channels, handle_search_update
 from .display import render_channel_table, render_metadata_card

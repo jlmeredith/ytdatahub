@@ -9,27 +9,45 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
-from src.utils.helpers import debug_log, validate_channel_id
+from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
+
+from src.utils.validation import validate_channel_id, parse_channel_input
 
 class ChannelService(BaseService):
     """
     Service for managing YouTube channel operations.
     """
     
-    def __init__(self, api_key=None, api_client=None, quota_service=None):
+    def __init__(self, api_key=None, api_client=None):
         """
         Initialize the channel service.
         
         Args:
             api_key (str, optional): YouTube API key
             api_client (obj, optional): Existing API client to use
-            quota_service (QuotaService, optional): Service for quota management
         """
         super().__init__(api_key, api_client)
         self.api = api_client if api_client else (YouTubeAPI(api_key) if api_key else None)
-        self.quota_service = quota_service
         self.logger = logging.getLogger(__name__)
+    
+    def parse_channel_input(self, channel_input: str) -> str:
+        """
+        Parse and validate a channel input (could be ID, URL, or handle).
+        
+        Args:
+            channel_input (str): Channel identifier input (ID, URL, or handle)
+            
+        Returns:
+            str: The validated channel ID or a string starting with 'resolve:' for handles
+        """
+        # Use the utility function from validation module
+        result = parse_channel_input(channel_input)
+        if result is None:
+            return None
+            
+        # If it's a direct channel ID or a resolution request, return as is
+        return result
     
     def validate_and_resolve_channel_id(self, channel_id: str) -> Tuple[bool, str]:
         """
@@ -43,12 +61,7 @@ class ChannelService(BaseService):
                 - is_valid (bool): Whether the input is valid
                 - channel_id_or_message (str): The validated channel ID or an error message
         """
-        # Special case for test channel IDs
-        if channel_id and channel_id.startswith('UC_test'):
-            debug_log(f"Special case: Test channel ID accepted: {channel_id}")
-            return True, channel_id
-        
-        # First try direct validation
+        # First try direct validation using the centralized validation function
         is_valid, validated_id = validate_channel_id(channel_id)
         
         # If the ID is directly valid, return it
@@ -80,53 +93,6 @@ class ChannelService(BaseService):
         debug_log(f"Invalid channel ID format and not a resolvable custom URL: {channel_id}")
         return False, f"Invalid channel ID format: {channel_id}"
     
-    def parse_channel_input(self, channel_input: str) -> Optional[str]:
-        """
-        Parse channel input which could be a channel ID, URL, or custom handle.
-        
-        Args:
-            channel_input (str): Input that represents a YouTube channel
-                
-        Returns:
-            str: Extracted channel ID or the original input if it appears to be a valid ID
-        """
-        if not channel_input:
-            return None
-            
-        # If it's a URL, try to extract the channel ID
-        if 'youtube.com/' in channel_input:
-            # Handle youtube.com/channel/UC... format
-            if '/channel/' in channel_input:
-                parts = channel_input.split('/channel/')
-                if len(parts) > 1:
-                    channel_id = parts[1].split('?')[0].split('/')[0]
-                    return channel_id
-                    
-            # Handle youtube.com/c/ChannelName format
-            elif '/c/' in channel_input:
-                parts = channel_input.split('/c/')
-                if len(parts) > 1:
-                    custom_url = parts[1].split('?')[0].split('/')[0]
-                    return f"resolve:{custom_url}"  # Mark for resolution
-                    
-            # Handle youtube.com/@username format
-            elif '/@' in channel_input:
-                parts = channel_input.split('/@')
-                if len(parts) > 1:
-                    handle = parts[1].split('?')[0].split('/')[0]
-                    return f"resolve:@{handle}"  # Mark for resolution
-        
-        # Check if it looks like a channel ID (starts with UC and reasonable length)
-        if channel_input.startswith('UC') and len(channel_input) > 10:
-            return channel_input
-        
-        # If it starts with @ it's probably a handle
-        if channel_input.startswith('@'):
-            return f"resolve:{channel_input}"
-            
-        # Otherwise, return as-is and let validation handle it
-        return channel_input
-    
     def get_channel_info(self, channel_id: str, track_quota: bool = True) -> Optional[Dict]:
         """
         Get information about a YouTube channel.
@@ -139,11 +105,7 @@ class ChannelService(BaseService):
             dict or None: Channel information or None if not found
         """
         try:
-            self.logger.debug(f"track_quota: {track_quota}, quota_service available: {self.quota_service is not None}")
-            # Track quota usage if requested
-            if track_quota and self.quota_service:
-                self.quota_service.track_quota_usage('channels.list')
-                
+            self.logger.debug(f"track_quota: {track_quota}")
             # Call the API to get channel info
             return self.api.get_channel_info(channel_id)
         except YouTubeAPIError as e:
@@ -152,3 +114,20 @@ class ChannelService(BaseService):
         except Exception as e:
             self.logger.error(f"Unexpected error fetching channel info: {str(e)}")
             raise
+            
+    def get_uploads_playlist_id(self, channel_id: str) -> str:
+        """
+        Get the uploads playlist ID for a channel.
+        
+        Args:
+            channel_id (str): YouTube channel ID
+            
+        Returns:
+            str: Uploads playlist ID or empty string if not found
+        """
+        try:
+            # Delegate to API's get_playlist_id_for_channel method
+            return self.api.get_playlist_id_for_channel(channel_id)
+        except Exception as e:
+            debug_log(f"Error getting uploads playlist ID: {str(e)}")
+            return ""

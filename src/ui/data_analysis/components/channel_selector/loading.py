@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 import time
 import sqlite3
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def load_channel_data(channels, db, analysis):
     """
@@ -30,73 +30,119 @@ def load_channel_data(channels, db, analysis):
         with st.spinner("Loading channel data for comparison table..."):
             debug_log("Loading channel data from database", performance_tag="start_channel_data_loading")
             channels_data = []
-            for channel_name in channels:
-                try:
-                    # Load basic channel data
-                    channel_data = db.get_channel_data(channel_name)
-                    if channel_data:
-                        # Get channel statistics
-                        stats = analysis.get_channel_statistics(channel_data)
-                        
-                        # Ensure all numeric values are properly converted to integers
-                        subscribers = int(stats.get('subscribers', 0))
-                        views = int(stats.get('views', 0))
-                        total_videos = int(stats.get('total_videos', 0))
-                        total_likes = int(stats.get('total_likes', 0))
-                        
-                        # Initialize date variables
-                        created_date = "Unknown"
-                        fetched_date = "Unknown"
-                        fetched_timestamp = None
-                        
-                        # Get YouTube channel ID for direct database queries
-                        youtube_id = None
-                        if 'channel_info' in channel_data and 'id' in channel_data['channel_info']:
-                            youtube_id = channel_data['channel_info']['id']
-                        
-                        # Direct database query for accurate dates
-                        fetch_channel_dates(db, youtube_id, channel_name, created_date, fetched_date, fetched_timestamp)
-                        
-                        # Calculate engagement metric (likes/views ratio as percentage)
-                        avg_likes = total_likes / total_videos if total_videos > 0 else 0
-                        avg_views = int(views / total_videos) if total_videos > 0 else 0
-                        engagement = (avg_likes / avg_views * 100) if avg_views > 0 else 0
-                        
-                        # Add to channel data
-                        channel_record = {
-                            'Channel': channel_name,
-                            'Subscribers': subscribers,
-                            'Views': views,
-                            'Videos': total_videos,
-                            'Created': created_date,
-                            'Last Updated': fetched_date,
-                            'Update Timestamp': fetched_timestamp,
-                            'Engagement': engagement,
-                            'Avg Views': avg_views,
-                            'ID': youtube_id
-                        }
-                        
-                        channels_data.append(channel_record)
-                except Exception as e:
-                    debug_log(f"Error loading data for {channel_name}: {str(e)}")
             
-            debug_log("Finished loading channel data", performance_tag="end_channel_data_loading")
+            # Handle the new format where channels is a list of dictionaries
+            if channels and isinstance(channels, list) and isinstance(channels[0], dict):
+                for channel_info in channels:
+                    try:
+                        # Get channel ID from the dictionary
+                        channel_id = channel_info.get('channel_id')
+                        channel_name = channel_info.get('channel_name')
+                        
+                        if not channel_id:
+                            debug_log(f"Missing channel_id for {channel_name}")
+                            continue
+                            
+                        # Load detailed channel data from database
+                        channel_data = db.get_channel_data(channel_id)
+                        if channel_data:
+                            # Get channel statistics
+                            stats = analysis.get_channel_statistics(channel_data)
+                            
+                            # Ensure all numeric values are properly converted to integers
+                            subscribers = int(stats.get('subscribers', 0))
+                            views = int(stats.get('views', 0))
+                            total_videos = int(stats.get('total_videos', 0))
+                            total_likes = int(stats.get('total_likes', 0))
+                            
+                            # Initialize date variables
+                            created_date = "Unknown"
+                            fetched_date = "Unknown"
+                            fetched_timestamp = None
+                            
+                            # Get YouTube channel ID for direct database queries
+                            youtube_id = channel_id
+                            
+                            # Calculate engagement metric (likes/views ratio as percentage)
+                            avg_likes = total_likes / total_videos if total_videos > 0 else 0
+                            engagement = avg_likes / (views / total_videos) if views > 0 and total_videos > 0 else 0
+                            engagement_pct = f"{engagement * 100:.1f}%" if engagement > 0 else "N/A"
+                            
+                            # Add channel data to list
+                            channels_data.append({
+                                'Channel': channel_name,
+                                'Channel ID': channel_id,
+                                'Subscribers': subscribers,
+                                'Views': views,
+                                'Videos': total_videos,
+                                'Engagement': engagement_pct,
+                                'Created': created_date,
+                                'Last Updated': fetched_date,
+                                'Update Timestamp': fetched_timestamp
+                            })
+                    except Exception as e:
+                        debug_log(f"Error processing channel data for {channel_info}: {str(e)}")
+            else:
+                # Legacy format where channels is a list of strings
+                for channel_name in channels:
+                    try:
+                        # Load basic channel data
+                        channel_data = db.get_channel_data(channel_name)
+                        if channel_data:
+                            # Get channel statistics
+                            stats = analysis.get_channel_statistics(channel_data)
+                            
+                            # Ensure all numeric values are properly converted to integers
+                            subscribers = int(stats.get('subscribers', 0))
+                            views = int(stats.get('views', 0))
+                            total_videos = int(stats.get('total_videos', 0))
+                            total_likes = int(stats.get('total_likes', 0))
+                            
+                            # Initialize date variables
+                            created_date = "Unknown"
+                            fetched_date = "Unknown"
+                            fetched_timestamp = None
+                            
+                            # Get YouTube channel ID for direct database queries
+                            youtube_id = None
+                            if 'channel_info' in channel_data and 'id' in channel_data['channel_info']:
+                                youtube_id = channel_data['channel_info']['id']
+                            
+                            # Direct database query for accurate dates
+                            fetch_channel_dates(db, youtube_id, channel_name, created_date, fetched_date, fetched_timestamp)
+                            
+                            # Calculate engagement metric (likes/views ratio as percentage)
+                            avg_likes = total_likes / total_videos if total_videos > 0 else 0
+                            engagement = avg_likes / (views / total_videos) if views > 0 and total_videos > 0 else 0
+                            engagement_pct = f"{engagement * 100:.1f}%" if engagement > 0 else "N/A"
+                            
+                            # Add channel data to list
+                            channels_data.append({
+                                'Channel': channel_name,
+                                'Channel ID': youtube_id,
+                                'Subscribers': subscribers,
+                                'Views': views,
+                                'Videos': total_videos,
+                                'Engagement': engagement_pct,
+                                'Created': created_date,
+                                'Last Updated': fetched_date,
+                                'Update Timestamp': fetched_timestamp
+                            })
+                    except Exception as e:
+                        debug_log(f"Error processing channel data for {channel_name}: {str(e)}")
+                
+            debug_log(f"Finished loading channel data: {len(channels_data)} channels", performance_tag="end_channel_data_loading")
             
-            # Create dataframe
-            channels_df = pd.DataFrame(channels_data)
-    
-    # Handle empty dataframe case
-    if channels_df.empty:
-        st.warning("No channel data available. Please import some channels first.")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    
-    # Sort channels by update timestamp (most recent first) if available
-    if 'Update Timestamp' in channels_df.columns:
-        # Handle NaN values by replacing with 0
-        channels_df['Update Timestamp'] = channels_df['Update Timestamp'].fillna(0)
-        
-        # Sort by timestamp in descending order (most recent first)
-        channels_df = channels_df.sort_values('Update Timestamp', ascending=False)
+            # Create DataFrame from the list of dicts
+            if channels_data:
+                channels_df = pd.DataFrame(channels_data)
+            else:
+                # Create empty DataFrame with proper columns
+                channels_df = pd.DataFrame(columns=[
+                    'Channel', 'Channel ID', 'Subscribers', 'Views', 'Videos', 
+                    'Engagement', 'Created', 'Last Updated', 'Update Timestamp'
+                ])
+                debug_log("Warning: No channel data found, created empty DataFrame")
     
     # Try to get DB IDs for better sorting
     if db:
@@ -106,7 +152,7 @@ def load_channel_data(channels, db, analysis):
             cursor = conn.cursor()
             
             # Get the order based on internal database ID (most recent first)
-            cursor.execute("SELECT id, title FROM channels ORDER BY id DESC")
+            cursor.execute("SELECT id, channel_title FROM channels ORDER BY id DESC")
             db_order = cursor.fetchall()
             conn.close()
             

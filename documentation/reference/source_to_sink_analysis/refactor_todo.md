@@ -6,7 +6,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
 
 ## Highest Priority Refactors (Start Here)
 
-### 1. [ ] **Consolidate Queue Management Utilities**
+### 1. [x] **Consolidate Queue Management Utilities**
 - **Files:**
   - [`src/utils/queue_manager.py`](../../../src/utils/queue_manager.py)
   - [`src/utils/queue_tracker.py`](../../../src/utils/queue_tracker.py)
@@ -18,7 +18,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
   - Update all imports and usages throughout the codebase to use the unified interface.
 - **Rationale:** Reduces confusion, eliminates bugs from state desync, and simplifies future maintenance.
 
-### 2. [ ] **Remove Deprecated Utility Re-Exports**
+### 2. [x] **Remove Deprecated Utility Re-Exports**
 - **Files:**
   - [`src/utils/helpers.py`](../../../src/utils/helpers.py)
   - [`src/utils/__init__.py`](../../../src/utils/__init__.py)
@@ -29,7 +29,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
   - Delete `helpers.py` if no longer needed.
 - **Rationale:** Clarifies code dependencies, surfaces dead code, and enforces modularity.
 
-### 3. [ ] **Clarify Error Handling and Quota Management Responsibilities**
+### 3. [x] **Clarify Error Handling and Quota Management Responsibilities**
 - **Files:**
   - [`src/services/youtube/service_impl/error_handling.py`](../../../src/services/youtube/service_impl/error_handling.py)
   - [`src/api/youtube/base.py`](../../../src/api/youtube/base.py)
@@ -43,7 +43,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
   - Refactor all usages to call the centralized logic.
 - **Rationale:** Prevents inconsistent error handling, reduces code duplication, and makes quota management auditable.
 
-### 4. [ ] **Remove Legacy/Unused Imports and Code**
+### 4. [x] **Remove Legacy/Unused Imports and Code**
 - **Files:**
   - All modules flagged in the analysis as having unused imports or legacy code (see each section's "Inconsistencies, Unused Imports, and Issues").
 - **Issue:** Defensive or legacy imports and code paths remain in many modules, increasing cognitive load and risk of bugs.
@@ -52,7 +52,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
   - Ensure all code paths are exercised by current workflows or are clearly marked as deprecated.
 - **Rationale:** Reduces codebase size, improves readability, and prevents accidental use of outdated logic.
 
-### 5. [ ] **Document and Isolate Legacy UI Components**
+### 5. [x] **Document and Isolate Legacy UI Components**
 - **Files:**
   - [`src/ui/data_analysis.py`](../../../src/ui/data_analysis.py)
   - [`src/ui/components/`](../../../src/ui/components/)
@@ -67,7 +67,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
 
 ## Medium Priority Refactors
 
-### 6. [ ] **Consolidate Redundant Validation and Data Transformation Logic**
+### 6. [x] **Consolidate Redundant Validation and Data Transformation Logic**
 - **Files:**
   - [`src/utils/validation.py`](../../../src/utils/validation.py)
   - [`src/services/youtube/channel_service.py`](../../../src/services/youtube/channel_service.py)
@@ -78,7 +78,7 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
   - Ensure all data transformation utilities are in a single location.
 - **Rationale:** Prevents bugs from inconsistent validation and makes future changes easier.
 
-### 7. [ ] **Review and Refactor Architectural Patterns for Consistency**
+### 7. [x] **Review and Refactor Architectural Patterns for Consistency**
 - **Files:**
   - [`src/storage/factory.py`](../../../src/storage/factory.py)
   - [`src/services/youtube_service.py`](../../../src/services/youtube_service.py)
@@ -93,12 +93,18 @@ This document lists all recommended refactoring and cleanup actions for the YTDa
 
 ## Lower Priority / Ongoing Maintenance
 
-### 8. [ ] **Remove or Clearly Mark Deprecated/Transitional Modules**
+### 8. [x] **Remove or Clearly Mark Deprecated/Transitional Modules**
 - **Files:**
-  - Any modules not used in current workflows or marked as legacy in the analysis.
-- **Issue:** Deprecated or transitional modules may still exist, causing confusion.
+  - [`src/utils/quota_estimation.py`](../../../src/utils/quota_estimation.py)
+  - [`src/utils/helpers.py`](../../../src/utils/helpers.py)
+  - UI Legacy Wrappers (`src/ui/data_collection.py`, `src/ui/data_analysis.py`, `src/ui/bulk_import.py`)
+- **Issue:** Deprecated or transitional modules still exist, causing confusion.
 - **Action:**
-  - Remove these modules if not needed, or clearly mark them as deprecated in code and docs.
+  - [x] Created comprehensive documentation of deprecated modules in [`documentation/reference/deprecated_modules.md`](../deprecated_modules.md) and [`documentation/reference/source_to_sink_analysis/deprecated_files.md`](deprecated_files.md)
+  - [x] Updated key imports in core application files to use modernized modules
+  - [x] Updated several test files to use correct import paths
+  - [x] Completely removed deprecated files (quota_estimation.py, helpers.py, legacy UI wrappers)
+  - [x] Updated all remaining test files with proper import paths
 - **Rationale:** Prevents accidental use and clarifies the current state of the codebase.
 
 ### 9. [ ] **Update Documentation to Reflect Refactored Codebase**

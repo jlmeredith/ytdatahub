@@ -9,7 +9,7 @@ import sqlite3
 from src.database.sqlite import SQLiteDatabase
 from src.storage.factory import StorageFactory
 from src.services.youtube.base_service import BaseService
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 class StorageService(BaseService):
     """
@@ -68,11 +68,6 @@ class StorageService(BaseService):
             result = storage.store_channel_data(channel_data)
             debug_log(f"[WORKFLOW] Save result for channel_id={channel_data.get('channel_id')}: {result}")
             
-            # Remove from the queue tracker if saved successfully
-            if result and 'channel_id' in channel_data:
-                from src.utils.queue_tracker import remove_from_queue
-                remove_from_queue('channels', channel_data['channel_id'])
-                
             return result
         except Exception as e:
             self.logger.error(f"Error saving channel data: {str(e)}")

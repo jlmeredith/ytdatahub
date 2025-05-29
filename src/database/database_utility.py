@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from typing import Optional, Union, Dict, List, Any
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
 class DatabaseUtility(BaseRepository):

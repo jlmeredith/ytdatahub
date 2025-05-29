@@ -7,17 +7,15 @@ from datetime import datetime
 import logging
 
 from src.api.youtube_api import YouTubeAPI
-from src.services.youtube import QuotaService, StorageService, ChannelService, VideoService, CommentService
-from src.utils.queue_tracker import add_to_queue, remove_from_queue
+from src.services.youtube import StorageService, ChannelService, VideoService, CommentService
 from src.services.youtube.delta_service_integration import integrate_delta_service
 
-from .quota_management import QuotaManagementMixin
 from .data_collection import DataCollectionMixin
 from .data_refresh import DataRefreshMixin
 from .data_processing import DataProcessingMixin
 from .error_handling import ErrorHandlingMixin
 
-class YouTubeServiceImpl(QuotaManagementMixin, DataCollectionMixin, 
+class YouTubeServiceImpl(DataCollectionMixin, 
                         DataRefreshMixin, DataProcessingMixin, ErrorHandlingMixin):
     """
     Implementation of the YouTube service using specialized services.
@@ -36,18 +34,10 @@ class YouTubeServiceImpl(QuotaManagementMixin, DataCollectionMixin,
         self.api = YouTubeAPI(api_key)
         
         # Initialize specialized services
-        self.quota_service = QuotaService(api_key, api_client=self.api)
         self.storage_service = StorageService()
-        self.channel_service = ChannelService(api_key, api_client=self.api, quota_service=self.quota_service)
-        self.video_service = VideoService(api_key, api_client=self.api, quota_service=self.quota_service)
-        self.comment_service = CommentService(api_key, api_client=self.api, quota_service=self.quota_service)
-        
-        # Debug logging for QuotaService initialization
-        self.logger.debug(f"QuotaService initialized with API key: {api_key}")
-        
-        # Add reference to quota attributes for backward compatibility
-        self._quota_used = self.quota_service._quota_used
-        self._quota_limit = self.quota_service._quota_limit
+        self.channel_service = ChannelService(api_key, api_client=self.api)
+        self.video_service = VideoService(api_key, api_client=self.api)
+        self.comment_service = CommentService(api_key, api_client=self.api)
         
         # Database connection for storage operations
         self.db = None

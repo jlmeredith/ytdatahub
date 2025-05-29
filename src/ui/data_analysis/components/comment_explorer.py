@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 from src.analysis.youtube_analysis import YouTubeAnalysis
-from src.utils.helpers import paginate_dataframe, render_pagination_controls
+from src.utils.ui_helpers import paginate_dataframe, render_pagination_controls
 from src.ui.data_analysis.utils.session_state import initialize_pagination, get_pagination_state, update_pagination_state
 from src.ui.data_analysis.components.comment_analysis.temporal_tab import render_temporal_tab
 from src.ui.data_analysis.components.comment_analysis.commenter_tab import render_commenter_tab

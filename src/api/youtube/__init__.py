@@ -109,7 +109,7 @@ class YouTubeAPI:
             str: Uploads playlist ID or empty string if not found/invalid
         """
         try:
-            from src.utils.helpers import debug_log
+            from src.utils.debug_utils import debug_log
             debug_log(f"[API] Fetching uploads playlist ID for channel_id={channel_id}")
             
             # Use the channel client to get channel info
@@ -130,9 +130,23 @@ class YouTubeAPI:
             return playlist_id
             
         except Exception as e:
-            from src.utils.helpers import debug_log
+            from src.utils.debug_utils import debug_log
             debug_log(f"[API] Error fetching playlist_id for channel_id={channel_id}: {str(e)}")
             return ''
+    
+    def get_playlist_items(self, playlist_id, max_results=50, page_token=None):
+        """
+        Get items from a playlist by playlist ID
+        
+        Args:
+            playlist_id: YouTube playlist ID
+            max_results: Maximum number of results to return
+            page_token: Token for pagination
+            
+        Returns:
+            List of video items from the playlist
+        """
+        return self.video_client.get_playlist_items(playlist_id, max_results, page_token)
     
     def test_connection(self):
         """
@@ -158,6 +172,6 @@ class YouTubeAPI:
             
             return True
         except Exception as e:
-            from src.utils.helpers import debug_log
+            from src.utils.debug_utils import debug_log
             debug_log(f"API test connection failed: {str(e)}")
             return False

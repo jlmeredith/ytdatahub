@@ -9,7 +9,7 @@ import json
 
 import googleapiclient.errors
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.api.youtube.base import YouTubeBaseClient
 
 class VideoClient(YouTubeBaseClient):
@@ -282,3 +282,55 @@ class VideoClient(YouTubeBaseClient):
         except Exception as e:
             debug_log(f"[API][ERROR] Exception in get_playlist_info: {str(e)}")
             return None
+
+    def get_playlist_items(self, playlist_id: str, max_results: int = 50, page_token: str = None) -> List[Dict]:
+        """
+        Get videos from a playlist
+        
+        Args:
+            playlist_id: YouTube playlist ID
+            max_results: Maximum number of results to return
+            page_token: Token for pagination
+            
+        Returns:
+            List of video items from the playlist
+        """
+        debug_log(f"[API] get_playlist_items called with playlist_id: {playlist_id}, max_results: {max_results}")
+        if not self.is_initialized():
+            debug_log("YouTube API client not initialized. Cannot fetch playlist items.")
+            return []
+            
+        try:
+            # Make the API request to get playlist items
+            request = self.youtube.playlistItems().list(
+                part="snippet,contentDetails",
+                playlistId=playlist_id,
+                maxResults=min(50, max_results),  # API maximum is 50
+                pageToken=page_token
+            )
+            response = request.execute()
+            
+            # Extract video data
+            items = response.get('items', [])
+            debug_log(f"[API] Found {len(items)} items in playlist {playlist_id}")
+            
+            # Transform items to include video_id at the top level
+            result = []
+            for item in items:
+                # Extract needed fields
+                video_data = {
+                    'video_id': item['contentDetails']['videoId'],
+                    'title': item['snippet']['title'],
+                    'published_at': item['snippet']['publishedAt'],
+                    'position': item['snippet']['position'],
+                    'description': item['snippet'].get('description', ''),
+                    'thumbnail_url': item['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
+                    'raw_api_response': item  # Store full response
+                }
+                result.append(video_data)
+            
+            return result
+            
+        except Exception as e:
+            debug_log(f"[API][ERROR] Exception in get_playlist_items: {str(e)}")
+            return []

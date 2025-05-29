@@ -8,9 +8,9 @@ import streamlit as st
 import re
 from bs4 import BeautifulSoup
 
-# Import the components that render UI with tabs
-from src.ui.data_collection import render_data_collection_tab
-from src.ui.data_analysis import render_data_analysis_tab
+# Import the components that render UI with tabs - use modern paths
+from src.ui.data_collection.main import render_data_collection_tab
+from src.ui.data_analysis.main import render_data_analysis_tab
 from src.ui.utilities import render_utilities_tab
 
 

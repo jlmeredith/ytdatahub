@@ -7,14 +7,21 @@ from unittest.mock import MagicMock, patch
 import os
 import sys
 import logging
+import pandas as pd
+import json
+import base64
+from io import StringIO
+import datetime
 
 # Ensure working directory is correct for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.ui.data_collection import render_data_collection_tab, convert_db_to_api_format
+from src.ui.data_collection.main import render_data_collection_tab
+from src.ui.data_collection.utils.data_conversion import convert_db_to_api_format
 from src.database.sqlite import SQLiteDatabase
 from src.services.youtube_service import YouTubeService
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
+from src.ui.data_collection.debug_ui import render_debug_panel
 
 class TestDebugPanelAndSessionState:
     """Tests for debug panel and session state maintenance in UI."""
@@ -148,7 +155,7 @@ class TestDebugPanelAndSessionState:
              patch("streamlit.rerun"), \
              patch("streamlit.metric"), \
              patch("streamlit.columns", return_value=[MagicMock(), MagicMock(), MagicMock()]), \
-             patch("src.utils.helpers.debug_log") as mock_debug_log, \
+             patch("src.utils.debug_utils.debug_log") as mock_debug_log, \
              patch("src.ui.data_collection.render_delta_report"):
             
             # Create a mock button that returns True (simulating a button click)
@@ -210,7 +217,6 @@ class TestDebugPanelAndSessionState:
                 # Mock the render_debug_panel function
                 with patch("src.ui.data_collection.render_debug_panel") as mock_render_debug:
                     # Simulate calling the debug panel render function
-                    from src.ui.data_collection import render_debug_panel
                     render_debug_panel()
                     
                     # Verify it was called
@@ -256,7 +262,7 @@ class TestDebugPanelAndSessionState:
         # Mock components
         with patch("streamlit.text_input", return_value="mock_api_key"), \
              patch("streamlit.button", return_value=True), \
-             patch("src.utils.helpers.debug_log", side_effect=capture_log):
+             patch("src.utils.debug_utils.debug_log", side_effect=capture_log):
             
             # Critical test: the spinner context manager may be interfering with state
             spinner_mock = MagicMock()
@@ -371,7 +377,6 @@ class TestDebugPanelAndSessionState:
              patch("streamlit.metric"):
             
             # Import and call render_debug_panel directly
-            from src.ui.data_collection import render_debug_panel
             render_debug_panel()
         
         # Check what values were used when rendering the debug panel

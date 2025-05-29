@@ -5,11 +5,23 @@ The latest code push has the collection system mapping all Youtube public API de
 
 > **Development Status**: This project is under active development as of May 2025. While most of the core functionality is working, some features may be experimental. A stable release version (1.0) is planned for June 2025.
 
+## Codebase Improvements
+
+The codebase has undergone significant refactoring to improve maintainability and performance:
+
+- **Consolidated utilities**: Merged redundant queue management functionality into a single module
+- **Removed deprecated code**: Eliminated deprecated utility re-exports and helpers
+- **Centralized services**: Created dedicated services for error handling and quota management
+- **Optimized imports**: Removed unnecessary imports and moved large dependencies into function scope
+- **Enhanced documentation**: Updated documentation to reflect architectural improvements
+
+For more details, see [Refactoring Progress](documentation/reference/source_to_sink_analysis/refactor_progress.md).
+
+## Overview
+
 A powerful YouTube data collection and analysis tool that helps you gather, store, and analyze channel data, videos, and comments with an intuitive step-by-step workflow.
 
 ![YTDataHub Homepage](documentation/homepage.png)
-
-## Overview
 
 YTDataHub makes it simple to collect data from YouTube channels, organize it efficiently, and generate insightful analytics. With a step-by-step workflow and flexible storage options, you can quickly gather the data you need for content analysis, market research, or audience insights.
 
@@ -184,5 +196,63 @@ For more details, see [Database Operations Documentation](documentation/referenc
 - Both the **New Channel** and **Update Channel** workflows always fetch, log, and store the YouTube uploads playlist ID before any video fetch.
 - All playlist ID actions (fetch, store, error) are logged and visible in the UI debug panel.
 - This parity is enforced by automated tests and code review to prevent regressions.
+
+## Recent Improvements
+
+### Codebase Cleanup and Modernization (May 2025)
+
+The codebase has undergone significant cleanup and modernization:
+
+1. **Removed Legacy Code**: Eliminated deprecated utility modules and legacy UI wrappers
+2. **Improved Channel Resolution**: Enhanced the channel input parsing to robustly handle various input formats
+3. **Fixed API Error Handling**: Added proper error handling for API calls and improved resilience
+4. **Improved Test Coverage**: Added comprehensive unit and integration tests
+5. **Documentation**: Added detailed documentation of the cleanup process
+
+For a complete list of changes, see [Cleanup Summary](documentation/reference/cleanup_summary.md).
+
+## Features
+
+- Collection of YouTube channel data via the YouTube Data API
+- Storage and analysis of channel statistics, videos, and comments
+- Visualization of channel growth and engagement metrics
+- Detection of significant changes in channel performance
+- Identification of high-performing content and audience engagement patterns
+
+## Installation
+
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Configure your YouTube API key in `.env`
+4. Run the application: `streamlit run youtube.py`
+
+## Environment Setup
+
+Create a `.env` file in the project root with the following content:
+
+```
+YOUTUBE_API_KEY=your_api_key_here
+```
+
+## Usage
+
+1. Start the application: `streamlit run youtube.py`
+2. Enter a YouTube channel ID, URL, or handle in the data collection tab
+3. Select the data you want to collect (channel info, videos, comments)
+4. Analyze the collected data in the analysis dashboard
+
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature-name`
+3. Commit your changes: `git commit -am 'Add some feature'`
+4. Push to the branch: `git push origin feature/your-feature-name`
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 

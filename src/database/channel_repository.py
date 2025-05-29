@@ -9,7 +9,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
 def flatten_dict(d, parent_key='', sep='.'):
@@ -365,8 +365,82 @@ class ChannelRepository(BaseRepository):
 # ... existing code ...
 
 CANONICAL_FIELD_MAP = {
+    # Basic channel info
+    'channel_id': 'channel_id',
+    'channel_title': 'channel_title',
+    'uploads_playlist_id': 'uploads_playlist_id',
+    
+    # Kind and etag
+    'kind': 'kind',
+    'etag': 'etag',
+    
+    # Snippet fields
+    'snippet_title': 'snippet_title',
+    'snippet_description': 'snippet_description', 
+    'snippet_customUrl': 'snippet_customUrl',
+    'snippet_publishedAt': 'snippet_publishedAt',
+    'snippet_defaultLanguage': 'snippet_defaultLanguage',
+    'snippet_country': 'snippet_country',
+    'snippet_thumbnails_default_url': 'snippet_thumbnails_default_url',
+    'snippet_thumbnails_medium_url': 'snippet_thumbnails_medium_url', 
+    'snippet_thumbnails_high_url': 'snippet_thumbnails_high_url',
+    'snippet_localized_title': 'snippet_localized_title',
+    'snippet_localized_description': 'snippet_localized_description',
+    
+    # Content details
+    'contentDetails_relatedPlaylists_uploads': 'contentDetails_relatedPlaylists_uploads',
+    'contentDetails_relatedPlaylists_likes': 'contentDetails_relatedPlaylists_likes',
+    'contentDetails_relatedPlaylists_favorites': 'contentDetails_relatedPlaylists_favorites',
+    
+    # Statistics (with backward compatibility)
     'subscriber_count': 'statistics_subscriberCount',
-    'view_count': 'statistics_viewCount',
+    'view_count': 'statistics_viewCount', 
     'video_count': 'statistics_videoCount',
-    # Add more as needed
+    'statistics_viewCount': 'statistics_viewCount',
+    'statistics_subscriberCount': 'statistics_subscriberCount',
+    'statistics_hiddenSubscriberCount': 'statistics_hiddenSubscriberCount',
+    'statistics_videoCount': 'statistics_videoCount',
+    
+    # Branding settings
+    'brandingSettings_channel_title': 'brandingSettings_channel_title',
+    'brandingSettings_channel_description': 'brandingSettings_channel_description',
+    'brandingSettings_channel_keywords': 'brandingSettings_channel_keywords',
+    'brandingSettings_channel_country': 'brandingSettings_channel_country',
+    'brandingSettings_image_bannerExternalUrl': 'brandingSettings_image_bannerExternalUrl',
+    
+    # Status
+    'status_privacyStatus': 'status_privacyStatus',
+    'status_isLinked': 'status_isLinked',
+    'status_longUploadsStatus': 'status_longUploadsStatus',
+    'status_madeForKids': 'status_madeForKids',
+    
+    # Topic details
+    'topicDetails_topicIds': 'topicDetails_topicIds',
+    'topicDetails_topicCategories': 'topicDetails_topicCategories',
+    
+    # Localizations
+    'localizations': 'localizations',
+    
+    # Legacy/simplified field mappings for application compatibility
+    'channel_name': 'channel_title',
+    'channel_description': 'snippet_description',
+    'description': 'snippet_description',
+    'custom_url': 'snippet_customUrl',
+    'published_at': 'snippet_publishedAt',
+    'country': 'snippet_country',
+    'default_language': 'snippet_defaultLanguage',
+    'thumbnail_default': 'snippet_thumbnails_default_url',
+    'thumbnail_medium': 'snippet_thumbnails_medium_url',
+    'thumbnail_high': 'snippet_thumbnails_high_url',
+    'subscribers': 'statistics_subscriberCount',
+    'views': 'statistics_viewCount',
+    'total_videos': 'statistics_videoCount',
+    'privacy_status': 'status_privacyStatus',
+    'is_linked': 'status_isLinked',
+    'long_uploads_status': 'status_longUploadsStatus',
+    'made_for_kids': 'status_madeForKids',
+    'hidden_subscriber_count': 'statistics_hiddenSubscriberCount',
+    'keywords': 'brandingSettings_channel_keywords',
+    'topic_categories': 'topicDetails_topicCategories',
+    'playlist_id': 'uploads_playlist_id',
 }

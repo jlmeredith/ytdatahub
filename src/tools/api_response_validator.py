@@ -17,7 +17,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.api.youtube_api import YouTubeAPI
 from src.utils.video_processor import process_video_data
 from src.utils.video_formatter import fix_missing_views, extract_video_views
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.ui.data_collection.components.enhanced_video_list import render_enhanced_video_list
 
 st.set_page_config(layout="wide")

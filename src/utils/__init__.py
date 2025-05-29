@@ -2,21 +2,14 @@
 Utility functions for the YouTube Data Hub application.
 """
 
-# Export utility functions
-from src.utils.helpers import (
-    debug_log, 
-    format_number, 
-    format_duration, 
-    get_thumbnail_url, 
-    estimate_quota_usage,
-    duration_to_seconds
-)
+# Import directly from specialized modules instead of re-exporting from helpers.py
+from src.utils.debug_utils import debug_log
+from src.utils.formatters import format_number
+from src.utils.validation import validate_channel_id, validate_api_key
 
 __all__ = [
     'debug_log',
     'format_number',
-    'format_duration',
-    'get_thumbnail_url',
-    'estimate_quota_usage',
-    'duration_to_seconds'
+    'validate_channel_id',
+    'validate_api_key'
 ]

@@ -7,6 +7,27 @@ from src.analysis.base_analyzer import BaseAnalyzer
 class ChannelAnalyzer(BaseAnalyzer):
     """Class for analyzing YouTube channel data."""
     
+    def analyze(self, channel_data):
+        """
+        Analyze channel data and return comprehensive metrics.
+        
+        Args:
+            channel_data: Dictionary containing channel data
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        results = {}
+        
+        # Get basic statistics
+        results.update(self.get_channel_statistics(channel_data))
+        
+        # Get growth data
+        growth_data = self.get_channel_growth(channel_data)
+        results.update(growth_data)
+        
+        return results
+    
     def get_channel_statistics(self, channel_data):
         """
         Get basic channel statistics.

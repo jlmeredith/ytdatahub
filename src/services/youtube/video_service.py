@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
 
 class VideoService(BaseService):
@@ -18,18 +18,16 @@ class VideoService(BaseService):
     Service for managing YouTube video operations.
     """
     
-    def __init__(self, api_key=None, api_client=None, quota_service=None):
+    def __init__(self, api_key=None, api_client=None):
         """
         Initialize the video service.
         
         Args:
             api_key (str, optional): YouTube API key
             api_client (obj, optional): Existing API client to use
-            quota_service (QuotaService, optional): Service for quota management
         """
         super().__init__(api_key, api_client)
         self.api = api_client if api_client else (YouTubeAPI(api_key) if api_key else None)
-        self.quota_service = quota_service
         self.logger = logging.getLogger(__name__)
     
     def collect_channel_videos(self, channel_data, max_results=50, quota_optimize=False):
@@ -262,10 +260,6 @@ class VideoService(BaseService):
         debug_log(f"Getting details for {len(video_ids)} videos in batch")
         
         try:
-            # Track quota if quota service is provided
-            if self.quota_service:
-                self.quota_service.track_quota_usage('videos.list')
-                
             # Request video details
             return self.api.get_video_details_batch(video_ids)
         except Exception as e:

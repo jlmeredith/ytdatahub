@@ -3,7 +3,7 @@ Filter functionality for the channel selector component.
 """
 import streamlit as st
 import pandas as pd
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def filter_channels(channels_df):
     """

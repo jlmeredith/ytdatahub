@@ -4,7 +4,7 @@ Provides methods that handle delta calculations in a backwards-compatible way.
 """
 import logging
 from typing import Dict, List, Optional, Any
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.services.youtube.delta_service import DeltaService
 
 def integrate_delta_service(service):

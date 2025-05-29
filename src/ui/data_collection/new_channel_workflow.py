@@ -2,12 +2,11 @@
 New channel workflow implementation for data collection.
 """
 import streamlit as st
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.ui.data_collection.workflow_base import BaseCollectionWorkflow
 from .components.video_item import render_video_item, render_video_table_row
 from .utils.data_conversion import format_number
 from .utils.error_handling import handle_collection_error
-from src.utils.queue_tracker import render_queue_status_sidebar, add_to_queue, get_queue_stats
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
 from src.utils.video_standardizer import extract_standardized_videos, standardize_video_data
@@ -17,6 +16,7 @@ from src.ui.data_collection.utils.delta_reporting import render_delta_report
 import math
 from src.ui.data_collection.components.save_operation_manager import SaveOperationManager
 from src.ui.data_collection.components.video_selection_table import render_video_selection_table
+from src.utils.data_collection.channel_normalizer import normalize_channel_data_for_save
 
 def flatten_dict(d, parent_key='', sep='.'):
     """Recursively flattens a nested dictionary."""
@@ -143,8 +143,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                         st.session_state['channel_info_temp'] = channel_info_temp
                         st.session_state['channel_data_fetched'] = True
                         st.session_state['api_data'] = channel_info_temp
-                        add_to_queue('channels', channel_id, channel_info_temp)
-                        debug_log(f"[WORKFLOW] Added channel_id={channel_id} to processing queue. Current queue stats: {get_queue_stats()}")
+                        debug_log(f"[WORKFLOW] Channel data ready for channel_id={channel_id}")
                         info_valid = True
                     else:
                         fetch_attempts += 1
@@ -224,11 +223,13 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
             if st.button("📥 Save Channel", key="save_channel_btn"):
                 # Save channel to database
                 try:
-                    from src.ui.data_collection.components.save_operation_manager import SaveOperationManager
+                    # Normalize the channel data before saving to ensure consistent format
+                    normalized_data = normalize_channel_data_for_save(channel_info, "new_channel")
+                    
                     save_manager = SaveOperationManager()
                     success = save_manager.perform_save_operation(
                         youtube_service=self.youtube_service,
-                        api_data=channel_info,
+                        api_data=normalized_data,
                         total_videos=0,  # No videos yet
                         total_comments=0  # No comments yet
                     )
@@ -329,14 +330,14 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.error(f"❌ Error saving playlist: {str(e)}")
                     
         with col2:
-            if st.button("📋 Add to Queue", key="queue_playlist_btn", 
-                        disabled=st.session_state['playlist_saved'] or st.session_state['playlist_queued']):
+            if st.button("📋 Save Playlist Data", key="save_playlist_btn", 
+                        disabled=st.session_state['playlist_saved']):
                 try:
-                    add_to_queue('playlists', playlist_id, playlist_api)
-                    st.session_state['playlist_queued'] = True
-                    st.success("✅ Playlist added to processing queue!")
+                    debug_log(f"[WORKFLOW] Playlist data saved for playlist_id={playlist_id}")
+                    st.session_state['playlist_saved'] = True
+                    st.success("✅ Playlist data saved!")
                 except Exception as e:
-                    st.error(f"❌ Error adding to queue: {str(e)}")
+                    st.error(f"❌ Error saving playlist data: {str(e)}")
                     
         with col3:
             if st.button("▶️ Continue to Videos", key="continue_to_videos_btn2", 
@@ -347,7 +348,6 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
     def render_step_2_video_collection(self):
         """Render step 2: Collect and display video data in a user-friendly way."""
         st.subheader("Step 2: Videos Data")
-        render_queue_status_sidebar()
         self.show_progress_indicator(2)
         
         channel_info = st.session_state.get('channel_info_temp', {})
@@ -640,7 +640,6 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
     def render_step_3_comment_collection(self):
         """Render step 3: Collect and display comment data in a user-friendly way."""
         st.subheader("Step 3: Comments Data")
-        render_queue_status_sidebar()
         self.show_progress_indicator(3)
         
         channel_info = st.session_state.get('channel_info_temp', {})
@@ -784,22 +783,13 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
             
             # Action buttons
             st.markdown("---")
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
                 if st.button("💾 Complete and Save All Data", key="complete_save_btn", type="primary"):
                     self.save_data()
-                    
-            with col2:
-                if st.button("📋 Add to Processing Queue", key="queue_all_btn"):
-                    try:
-                        # Add all collected data to queue
-                        add_to_queue('channel_complete', channel_id, channel_info)
-                        st.success("✅ All data added to processing queue!")
-                    except Exception as e:
-                        st.error(f"❌ Error adding to queue: {str(e)}")
                         
-            with col3:
+            with col2:
                 if st.button("🔙 Back to Videos", key="back_to_videos_final_btn"):
                     st.session_state['collection_step'] = 3
                     st.rerun()

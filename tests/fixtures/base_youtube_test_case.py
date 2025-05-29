@@ -73,26 +73,15 @@ class BaseYouTubeTestCase:
             'views': '5000000',
             'total_videos': '50'
         }
-        
-        # Create a mock quota service
-        mock_quota_service = MagicMock()
 
-        # Pass the mock quota service to the YouTubeService
-        service = YouTubeService("test_api_key", quota_service=mock_quota_service)
-
-        # Ensure the mock quota service is properly set
-        service.quota_service = mock_quota_service
-        service.channel_service.quota_service = mock_quota_service
-        service.video_service.quota_service = mock_quota_service
-        service.comment_service.quota_service = mock_quota_service
+        # Create the YouTubeService without quota service
+        service = YouTubeService("test_api_key")
         
         # Ensure we're using our mock API
         service.api = mock_api
         
         # Replace the validate_and_resolve_channel_id method
         service.validate_and_resolve_channel_id = MagicMock(return_value=(True, 'UC_test_channel'))
-        
-        self.logger.debug(f"Mock QuotaService assigned to YouTubeService: {mock_quota_service}")
         
         return service, mock_api, mock_db
     

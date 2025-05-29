@@ -10,7 +10,8 @@ from unittest.mock import MagicMock, patch
 # Ensure working directory is correct for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.ui.data_collection import render_data_collection_tab
+from src.ui.data_collection.main import render_data_collection_tab
+from src.ui.data_collection.utils.data_conversion import convert_db_to_api_format
 from src.database.sqlite import SQLiteDatabase
 from src.services.youtube_service import YouTubeService
 
@@ -90,7 +91,7 @@ class TestChannelSelectionUI:
         
         return mock
 
-    @patch("src.ui.data_collection.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
     def test_channel_selection_ui(self, mock_sqlite_db_class, mock_sqlite_db, mock_channel_data):
         """Test the channel selection UI workflow."""
         # Configure the mock database
@@ -130,16 +131,16 @@ class TestChannelSelectionUI:
         with patch("streamlit.text_input", return_value=user_api_key), \
              patch("streamlit.selectbox", return_value=("UC_test_channel", "Test Channel")), \
              patch("streamlit.button", return_value=True), \
-             patch("src.ui.data_collection.convert_db_to_api_format", return_value=api_formatted_data), \
-             patch("src.ui.data_collection.YouTubeService") as mock_service_class, \
+             patch("src.ui.data_collection.utils.data_conversion.convert_db_to_api_format", return_value=api_formatted_data), \
+             patch("src.ui.data_collection.main.YouTubeService") as mock_service_class, \
              patch("streamlit.spinner"), \
              patch("streamlit.success"), \
              patch("streamlit.rerun"):
             # Test implementation would be here
             pass
 
-    @patch("src.ui.data_collection.SQLiteDatabase")
-    @patch("src.ui.data_collection.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
     def test_update_channel_tab_displays_channels(self, mock_youtube_service_class, mock_sqlite_db_class):
         """Test that the update channel tab properly displays the available channels."""
         # Configure mocks for the database and YouTube service

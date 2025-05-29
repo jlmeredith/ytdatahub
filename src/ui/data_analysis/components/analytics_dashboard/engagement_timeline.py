@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 from datetime import timedelta
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.analysis.visualization.trend_line import add_trend_line
 from src.analysis.visualization.chart_helpers import (
     configure_time_series_layout,

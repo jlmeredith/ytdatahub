@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.services.youtube.base_service import BaseService
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from .alert_threshold_config import AlertThresholdConfig
 from .trend_analysis import TrendAnalyzer
 

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.channel_repository import ChannelRepository
 from src.database.video_repository import VideoRepository
 from src.database.comment_repository import CommentRepository

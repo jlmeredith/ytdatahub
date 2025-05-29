@@ -11,7 +11,7 @@ from datetime import datetime
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
 from src.api.youtube_api import YouTubeAPI
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 # Import functions from the bulk_import package
 from src.ui.bulk_import.logger import update_debug_log

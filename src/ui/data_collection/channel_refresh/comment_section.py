@@ -3,7 +3,7 @@ This module handles the comment section of the channel refresh UI.
 """
 import streamlit as st
 import pandas as pd
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def render_comment_section(comments_data):
     """

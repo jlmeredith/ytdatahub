@@ -4,7 +4,7 @@ Top performing videos analysis for the analytics dashboard.
 import streamlit as st
 import pandas as pd
 import time
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def render_top_videos(channels_dict, analysis, use_cache, is_multi_channel):
     """

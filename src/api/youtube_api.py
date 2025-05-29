@@ -5,7 +5,7 @@ to the specialized modules in the youtube/ directory.
 """
 from typing import Dict, List, Any, Optional, Tuple
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.api.youtube import YouTubeAPI as ModularYouTubeAPI
 
 # Define the YouTubeAPIError class that was missing

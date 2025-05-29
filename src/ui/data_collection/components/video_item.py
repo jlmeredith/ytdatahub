@@ -21,7 +21,7 @@ def render_video_item(video, index=0, selectable=False):
         return
     
     # Import debug logging function at the top level if not already imported
-    from src.utils.helpers import debug_log
+    from src.utils.debug_utils import debug_log
     
     # Use our standardizer to ensure consistent video structure
     from src.utils.video_standardizer import standardize_video_data

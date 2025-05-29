@@ -3,7 +3,7 @@ Enhanced video render component that provides more robust video display.
 This version addresses the issues with missing videos in the UI.
 """
 import streamlit as st
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.utils.video_standardizer import standardize_video_data
 
 def render_enhanced_video_list(videos_data):

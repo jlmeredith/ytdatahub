@@ -6,7 +6,8 @@ import pandas as pd
 import plotly.express as px
 import time
 import traceback
-from src.utils.helpers import debug_log, format_duration_human_friendly
+from src.utils.debug_utils import debug_log
+from src.utils.duration_utils import format_duration_human_friendly
 from src.analysis.visualization.chart_helpers import configure_bar_chart_layout
 
 def render_duration_analysis(combined_df, channels_dict, analysis, use_cache, is_multi_channel):

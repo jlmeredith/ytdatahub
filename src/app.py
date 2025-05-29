@@ -95,10 +95,6 @@ class YTDataHubApp:
         if 'background_tasks_running' not in st.session_state:
             st.session_state.background_tasks_running = False
 
-        if 'background_task_queue' not in st.session_state:
-            import queue
-            st.session_state.background_task_queue = queue.Queue()
-
         if 'background_task_results' not in st.session_state:
             st.session_state.background_task_results = {}
 

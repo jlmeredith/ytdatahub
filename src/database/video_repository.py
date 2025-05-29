@@ -10,7 +10,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
 class VideoRepository(BaseRepository):

@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional
 import sys
 import googleapiclient.errors
 
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.api.youtube.base import YouTubeBaseClient
 
 # Try to import streamlit but don't fail if it's not available

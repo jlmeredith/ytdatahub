@@ -2,12 +2,50 @@
 Comment-specific analytics module.
 """
 import pandas as pd
-import numpy as np
 from datetime import datetime
 from src.analysis.base_analyzer import BaseAnalyzer
 
 class CommentAnalyzer(BaseAnalyzer):
     """Class for analyzing YouTube comment data."""
+    
+    def analyze(self, data):
+        """
+        Analyze comment data and return comprehensive metrics.
+        
+        Args:
+            data: Dictionary containing channel data with comments
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        # Get comment analysis which contains all the sub-analyses
+        comment_analysis = self.get_comment_analysis(data)
+        
+        # Return the complete analysis
+        return {
+            'comment_counts': {
+                'total_comments': comment_analysis.get('total_comments', 0),
+                'unique_authors': comment_analysis.get('author_stats', {}).get('unique_authors', 0) if comment_analysis.get('author_stats') else 0,
+                'reply_percentage': comment_analysis.get('stats', {}).get('reply_percentage', 0) if comment_analysis.get('stats') else 0
+            },
+            'engagement': {
+                'avg_likes_per_comment': comment_analysis.get('stats', {}).get('avg_likes_per_comment', 0) if comment_analysis.get('stats') else 0,
+                'most_liked_count': comment_analysis.get('stats', {}).get('most_liked_count', 0) if comment_analysis.get('stats') else 0,
+                'creator_comments': comment_analysis.get('stats', {}).get('creator_comments', 0) if comment_analysis.get('stats') else 0
+            },
+            'content': {
+                'avg_comment_length': comment_analysis.get('stats', {}).get('avg_comment_length', 0) if comment_analysis.get('stats') else 0,
+                'length_distribution': comment_analysis.get('stats', {}).get('length_distribution', {}) if comment_analysis.get('stats') else {}
+            },
+            'distribution': {
+                'videos_with_comments': comment_analysis.get('stats', {}).get('videos_with_comments', 0) if comment_analysis.get('stats') else 0,
+                'comments_per_video': comment_analysis.get('stats', {}).get('comments_per_video', 0) if comment_analysis.get('stats') else 0
+            },
+            'temporal_data': comment_analysis.get('temporal_data'),
+            'thread_data': comment_analysis.get('thread_data'),
+            'author_stats': comment_analysis.get('author_stats'),
+            'raw_data': comment_analysis
+        }
     
     def get_comment_analysis(self, channel_data):
         """

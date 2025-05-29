@@ -12,6 +12,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from src.database.sqlite import SQLiteDatabase
 from src.services.youtube_service import YouTubeService
+from src.ui.data_collection.comparison_ui import render_api_db_comparison
+from src.ui.data_collection.main import render_data_collection_tab
+from src.ui.data_collection.utils.data_conversion import convert_db_to_api_format
 
 
 class TestComparisonView:
@@ -89,10 +92,10 @@ class TestComparisonView:
         
         return mock
 
-    @patch("src.ui.data_collection.render_delta_report")
-    @patch("src.ui.data_collection.SQLiteDatabase")
-    @patch("src.ui.data_collection.render_delta_report")
-    @patch("src.ui.data_collection.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.render_delta_report")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.render_delta_report")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
     def test_delta_reporting_in_ui(self, mock_sqlite_db_class, mock_render_delta, mock_sqlite_db, mock_channel_data):
         """Test that the delta report is shown during the channel update process."""
         # Configure the mock database
@@ -134,14 +137,14 @@ class TestComparisonView:
              patch("streamlit.spinner"), \
              patch("streamlit.success"), \
              patch("streamlit.info"), \
-             patch("src.ui.data_collection.YouTubeService") as mock_service_class:
+             patch("src.ui.data_collection.main.YouTubeService") as mock_service_class:
             # Test implementation would be here
             pass
 
-    @patch("src.ui.data_collection.YouTubeService")
-    @patch("src.ui.data_collection.SQLiteDatabase")
-    @patch("src.ui.data_collection.YouTubeService")
-    @patch("src.ui.data_collection.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
     def test_channel_data_source_indicator(self, mock_sqlite_db_class, mock_youtube_service_class, mock_sqlite_db, mock_channel_data):
         """Test that the UI properly indicates whether data is from the API or database."""
         # Configure mocks
@@ -161,10 +164,10 @@ class TestComparisonView:
         # Test implementation would be here
         pass
 
-    @patch("src.ui.data_collection.YouTubeService")
-    @patch("src.ui.data_collection.SQLiteDatabase")
-    @patch("src.ui.data_collection.YouTubeService")
-    @patch("src.ui.data_collection.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
     def test_api_vs_db_comparison_view(self, mock_youtube_service_class, mock_sqlite_db_class, mock_sqlite_db, mock_channel_data):
         """Test that the API vs DB comparison view displays data correctly."""
         # Configure mocks
@@ -253,9 +256,6 @@ class TestComparisonView:
             'compare_data_view': True
         }
         
-        # Import the module that renders the comparison view
-        from src.ui.data_collection import render_api_db_comparison
-        
         # Call the function that renders the comparison view
         render_api_db_comparison(mock_st)
         
@@ -276,8 +276,8 @@ class TestComparisonView:
         assert 'db_data' in mock_st.session_state, "DB data was not present in session state"
         assert mock_st.session_state['db_data'] is not None, "DB data was None in session state"
 
-    @patch("src.ui.data_collection.YouTubeService")
-    @patch("src.ui.data_collection.SQLiteDatabase")
+    @patch("src.ui.data_collection.main.YouTubeService")
+    @patch("src.ui.data_collection.main.SQLiteDatabase")
     def test_channel_refresh_displays_comparison_data(self, mock_sqlite_db_class, mock_youtube_service_class):
         """Test that channel refresh properly displays comparison data."""
         # Configure mocks
@@ -324,6 +324,6 @@ class TestComparisonView:
              patch("streamlit.markdown"), \
              patch("streamlit.metric"), \
              patch("streamlit.write"), \
-             patch("src.ui.data_collection.render_api_db_comparison") as mock_render_comparison:
+             patch("src.ui.data_collection.comparison_ui.render_api_db_comparison") as mock_render_comparison:
             # Test implementation would be here
             pass

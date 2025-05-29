@@ -3,7 +3,7 @@ This module handles the video section of the channel refresh UI.
 """
 import streamlit as st
 import pandas as pd
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.utils.video_standardizer import standardize_video_data, extract_standardized_videos
 from src.utils.video_formatter import extract_video_views, extract_video_comments
 from ..utils.data_conversion import format_number

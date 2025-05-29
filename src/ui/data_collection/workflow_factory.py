@@ -3,7 +3,7 @@ Factory module for creating appropriate workflow instances.
 """
 import streamlit as st
 from src.ui.data_collection.workflow_base import BaseCollectionWorkflow
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 # Import workflow implementations
 from src.ui.data_collection.new_channel_workflow import NewChannelWorkflow

@@ -11,7 +11,6 @@ import sys
 from src.api.youtube_api import YouTubeAPIError
 from googleapiclient.errors import HttpError
 
-from src.utils.queue_tracker import add_to_queue, get_queue_stats
 from src.utils.video_formatter import fix_missing_views
 
 class DataCollectionMixin:
@@ -67,12 +66,6 @@ class DataCollectionMixin:
                 channel_data['debug_logs'] = debug_logs
                 channel_data['response_data'] = copy.deepcopy(channel_data)
                 return channel_data
-            # Add to queue after channel info fetch
-            try:
-                add_to_queue('channels', channel_id)
-                log(f"[WORKFLOW] Added channel_id={channel_id} to processing queue. Current queue stats: {get_queue_stats()}")
-            except Exception as e:
-                log(f"[WORKFLOW] Queue operation failed: {str(e)}")
             
             # Defensive check for playlist_id before fetching videos
             playlist_id = channel_data.get('playlist_id', '')
@@ -101,17 +94,34 @@ class DataCollectionMixin:
                     else:
                         # --- PATCH: Ensure each video is the full API response ---
                         full_videos = []
-                        for video in video_response['video_id']:
+                        # Ensure video_id is a list and handle None values safely
+                        video_list = video_response.get('video_id', []) or []
+                        log(f"[PATCH] Processing {len(video_list)} videos, type: {type(video_list)}")
+                        
+                        for video in video_list:
+                            if video is None:
+                                log(f"[PATCH] Warning: Found None video in video_id list, skipping")
+                                continue
+                                
                             if 'raw_api_response' in video and isinstance(video['raw_api_response'], dict):
                                 full_videos.append(video['raw_api_response'])
                             else:
                                 video['raw_api_response'] = copy.deepcopy(video)
                                 full_videos.append(video)
                                 log(f"[DB PATCH] Video missing full API response, using processed dict for video_id={video.get('video_id')}")
-                        channel_data['video_id'] = fix_missing_views(full_videos)
-                        log(f"[PATCH] Fixed missing views for videos. Count: {len(channel_data['video_id'])}")
-                        if channel_data['video_id']:
-                            log(f"[PATCH] Sample video keys: {list(channel_data['video_id'][0].keys())}")
+                        
+                        # Fix missing views safely with proper error handling
+                        try:
+                            channel_data['video_id'] = fix_missing_views(full_videos)
+                            log(f"[PATCH] Fixed missing views for videos. Count: {len(channel_data['video_id'])}")
+                            if channel_data['video_id']:
+                                log(f"[PATCH] Sample video keys: {list(channel_data['video_id'][0].keys())}")
+                        except Exception as e:
+                            log(f"[PATCH] Error in fix_missing_views: {str(e)}")
+                            # Fall back to using full_videos directly if fix_missing_views fails
+                            channel_data['video_id'] = full_videos
+                            log(f"[PATCH] Using full_videos directly due to error. Count: {len(channel_data['video_id'])}")
+                            
                         if existing_data and 'video_id' in existing_data:
                             existing_videos_copy = copy.deepcopy(existing_data['video_id'])
                             for v in existing_videos_copy:
@@ -607,77 +617,6 @@ class DataCollectionMixin:
             del channel_data['_test_quota_estimation']
             
         return channel_data
-
-    def estimate_quota_usage(self, options):
-        """
-        Estimate the quota usage for a data collection operation.
-        
-        Args:
-            options (dict): Collection options
-            
-        Returns:
-            int: Estimated quota units required
-        """
-        quota_estimate = 0
-        
-        # Base quota for channel info
-        if options.get('fetch_channel_data', True):
-            quota_estimate += 1  # channels.list
-            
-        # Quota for video operations
-        if options.get('fetch_videos', True):
-            quota_estimate += 2  # search.list + videos.list
-            
-        # Quota for comment operations
-        if options.get('fetch_comments', True):
-            max_comments = options.get('max_comments_per_video', 100)
-            # Each page of comments costs 1 unit, estimate pages needed
-            pages_needed = (max_comments + 99) // 100  # Round up division
-            quota_estimate += pages_needed  # commentThreads.list
-            
-        return quota_estimate
-        
-    def get_remaining_quota(self):
-        """
-        Get the remaining quota units.
-        
-        Returns:
-            int: Remaining quota units
-        """
-        if hasattr(self, 'quota_service'):
-            return self.quota_service.get_remaining_quota()
-        return float('inf')  # No quota tracking if no service
-        
-    def use_quota(self, units):
-        """
-        Use quota units for an operation.
-        
-        Args:
-            units (int): Number of quota units to use
-        """
-        if hasattr(self, 'quota_service'):
-            self.quota_service.use_quota(units)
-            
-    def track_quota_usage(self, operation):
-        """
-        Track quota usage for a specific API operation.
-        
-        Args:
-            operation (str): The API operation being performed
-        """
-        if hasattr(self, 'quota_service'):
-            self.quota_service.track_operation(operation)
-            
-    def get_quota_usage(self):
-        """
-        Get the total quota units used.
-        
-        Returns:
-            int: Total quota units used
-        """
-        if hasattr(self, 'quota_service'):
-            return self.quota_service.get_quota_used()
-        return 0
         
     def validate_and_resolve_channel_id(self, channel_id):
         """

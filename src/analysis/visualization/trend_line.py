@@ -1,7 +1,6 @@
 """
 Visualization helper functions for trend lines and statistical analysis.
 """
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -40,6 +39,8 @@ def add_trend_line(fig, x, y, color="red", width=2, dash="dash", name="Trend Lin
     except ImportError:
         print("Warning: statsmodels not available, using simple linear regression instead.")
         STATSMODELS_AVAILABLE = False
+        # Import numpy for the fallback option
+        import numpy as np
     
     try:
         # Only proceed if we have valid data
@@ -71,6 +72,10 @@ def add_trend_line(fig, x, y, color="red", width=2, dash="dash", name="Trend Lin
             # Get the trend line predictions
             df['trend'] = model.predict()
         else:
+            # Import numpy if we need it and it's not already imported
+            if 'np' not in locals():
+                import numpy as np
+                
             # Fallback to simple NumPy polyfit if statsmodels is not available
             coeffs = np.polyfit(df['x_numeric'], df['y'], 1)
             polynomial = np.poly1d(coeffs)

@@ -4,7 +4,7 @@ Handles initialization and toggling of session state variables.
 """
 import streamlit as st
 import logging
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def initialize_session_state():
     """

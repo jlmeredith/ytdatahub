@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import time
 import traceback
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.analysis.visualization.chart_helpers import configure_bar_chart_layout
 
 def render_publication_timeline(combined_df, channels_dict, channel_colors, analysis, use_cache, is_multi_channel):

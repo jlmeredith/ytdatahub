@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import time
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def render_performance_metrics(combined_df, channels_dict, aggregated_metrics, channel_colors, is_multi_channel):
     """

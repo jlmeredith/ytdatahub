@@ -12,6 +12,14 @@ This documentation provides a comprehensive, code-validated source-to-sink analy
 6. [Queue System](queue_system.md)
 7. [Error Handling and Quota Management](error_handling_and_quota_management.md)
 8. [Architecture and Data Flow](architecture_and_data_flow.md)
+9. [Analytics Modules](analytics_modules.md)
+
+## Refactoring Documentation
+
+These documents track the refactoring efforts to improve the codebase:
+
+1. [Refactor TODOs](refactor_todo.md) - Prioritized list of refactoring tasks
+2. [Refactoring Progress](refactor_progress.md) - Completed refactoring work and benefits
 
 ---
 

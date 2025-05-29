@@ -3,6 +3,8 @@ Base class for all YouTube data analyzers.
 """
 from abc import ABC, abstractmethod
 import pandas as pd
+import logging
+from typing import Dict, Any, Optional, List, Union
 
 class BaseAnalyzer(ABC):
     """
@@ -10,30 +12,49 @@ class BaseAnalyzer(ABC):
     Defines common methods and utilities for data analysis.
     """
 
-    def __init__(self):
-        """Initialize the analyzer."""
-        pass
-
-    def validate_data(self, channel_data, required_keys=None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        Validate if the channel data contains required keys.
+        Initialize the analyzer with configuration.
         
         Args:
-            channel_data: Dictionary with channel data
+            config (dict, optional): Configuration for the analyzer
+        """
+        self.config = config or {}
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    @abstractmethod
+    def analyze(self, data: Any) -> Dict[str, Any]:
+        """
+        Analyze the provided data.
+        
+        Args:
+            data: The data to analyze
+            
+        Returns:
+            dict: The analysis results
+        """
+        pass
+
+    def validate_data(self, data: Any, required_keys: Optional[List[str]] = None) -> bool:
+        """
+        Validate if the data contains required keys.
+        
+        Args:
+            data: Data to validate
             required_keys: List of required keys
             
         Returns:
             bool: True if valid, False otherwise
         """
-        if not channel_data:
+        if data is None:
             return False
             
-        if required_keys:
-            return all(key in channel_data for key in required_keys)
+        if required_keys and isinstance(data, dict):
+            return all(key in data for key in required_keys)
             
         return True
         
-    def safe_int_value(self, value, default=0):
+    def safe_int_value(self, value: Any, default: int = 0) -> int:
         """
         Safely convert a value to integer.
         
@@ -49,7 +70,7 @@ class BaseAnalyzer(ABC):
         except (ValueError, TypeError):
             return default
     
-    def clean_dates(self, df, date_column='Published'):
+    def clean_dates(self, df: pd.DataFrame, date_column: str = 'Published') -> pd.DataFrame:
         """
         Clean and convert date columns to proper datetime format.
         
@@ -67,5 +88,27 @@ class BaseAnalyzer(ABC):
             df = df.copy()
             df[date_column] = pd.to_datetime(df[date_column])
             return df
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Error cleaning dates: {str(e)}")
             return df
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get analyzer metrics and statistics.
+        
+        Returns:
+            dict: Metrics and statistics for the analyzer
+        """
+        return {
+            'analyzer_name': self.__class__.__name__,
+            'config': self.config
+        }
+    
+    def update_config(self, new_config: Dict[str, Any]) -> None:
+        """
+        Update the analyzer configuration.
+        
+        Args:
+            new_config (dict): New configuration values to apply
+        """
+        self.config.update(new_config)

@@ -4,7 +4,7 @@ Renders the data collection tab and orchestrates the UI components.
 """
 import streamlit as st
 import os
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.services.youtube_service import YouTubeService
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
@@ -12,7 +12,6 @@ from src.config import SQLITE_DB_PATH
 from .state_management import initialize_session_state, toggle_debug_mode
 from .steps_ui import render_collection_steps
 from .comparison_ui import render_comparison_view
-from .queue_ui import render_queue_status_sidebar
 from .debug_ui import render_debug_panel
 from .utils.delta_reporting import render_delta_report
 
@@ -240,11 +239,8 @@ def render_data_collection_tab():
             
             # Tab 3: Queue Status
             with tabs[2]:
-                # When entering the Queue Status tab, reset the update tab initialization flag
-                if st.session_state.get('update_tab_initialized', False):
-                    st.session_state.update_tab_initialized = False
-                
-                render_queue_status_sidebar()
+                # Queue Status tab is no longer available - show placeholder
+                st.info("Queue functionality has been removed. Data is now saved immediately.")
                 
                 # Add debug mode toggle for this tab
                 st.divider()

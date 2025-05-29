@@ -2,7 +2,7 @@
 Selection handling functionality for the channel selector component.
 """
 import streamlit as st
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def handle_channel_selection(selected_channels):
     """

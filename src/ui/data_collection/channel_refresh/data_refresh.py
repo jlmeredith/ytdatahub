@@ -2,7 +2,7 @@
 This module handles the data refresh functionality.
 """
 import streamlit as st
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
 
@@ -116,13 +116,51 @@ def refresh_channel_data(channel_id, youtube_service, options):
     # Update channel data with interactive mode enabled
     with st.spinner("Collecting data from YouTube API..."):
         try:
+            # First, ensure we have fresh channel info with the correct playlist ID
+            debug_log(f"Getting fresh channel info for {channel_id}")
+            fresh_channel_info = youtube_service.get_basic_channel_info(channel_id)
+            
+            if not fresh_channel_info:
+                st.error(f"Could not fetch fresh channel info for {channel_id}")
+                debug_log(f"Failed to get fresh channel info for {channel_id}")
+                return None
+                
+            # Make sure the playlist ID is available
+            playlist_id = fresh_channel_info.get('playlist_id') or fresh_channel_info.get('uploads_playlist_id')
+            if not playlist_id:
+                st.error(f"Could not determine uploads playlist ID for {channel_id}")
+                debug_log(f"Missing playlist ID for {channel_id}")
+                return None
+                
+            # Update the api_format_data with the fresh channel info
+            api_format_data.update({
+                'channel_id': channel_id,
+                'playlist_id': playlist_id,
+                'uploads_playlist_id': playlist_id,
+                'raw_channel_info': fresh_channel_info.get('raw_channel_info')
+            })
+            
+            debug_log(f"Using playlist_id: {playlist_id} for update")
+            
+            # Now update channel data with interactive mode enabled
             updated_data = youtube_service.update_channel_data(
                 channel_id, 
                 options, 
                 existing_data=api_format_data,
-                interactive=True,
-                callback=iteration_prompt_callback
+                interactive=True
             )
+            
+            # Log the structure of the updated data for debugging
+            if updated_data:
+                debug_log(f"update_channel_data returned data with keys: {list(updated_data.keys())}")
+                if 'api_data' in updated_data:
+                    debug_log(f"api_data has keys: {list(updated_data['api_data'].keys()) if updated_data['api_data'] else 'empty'}")
+                    
+                # If api_data is empty but we have fresh_channel_info, use that
+                if not updated_data.get('api_data') and fresh_channel_info:
+                    debug_log(f"api_data is empty, using fresh_channel_info")
+                    updated_data['api_data'] = fresh_channel_info
+                    updated_data['channel'] = fresh_channel_info
             
             # If we completed without showing the prompt, reset the state
             if not st.session_state['show_iteration_prompt']:

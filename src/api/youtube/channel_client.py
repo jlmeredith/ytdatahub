@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from src.api.youtube.base import YouTubeBaseClient
-from src.utils.helpers import debug_log, clean_channel_id
+from src.utils.debug_utils import debug_log, clean_channel_id
 
 class YouTubeChannelClient(YouTubeBaseClient):
     """Client for YouTube Channel API operations"""
@@ -65,12 +65,36 @@ class YouTubeChannelClient(YouTubeBaseClient):
             # Process the response to extract channel data
             if 'items' in response and len(response['items']) > 0:
                 channel_item = response['items'][0]
-                # Return only the true, full API response as raw_channel_info
-                return {
+                
+                # Extract basic channel info
+                snippet = channel_item.get('snippet', {})
+                statistics = channel_item.get('statistics', {})
+                content_details = channel_item.get('contentDetails', {})
+                uploads_playlist_id = content_details.get('relatedPlaylists', {}).get('uploads', '')
+                
+                # Build a more complete channel info structure
+                channel_info = {
                     'raw_channel_info': channel_item,
                     'channel_id': channel_item.get('id'),
-                    'playlist_id': channel_item.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads', ''),
+                    'channel_name': snippet.get('title', 'Unknown Channel'),
+                    'channel_description': snippet.get('description', ''),
+                    'custom_url': snippet.get('customUrl', ''),
+                    'published_at': snippet.get('publishedAt', ''),
+                    'country': snippet.get('country', ''),
+                    'subscribers': statistics.get('subscriberCount', '0'),
+                    'views': statistics.get('viewCount', '0'),
+                    'total_videos': statistics.get('videoCount', '0'),
+                    'playlist_id': uploads_playlist_id,
+                    'uploads_playlist_id': uploads_playlist_id,
+                    'thumbnail_url': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
+                    'fetched_at': datetime.now().isoformat()
                 }
+                
+                # Store in cache
+                self.store_in_cache(cache_key, channel_info)
+                
+                debug_log(f"Channel info processed successfully for: {channel_info['channel_name']}")
+                return channel_info
             else:
                 debug_log(f"No channel found with ID: {channel_id}. Full response: {response}")
                 if hasattr(st, 'session_state'):

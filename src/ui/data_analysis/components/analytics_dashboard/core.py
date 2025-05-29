@@ -6,7 +6,7 @@ import pandas as pd
 import time
 import plotly.express as px
 from src.analysis.youtube_analysis import YouTubeAnalysis
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.ui.data_analysis.components.data_coverage import render_data_coverage_summary
 from src.ui.components.ui_utils import render_template_as_markdown, render_template
 

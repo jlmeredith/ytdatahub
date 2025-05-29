@@ -2,10 +2,10 @@
 Analytics functions for YouTube data.
 """
 import pandas as pd
-import numpy as np
 from datetime import datetime
 import streamlit as st
-from src.utils.helpers import duration_to_seconds, format_duration, debug_log
+from src.utils.duration_utils import duration_to_seconds, format_duration
+from src.utils.debug_utils import debug_log
 
 """
 Main YouTube analysis facade that integrates all specialized analyzers.

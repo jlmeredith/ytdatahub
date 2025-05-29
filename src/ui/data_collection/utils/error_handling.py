@@ -4,7 +4,7 @@ Error handling utilities for data collection workflows.
 This module provides consistent error handling across workflows.
 """
 import streamlit as st
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def handle_collection_error(error, action_description, debug=True):
     """

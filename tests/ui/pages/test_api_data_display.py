@@ -5,6 +5,9 @@ Ensures that API response data is properly displayed in the UI and compared with
 import pytest
 from unittest.mock import MagicMock, patch
 
+# Import from modern paths
+from src.ui.data_collection.comparison_ui import render_api_db_comparison
+
 # Mock response data
 API_CHANNEL_DATA = {
     'channel_id': 'UC123456789',
@@ -82,8 +85,6 @@ def mock_st():
 
 def test_api_data_display(mock_st):
     """Test that API data is properly displayed in the UI comparison view."""
-    from src.ui.data_collection import render_api_db_comparison
-    
     # Setup session state with both API and DB data
     mock_st.session_state = {
         'api_data': API_CHANNEL_DATA,
@@ -123,8 +124,6 @@ def test_api_data_display(mock_st):
 
 def test_api_db_comparison_with_new_videos(mock_st):
     """Test that new videos in API data are properly highlighted in the comparison view."""
-    from src.ui.data_collection import render_api_db_comparison
-    
     # Setup session state with both API and DB data
     mock_st.session_state = {
         'api_data': API_CHANNEL_DATA,
@@ -146,8 +145,6 @@ def test_api_db_comparison_with_new_videos(mock_st):
 
 def test_api_db_comparison_with_updated_metrics(mock_st):
     """Test that changes in video metrics are properly displayed in the comparison view."""
-    from src.ui.data_collection import render_api_db_comparison
-    
     # Setup session state with both API and DB data
     mock_st.session_state = {
         'api_data': API_CHANNEL_DATA,
@@ -169,8 +166,6 @@ def test_api_db_comparison_with_updated_metrics(mock_st):
 
 def test_missing_comparison_data(mock_st):
     """Test the behavior when comparison data is missing."""
-    from src.ui.data_collection import render_api_db_comparison
-    
     # Setup session state with missing data
     mock_st.session_state = {
         'api_data': None,

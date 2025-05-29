@@ -1,7 +1,7 @@
 """
 Data conversion utilities for the data collection UI.
 """
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 def convert_db_to_api_format(db_data):
     """

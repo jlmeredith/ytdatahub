@@ -54,7 +54,7 @@ class BaseRepository(ABC):
             conn.close()
             return results
         except Exception as e:
-            from src.utils.helpers import debug_log
+            from src.utils.debug_utils import debug_log
             debug_log(f"Error executing query: {str(e)}", e)
             return []
     
@@ -69,7 +69,7 @@ class BaseRepository(ABC):
             bool: True if successful, False otherwise
         """
         import sqlite3
-        from src.utils.helpers import debug_log
+        from src.utils.debug_utils import debug_log
         
         conn = None
         try:

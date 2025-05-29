@@ -7,7 +7,7 @@ This module implements a service class for handling YouTube data operations.
 
 import datetime
 from src.services.youtube.youtube_service_impl import YouTubeServiceImpl
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 
 class YouTubeService(YouTubeServiceImpl):
     """
@@ -16,20 +16,14 @@ class YouTubeService(YouTubeServiceImpl):
     and provides additional functionality.
     """
     
-    def __init__(self, api_key, quota_service=None):
+    def __init__(self, api_key):
         """
-        Initialize the YouTube service with an API key and optional quota service.
+        Initialize the YouTube service with an API key.
 
         Args:
             api_key (str): The YouTube Data API key
-            quota_service (QuotaService, optional): A pre-initialized quota service instance
         """
         super().__init__(api_key)
-        if quota_service:
-            self.quota_service = quota_service
-            self.channel_service.quota_service = quota_service
-            self.video_service.quota_service = quota_service
-            self.comment_service.quota_service = quota_service
 
     def calculate_channel_deltas(self, channel_data):
         """
@@ -258,9 +252,6 @@ class YouTubeService(YouTubeServiceImpl):
         if hasattr(self, 'comment_service'):
             self.comment_service.api = new_api
             
-        if hasattr(self, 'quota_service'):
-            self.quota_service.api = new_api
-            
     def _initialize_comparison_view(self, channel_id, db_data, api_data):
         """
         Initialize the comparison view data for API vs DB comparison.
@@ -305,14 +296,42 @@ class YouTubeService(YouTubeServiceImpl):
         debug_log(f"[WORKFLOW] Entering update_channel_data for channel_id={channel_id} with options={options}")
         # Get existing data from database or use provided data
         db_data = existing_data if existing_data is not None else self.storage_service.get_channel_data(channel_id, "sqlite")
+        
+        # Ensure we have fresh channel info even if collect_channel_data doesn't get it
+        fresh_channel_info = None
+        try:
+            fresh_channel_info = self.get_basic_channel_info(channel_id)
+            debug_log(f"[WORKFLOW] Got fresh channel info directly: {fresh_channel_info is not None}")
+        except Exception as e:
+            debug_log(f"[WORKFLOW] Error getting direct fresh channel info: {str(e)}")
+        
         # Get fresh data from API using collect_channel_data (which is mocked in tests)
         api_data = self.collect_channel_data(channel_id, options, existing_data=db_data)
+        
+        # Check if api_data is empty or missing key channel info
+        if not api_data or (isinstance(api_data, dict) and not api_data.get('channel_name') and not api_data.get('raw_channel_info')):
+            debug_log(f"[WORKFLOW] API data is missing critical channel info, using direct fetch")
+            if fresh_channel_info:
+                # If we have fresh channel info from direct fetch, use it
+                api_data = fresh_channel_info
+                debug_log(f"[WORKFLOW] Used directly fetched channel info: {list(fresh_channel_info.keys()) if fresh_channel_info else 'None'}")
+        
         # Log playlist_id if present
         playlist_id = api_data.get('playlist_id') or api_data.get('uploads_playlist_id')
         if playlist_id:
             debug_log(f"[WORKFLOW] update_channel_data: playlist_id for channel_id={channel_id} is {playlist_id}")
         else:
             debug_log(f"[WORKFLOW] update_channel_data: No playlist_id found for channel_id={channel_id}")
+            
+            # Try to get playlist ID from fresh_channel_info if missing
+            if fresh_channel_info and (fresh_channel_info.get('playlist_id') or fresh_channel_info.get('uploads_playlist_id')):
+                playlist_id = fresh_channel_info.get('playlist_id') or fresh_channel_info.get('uploads_playlist_id')
+                debug_log(f"[WORKFLOW] Found playlist_id in fresh_channel_info: {playlist_id}")
+                
+                # Update api_data with the playlist_id
+                if isinstance(api_data, dict):
+                    api_data['playlist_id'] = playlist_id
+                    api_data['uploads_playlist_id'] = playlist_id
         
         # --- Enhanced Delta Calculation Framework ---
         # Configure delta calculation with default options if not specified
@@ -370,8 +389,9 @@ class YouTubeService(YouTubeServiceImpl):
         else:
             debug_logs = []
         debug_log(f"[WORKFLOW] Exiting update_channel_data for channel_id={channel_id}. Debug logs count: {len(debug_logs)}")
-        # Return the comparison data with enhanced details
-        return {
+        
+        # Create the response with all required data
+        response = {
             'db_data': db_data,
             'api_data': api_data,
             'channel': api_data,  # Ensure top-level channel data includes delta
@@ -383,6 +403,16 @@ class YouTubeService(YouTubeServiceImpl):
             },
             'debug_logs': debug_logs
         }
+        
+        # Ensure video_id is properly passed through from api_data to the response
+        if isinstance(api_data, dict) and 'video_id' in api_data and api_data['video_id']:
+            debug_log(f"[WORKFLOW] Found {len(api_data['video_id'])} videos in api_data, adding to response")
+            response['video_id'] = api_data['video_id']
+        elif isinstance(api_data, dict) and 'api_data' in api_data and isinstance(api_data['api_data'], dict) and 'video_id' in api_data['api_data']:
+            debug_log(f"[WORKFLOW] Found {len(api_data['api_data']['video_id'])} videos in api_data.api_data, adding to response")
+            response['video_id'] = api_data['api_data']['video_id']
+        
+        return response
         
     def collect_channel_data(self, channel_id, options=None, existing_data=None):
         """
@@ -996,11 +1026,10 @@ class YouTubeService(YouTubeServiceImpl):
         """
         debug_log(f"[WORKFLOW] get_basic_channel_info called with input: {channel_input}")
         try:
-            # Robustly resolve channel input
-            resolved_input = self.channel_service.parse_channel_input(channel_input)
-            is_valid, resolved_id = self.channel_service.validate_and_resolve_channel_id(resolved_input)
-            if not is_valid:
-                error_msg = f"Invalid or unresolvable channel input: {channel_input} (resolved: {resolved_id})"
+            # Get channel ID from input (may be direct ID or need resolution)
+            channel_id = self.channel_service.parse_channel_input(channel_input)
+            if not channel_id:
+                error_msg = f"Invalid channel input: {channel_input}"
                 debug_log(f"[WORKFLOW][ERROR] {error_msg}")
                 try:
                     import streamlit as st
@@ -1008,28 +1037,12 @@ class YouTubeService(YouTubeServiceImpl):
                 except Exception:
                     pass
                 return None
-            debug_log(f"[WORKFLOW] Resolved channel input to ID: {resolved_id}")
-            channel_info = self.channel_service.get_channel_info(resolved_id)
-            if not channel_info:
-                error_msg = f"No channel info found for: {resolved_id}"
-                debug_log(f"[WORKFLOW][ERROR] {error_msg}")
-                try:
-                    import streamlit as st
-                    st.error(error_msg)
-                except Exception:
-                    pass
-                return None
-            # --- PATCH: Always ensure raw_channel_info is present and is the full API response ---
-            if 'raw_channel_info' not in channel_info and 'channel_info' in channel_info:
-                channel_info['raw_channel_info'] = channel_info['channel_info']
-            # Always extract playlist_id
-            playlist_id = channel_info.get('playlist_id') or channel_info.get('uploads_playlist_id')
-            if not playlist_id:
-                playlist_id = self.get_playlist_id_for_channel(resolved_id)
-                if playlist_id:
-                    channel_info['playlist_id'] = playlist_id
-                else:
-                    error_msg = f"Could not determine uploads playlist for channel: {resolved_id}"
+                
+            # If this is a resolution request, resolve it
+            if channel_id.startswith('resolve:'):
+                is_valid, resolved_id = self.channel_service.validate_and_resolve_channel_id(channel_id)
+                if not is_valid:
+                    error_msg = f"Could not resolve channel handle: {channel_input}"
                     debug_log(f"[WORKFLOW][ERROR] {error_msg}")
                     try:
                         import streamlit as st
@@ -1037,7 +1050,41 @@ class YouTubeService(YouTubeServiceImpl):
                     except Exception:
                         pass
                     return None
-            debug_log(f"[WORKFLOW] Successfully fetched channel info for: {resolved_id} with playlist_id: {playlist_id}")
+                channel_id = resolved_id
+            
+            debug_log(f"[WORKFLOW] Using channel ID: {channel_id}")
+            channel_info = self.channel_service.get_channel_info(channel_id)
+            if not channel_info:
+                error_msg = f"No channel info found for: {channel_id}"
+                debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+                try:
+                    import streamlit as st
+                    st.error(error_msg)
+                except Exception:
+                    pass
+                return None
+                
+            # --- PATCH: Always ensure raw_channel_info is present and is the full API response ---
+            if 'raw_channel_info' not in channel_info and 'channel_info' in channel_info:
+                channel_info['raw_channel_info'] = channel_info['channel_info']
+                
+            # Always extract playlist_id
+            playlist_id = channel_info.get('playlist_id') or channel_info.get('uploads_playlist_id')
+            if not playlist_id:
+                playlist_id = self.get_playlist_id_for_channel(channel_id)
+                if playlist_id:
+                    channel_info['playlist_id'] = playlist_id
+                else:
+                    error_msg = f"Could not determine uploads playlist for channel: {channel_id}"
+                    debug_log(f"[WORKFLOW][ERROR] {error_msg}")
+                    try:
+                        import streamlit as st
+                        st.error(error_msg)
+                    except Exception:
+                        pass
+                    return None
+                    
+            debug_log(f"[WORKFLOW] Successfully fetched channel info for: {channel_id} with playlist_id: {playlist_id}")
             return channel_info
         except Exception as e:
             error_msg = f"Exception in get_basic_channel_info: {str(e)}"
@@ -1057,12 +1104,48 @@ class YouTubeService(YouTubeServiceImpl):
         Returns:
             bool: True if successful, False otherwise
         """
-        from src.config import SQLITE_DB_PATH
-        from src.database.sqlite import SQLiteDatabase
-        db = SQLiteDatabase(SQLITE_DB_PATH)
-        result = db.store_playlist_data(playlist_data)
-        debug_log(f"[WORKFLOW] Save result for playlist_id={playlist_data.get('playlist_id')}: {result}")
-        return result
+        try:
+            # Validate required fields
+            if not playlist_data:
+                debug_log("[WORKFLOW][ERROR] Cannot save playlist: playlist_data is empty or None")
+                return False
+                
+            # Ensure playlist_id exists
+            playlist_id = playlist_data.get('playlist_id') or playlist_data.get('id')
+            if not playlist_id:
+                debug_log("[WORKFLOW][ERROR] Cannot save playlist: missing playlist_id")
+                return False
+            
+            # Ensure we have channel_id
+            channel_id = playlist_data.get('channel_id') or playlist_data.get('snippet', {}).get('channelId')
+            if not channel_id:
+                debug_log("[WORKFLOW][ERROR] Cannot save playlist: missing channel_id")
+                return False
+                
+            # Create a copy of playlist data to avoid modifying the original
+            playlist_copy = dict(playlist_data)
+            
+            # Ensure both id and playlist_id are set
+            playlist_copy['id'] = playlist_id
+            playlist_copy['playlist_id'] = playlist_id
+            
+            # Ensure channel_id is set at the top level
+            playlist_copy['channel_id'] = channel_id
+            
+            # If type is missing, set a default value for uploads playlists
+            if 'type' not in playlist_copy and playlist_id.startswith('UU'):
+                playlist_copy['type'] = 'uploads'
+                
+            # Save the validated playlist data
+            from src.config import SQLITE_DB_PATH
+            from src.database.sqlite import SQLiteDatabase
+            db = SQLiteDatabase(SQLITE_DB_PATH)
+            result = db.store_playlist_data(playlist_copy)
+            debug_log(f"[WORKFLOW] Save result for playlist_id={playlist_id}: {result}")
+            return result
+        except Exception as e:
+            debug_log(f"[WORKFLOW][ERROR] Exception in save_playlist_data: {str(e)}")
+            return False
 
     def get_playlist_info(self, playlist_id: str) -> dict:
         """
@@ -1081,3 +1164,53 @@ class YouTubeService(YouTubeServiceImpl):
         except Exception as e:
             debug_log(f"[WORKFLOW][ERROR] Exception in get_playlist_info: {str(e)}")
             return None
+
+    def collect_video_comments(self, video_id, max_comments_per_video=100, comment_sort_order="relevance", include_replies=True):
+        """
+        Collect comments for a specific video.
+        
+        Args:
+            video_id (str): The YouTube video ID to collect comments for
+            max_comments_per_video (int): Maximum number of comments to collect
+            comment_sort_order (str): Sort order for comments ('relevance' or 'time')
+            include_replies (bool): Whether to include replies to comments
+            
+        Returns:
+            dict: Video data with comments added
+        """
+        debug_log(f"[WORKFLOW] Collecting comments for video_id={video_id}, max_comments={max_comments_per_video}")
+        try:
+            # Create a mock channel_info with just this video
+            channel_info = {
+                'video_id': [
+                    {'video_id': video_id, 'id': video_id}
+                ]
+            }
+            
+            # Set up options
+            max_replies = 5 if include_replies else 0
+            
+            # Call the API to get comments
+            from src.services.youtube.comment_service import CommentService
+            comment_service = CommentService()
+            comment_service.api = self.api.comment_client
+            
+            # Collect comments
+            result = comment_service.collect_video_comments(
+                channel_info,
+                max_top_level_comments=max_comments_per_video,
+                max_replies_per_comment=max_replies,
+                max_comments_per_video=max_comments_per_video,
+                optimize_quota=True
+            )
+            
+            # Extract the video with comments
+            if result and 'video_id' in result and len(result['video_id']) > 0:
+                return result['video_id'][0]
+            
+            debug_log(f"[WORKFLOW] No comments found for video_id={video_id}")
+            return {'video_id': video_id, 'comments': []}
+            
+        except Exception as e:
+            debug_log(f"[WORKFLOW][ERROR] Error collecting comments for video_id={video_id}: {str(e)}")
+            return {'video_id': video_id, 'comments': []}

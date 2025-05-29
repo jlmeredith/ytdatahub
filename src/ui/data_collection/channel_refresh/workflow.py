@@ -3,7 +3,7 @@ This module handles the workflow for channel refresh UI.
 """
 import streamlit as st
 import inspect
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from .comparison import display_comparison_results
 from .video_section import render_video_section, configure_video_collection
 from .comment_section import render_comment_section, configure_comment_collection

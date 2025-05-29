@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Set, Any
 from datetime import datetime
 
 from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
-from src.utils.helpers import debug_log
+from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
 
 class CommentService(BaseService):
@@ -17,18 +17,16 @@ class CommentService(BaseService):
     Service for managing YouTube comment operations.
     """
     
-    def __init__(self, api_key=None, api_client=None, quota_service=None):
+    def __init__(self, api_key=None, api_client=None):
         """
         Initialize the comment service.
         
         Args:
             api_key (str, optional): YouTube API key
             api_client (obj, optional): Existing API client to use
-            quota_service (QuotaService, optional): Service for quota management
         """
         super().__init__(api_key, api_client)
         self.api = api_client if api_client else (YouTubeAPI(api_key) if api_key else None)
-        self.quota_service = quota_service
         self.logger = logging.getLogger(__name__)
         self._last_comments_response = None
     
@@ -75,10 +73,6 @@ class CommentService(BaseService):
         print(f"[COMMENT SERVICE] Found {len(videos)} videos, calling API get_video_comments")
         
         try:
-            # Track quota if quota service is provided
-            if self.quota_service:
-                self.quota_service.track_quota_usage('commentThreads.list')
-                
             # Use the API's get_video_comments method which returns both comments and stats
             print(f"[COMMENT SERVICE] About to call self.api.get_video_comments")
             comments_response = self.api.get_video_comments(
@@ -260,10 +254,6 @@ class CommentService(BaseService):
         while next_page_token is not None or current_page == 0:
             debug_log(f"Comment pagination: current_page={current_page}, next_page_token={next_page_token}, comments_fetched={comments_fetched}")
             
-            # Track quota if quota service is provided
-            if self.quota_service:
-                self.quota_service.track_quota_usage('commentThreads.list')
-                
             # Call the API with the page_token for pagination
             try:
                 # Pass a deep copy of channel_data to avoid modifying during API call

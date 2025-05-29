@@ -29,12 +29,12 @@ st.set_page_config(
 from src.config import init_session_state, Settings
 from src.database.sqlite import SQLiteDatabase
 from src.storage.factory import StorageFactory
-from src.ui.data_collection import render_data_collection_tab
-from src.ui.data_analysis import render_data_analysis_tab
+# Import directly from the modern implementations instead of legacy wrappers
+from src.ui.data_collection.main import render_data_collection_tab
+from src.ui.data_analysis.main import render_data_analysis_tab
 from src.ui.utilities import render_utilities_tab
-from src.ui.bulk_import import render_bulk_import_tab
+from src.ui.bulk_import.render import render_bulk_import_tab
 from src.ui.components.ui_utils import load_css_file, apply_security_headers
-from src.utils.queue_tracker import render_queue_status_sidebar, initialize_queue_state
 
 def init_application():
     """Initialize application environment and state."""
@@ -268,12 +268,8 @@ def main():
     
     # Initialize application
     settings = init_application()
-    
-    # Process URL parameters
+      # Process URL parameters
     process_url_params()
-    
-    # Render queue status in sidebar
-    render_queue_status_sidebar()
     
     # Create sidebar
     create_sidebar()

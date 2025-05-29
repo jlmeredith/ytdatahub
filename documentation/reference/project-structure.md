@@ -57,23 +57,37 @@ YTDataHub follows a modular architecture with clear separation of concerns. This
 ### User Interface
 
 - `src/ui/` - UI components for each application section
-  - `__init__.py` - Package initialization for UI components
-  - `data_collection.py` - Data collection workflow UI with step-by-step guidance
+  - `__init__.py` - Package initialization for UI components and main tab exports
+  - `data_collection.py` - **LEGACY**: Wrapper that delegates to the modern implementation
   - `data_storage.py` - Data persistence interface and storage options configuration
-  - `data_analysis.py` - Analytics dashboard and visualization interface
+  - `data_analysis.py` - **LEGACY**: Wrapper that delegates to the modern implementation
+  - `bulk_import.py` - **LEGACY**: Wrapper that delegates to the modern implementation
   - `utilities.py` - Settings, configuration UI, and debugging tools
-  - `components/` - Reusable UI components and widgets
-    - `channel_card.py` - Displays channel metadata in card format
-    - `video_list.py` - Renders paginated video galleries with filtering options
-    - `comment_display.py` - Renders comment threads with collapsible replies
-    - `metrics_panel.py` - Shows key performance metrics with trend indicators
-    - `navigation.py` - Step navigation and workflow guidance components
-  - `data_analysis/` - Specialized analytics UI components
+  - `components/` - **LEGACY**: Contains older reusable UI components
+    - `ui_utils.py` - Utility functions still used by some parts of the codebase
+  - `legacy/` - **LEGACY**: Directory for clearly marked legacy components
+    - `README.md` - Documentation explaining legacy component status and migration plan
+  - `data_analysis/` - **CURRENT**: Modern analytics UI components
     - `main.py` - Entry point for analytics dashboard
-    - `channel_insights.py` - Channel growth and performance visualizations
-    - `video_performance.py` - Video metrics and engagement analytics
-    - `comment_analysis.py` - Comment sentiment and engagement analysis
-    - `trend_visualization.py` - Time-series trend visualization components
+    - `components/` - Specialized analytics UI components
+      - `analytics_dashboard.py` - Main analytics dashboard component
+      - `channel_selector.py` - Channel selection component
+      - `comment_explorer.py` - Comment analysis component 
+      - `data_coverage.py` - Data coverage visualization component
+      - `video_explorer.py` - Video exploration component
+    - `utils/` - Utilities specific to data analysis UI
+  - `data_collection/` - **CURRENT**: Modern data collection UI components
+    - `main.py` - Entry point for data collection workflow
+    - `steps_ui.py` - Step-by-step collection workflow
+    - `comparison_ui.py` - API vs DB comparison views
+    - `channel_refresh_ui.py` - Channel refresh functionality
+    - `debug_ui.py` - Debug panel component
+    - `queue_ui.py` - Queue status display
+    - `state_management.py` - Session state management
+  - `bulk_import/` - **CURRENT**: Modern bulk import UI components
+    - `render.py` - Main bulk import component
+
+For more information about UI components and their status, see the [UI Components Documentation](ui_components.md).
 
 ### Static Assets
 
@@ -98,10 +112,27 @@ YTDataHub follows a modular architecture with clear separation of concerns. This
 ### Utilities
 
 - `src/utils/` - Common utility functions
-  - `__init__.py` - Package initialization for utilities
-  - `helpers.py` - Common utility functions used across the application
+  - `__init__.py` - Package initialization for utilities with direct imports from specialized modules
+  - `debug_utils.py` - Debug logging and error reporting utilities
+  - `validation.py` - Input validation and data verification utilities
+  - `formatters.py` - Data formatting and display utilities
+  - `duration_utils.py` - Time and duration formatting utilities
   - `background_tasks.py` - Background task management and execution
-  - `queue_tracker.py` - Queue management system for tracking data operations
+  - `queue_manager.py` - Unified queue management system for tracking data operations
+  - `performance_tracking.py` - Performance monitoring and timing utilities
+  - `logging_utils.py` - Centralized logging utilities
+  - `cache_utils.py` - Cache management utilities
+  - `ui_helpers.py` - UI-specific helper functions
+  - `ui_performance.py` - UI performance tracking utilities
+
+The utilities modules have undergone significant refactoring to improve maintainability:
+
+1. **Consolidated Queue Management**: All queue functionality has been merged into `queue_manager.py`
+2. **Removed Re-exports**: The deprecated `helpers.py` module has been removed
+3. **Direct Imports**: Code now imports directly from specialized utility modules
+4. **Optimized Imports**: Heavy dependencies like NumPy are now imported only when needed
+
+For more details on these changes, see the [Refactoring Progress](source_to_sink_analysis/refactor_progress.md) document.
 
 ### Data Storage
 
@@ -143,14 +174,17 @@ YTDataHub includes a queue management system to track and stage data operations 
 - Provides a clear UI for monitoring what is pending in the queue.
 
 ### Implementation
-- Core logic: [`src/utils/queue_tracker.py`](../../src/utils/queue_tracker.py)
+- Core logic: [`src/utils/queue_manager.py`](../../src/utils/queue_manager.py)
   - Tracks items in session state queues for 'channels', 'videos', 'comments', and 'analytics'.
-  - Provides functions: `add_to_queue`, `remove_from_queue`, `clear_queue`, `get_queue_stats`, and `render_queue_status_sidebar`.
+  - Provides functions: `add_to_queue`, `remove_from_queue`, `clear_queue`, `get_queue_items`, `get_queue_stats`, and `render_queue_status_sidebar`.
+  - Includes test helpers: `set_test_mode`, `set_queue_hooks`, `clear_queue_hooks`.
 - UI integration:
   - In the data collection workflows (new channel and refresh/update), users can:
     - Save channel, video, or comment data directly to the queue for later processing ("Save to Queue for Later" or "Queue ... for Later" buttons).
     - View queue status in the sidebar at each workflow step.
   - The queue status dialog is rendered once per step for clarity.
+
+> **Note:** Previous implementations used separate modules (`queue_tracker.py` and `queue_manager.py`), which have been consolidated into a single `queue_manager.py` module as part of the refactoring process. For more details, see the [Refactoring Progress](source_to_sink_analysis/refactor_progress.md) document.
 
 ### Usage in the UI
 - At each step (channel, videos, comments), users can choose to:
@@ -164,7 +198,7 @@ YTDataHub includes a queue management system to track and stage data operations 
   - Background task runners can process queued items on a schedule.
   - Users will be able to select multiple queued items for batch processing or scheduled updates.
 
-For more details, see the code in [`src/utils/queue_tracker.py`](../../src/utils/queue_tracker.py) and the data collection workflow UIs.
+For more details, see the code in [`src/utils/queue_manager.py`](../../src/utils/queue_manager.py) and the data collection workflow UIs.
 
 ### channels
 - Stores basic channel metadata and now includes a `raw_channel_info` column (TEXT/JSON) that contains the full public YouTube API response for each channel. This enables all API fields to be available for analysis and export, even after reloading from the database.

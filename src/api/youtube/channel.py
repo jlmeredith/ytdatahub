@@ -7,7 +7,8 @@ from datetime import datetime
 
 import googleapiclient.errors
 
-from src.utils.helpers import debug_log, validate_channel_id
+from src.utils.debug_utils import debug_log
+from src.utils.validation import validate_channel_id
 from src.api.youtube.base import YouTubeBaseClient
 from src.api.youtube.resolver import ChannelResolver
 
@@ -33,7 +34,7 @@ class ChannelClient(YouTubeBaseClient):
             debug_log("YouTube API client not initialized. Please check your API key.")
             return None
         
-        # Use the improved channel ID validation that returns a tuple
+        # Use the improved channel ID validation from the centralized validation module
         is_valid, validated_channel_id = validate_channel_id(channel_id)
         
         if not is_valid:

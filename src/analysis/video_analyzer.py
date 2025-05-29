@@ -2,12 +2,43 @@
 Video-specific analytics module.
 """
 import pandas as pd
-import numpy as np
 from src.analysis.base_analyzer import BaseAnalyzer
-from src.utils.helpers import duration_to_seconds, format_duration
+from src.utils.duration_utils import duration_to_seconds, format_duration, format_duration_human_friendly
+from src.utils.debug_utils import debug_log
 
 class VideoAnalyzer(BaseAnalyzer):
     """Class for analyzing YouTube video data."""
+    
+    def analyze(self, data):
+        """
+        Analyze video data and return comprehensive metrics.
+        
+        Args:
+            data: Dictionary containing channel data with videos
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        results = {}
+        
+        # Get basic video statistics
+        video_stats = self.get_video_statistics(data)
+        results.update(video_stats)
+        
+        # Get publication timeline data
+        timeline_data = self.get_publication_timeline(data)
+        results['publication_timeline'] = timeline_data
+        
+        # Get duration analysis
+        duration_data = self.get_duration_analysis(data)
+        results['duration_analysis'] = duration_data
+        
+        # Get top videos by different metrics
+        results['top_by_views'] = self.get_top_videos(data, n=5, by='Views')
+        results['top_by_likes'] = self.get_top_videos(data, n=5, by='Likes')
+        results['top_by_comments'] = self.get_top_videos(data, n=5, by='Comments')
+        
+        return results
     
     def get_video_statistics(self, channel_data):
         """
@@ -36,7 +67,6 @@ class VideoAnalyzer(BaseAnalyzer):
                 'df': None
             }
         
-        from src.utils.helpers import debug_log
         # Use the standardizer to normalize video data format
         from src.utils.video_standardizer import standardize_video_data
         videos = standardize_video_data(videos)
@@ -245,9 +275,6 @@ class VideoAnalyzer(BaseAnalyzer):
         min_duration = df['Duration_Seconds'].min()
         max_duration = df['Duration_Seconds'].max()
         avg_duration = df['Duration_Seconds'].mean()
-        
-        # Import the human-friendly formatter
-        from src.utils.helpers import format_duration, format_duration_human_friendly
         
         stats = {
             'min_duration_seconds': int(min_duration),
