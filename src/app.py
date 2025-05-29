@@ -88,16 +88,6 @@ class YTDataHubApp:
         if 'active_tab' not in st.session_state:
             st.session_state.active_tab = 'collection'
 
-        # Background task tracking
-        if 'background_tasks_status' not in st.session_state:
-            st.session_state.background_tasks_status = {}
-
-        if 'background_tasks_running' not in st.session_state:
-            st.session_state.background_tasks_running = False
-
-        if 'background_task_results' not in st.session_state:
-            st.session_state.background_task_results = {}
-
         # Data analysis settings
         if 'use_data_cache' not in st.session_state:
             st.session_state.use_data_cache = True

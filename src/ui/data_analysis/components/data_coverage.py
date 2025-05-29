@@ -12,12 +12,8 @@ import time
 from src.analysis.youtube_analysis import YouTubeAnalysis
 from src.utils.debug_utils import debug_log
 from src.utils.formatters import format_number
-from src.utils.background_tasks import queue_data_collection_task, get_all_task_statuses
 
 # Ensure all required session state variables are initialized
-if 'background_tasks_status' not in st.session_state:
-    st.session_state.background_tasks_status = {}
-
 if 'performance_timers' not in st.session_state:
     st.session_state.performance_timers = {}
 
@@ -81,79 +77,6 @@ def render_data_coverage_dashboard(channel_data, db=None):
     
     This dashboard shows how complete your YouTube data is for each channel and provides options to update it.
     """)
-    
-    # Show current background tasks if any are running
-    debug_log("Fetching background task status", performance_tag="start_background_tasks")
-    
-    try:
-        background_tasks = get_all_task_statuses()
-        running_tasks = {task_id: task for task_id, task in background_tasks.items() 
-                        if task['status'] in ['queued', 'running']}
-        debug_log(f"Found {len(running_tasks)} running tasks", performance_tag="end_background_tasks")
-        
-        if running_tasks:
-            st.info(f"🔄 **{len(running_tasks)} background data collection tasks running.** These will update automatically when complete.")
-            
-            # Show progress of running tasks in an expander
-            with st.expander("View Background Tasks"):
-                for task_id, task in running_tasks.items():
-                    col1, col2, col3 = st.columns([3, 2, 2])
-                    
-                    # Get channel name from the task if available
-                    channel_id = task.get('channel_id', 'Unknown')
-                    channel_name = channel_id
-                    if 'result' in task and task['result'] and 'channel_info' in task['result']:
-                        channel_name = task['result']['channel_info'].get('title', channel_id)
-                    
-                    with col1:
-                        st.write(f"**Channel:** {channel_name}")
-                    
-                    with col2:
-                        status = task['status'].capitalize()
-                        if status == 'Running':
-                            # Add elapsed time if task is running
-                            if task.get('started_at'):
-                                started = datetime.fromisoformat(task['started_at'])
-                                elapsed = datetime.now() - started
-                                elapsed_mins = int(elapsed.total_seconds() / 60)
-                                st.write(f"**Status:** {status} ({elapsed_mins} min)")
-                            else:
-                                st.write(f"**Status:** {status}")
-                        else:
-                            st.write(f"**Status:** {status}")
-                    
-                    with col3:
-                        if task.get('queued_at'):
-                            queued = datetime.fromisoformat(task['queued_at'])
-                            queued_time = queued.strftime("%H:%M:%S")
-                            st.write(f"**Queued at:** {queued_time}")
-                    
-                    # Show task options in smaller text
-                    options = task.get('options', {})
-                    if options:
-                        option_text = []
-                        if options.get('fetch_channel_data', False):
-                            option_text.append("Channel Info")
-                        if options.get('fetch_videos', False):
-                            video_count = options.get('max_videos', 0)
-                            if video_count == 0:
-                                option_text.append("All Videos")
-                            else:
-                                option_text.append(f"{video_count} Videos")
-                        if options.get('fetch_comments', False):
-                            comment_count = options.get('max_comments_per_video', 0)
-                            if comment_count == 0:
-                                option_text.append("No Comments")
-                            else:
-                                option_text.append(f"{comment_count} Comments/Video")
-                        
-                        st.caption(f"Collecting: {', '.join(option_text)}")
-                    
-                    # Add a separator
-                    st.divider()
-    except Exception as e:
-        debug_log(f"Error fetching background tasks: {str(e)}")
-        st.warning("Could not retrieve background task status. Some features may be limited.")
     
     # Process each channel and collect data coverage metrics
     debug_log("Starting coverage data processing", performance_tag="start_coverage_metrics")
@@ -321,12 +244,12 @@ def render_data_coverage_dashboard(channel_data, db=None):
                 # Add action buttons
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button(f"🔄 Quick Update", key=f"quick_update_{i}", help="Run a quick background update"):
+                    if st.button(f"🔄 Quick Update", key=f"quick_update_{i}", help="Run a quick update"):
                         if channel_id != "unknown":
                             # Use stored API key
                             api_key = os.getenv('YOUTUBE_API_KEY', st.session_state.get('api_key', ''))
                             if api_key:
-                                # Create options for update (videos + comments)
+                                # Directly perform the update action
                                 options = {
                                     'fetch_channel_data': True,
                                     'fetch_videos': True,
@@ -337,10 +260,13 @@ def render_data_coverage_dashboard(channel_data, db=None):
                                     'storage_type': 'SQLite Database'
                                 }
                                 
-                                # Queue the background task
-                                task_id = queue_data_collection_task(channel_id, api_key, options)
-                                st.success(f"✅ Quick update started for {channel_name}!")
-                                st.rerun()  # Refresh UI
+                                # Perform the update immediately
+                                try:
+                                    analysis.update_channel_data(channel_id, api_key, options)
+                                    st.success(f"✅ Quick update completed for {channel_name}!")
+                                    st.rerun()  # Refresh UI
+                                except Exception as e:
+                                    st.error(f"Error during update: {str(e)}")
                             else:
                                 st.error("No YouTube API key available. Please check your .env file.")
                         else:
@@ -829,23 +755,8 @@ def render_data_coverage_dashboard(channel_data, db=None):
                 st.markdown("#### Update Settings")
                 save_immediately = st.checkbox("Save to database immediately", value=True, key="save_immediately")
                 
-                # Add one-click update button with auto triggers for quick updates
-                if 'auto_update_data' in st.session_state and st.session_state.auto_update_data and not st.session_state.get('auto_update_triggered', False):
-                    st.session_state.auto_update_data_init = True
-                    st.session_state.auto_update_triggered = True
-                    # Auto-trigger the update button via JavaScript
-                    st.markdown("""
-                    <script>
-                        document.addEventListener("DOMContentLoaded", function() {
-                            setTimeout(function() {
-                                document.querySelector('button[kind="primary"]').click();
-                            }, 500);
-                        });
-                    </script>
-                    """, unsafe_allow_html=True)
-                
                 # Start update button
-                if st.button("Start Background Update", key="start_update", type="primary"):
+                if st.button("Start Update", key="start_update", type="primary"):
                     if channel_id != "unknown":
                         # Create options for collection
                         options = {
@@ -858,68 +769,19 @@ def render_data_coverage_dashboard(channel_data, db=None):
                             'storage_type': 'SQLite Database'  # Default to SQLite
                         }
                         
-                        # Queue the background task
-                        task_id = queue_data_collection_task(channel_id, use_api_key, options)
-                        
-                        # Clear any auto-update flags
-                        st.session_state.auto_update_data = False
-                        st.session_state.auto_update_triggered = False
-                        
-                        st.success(f"✅ Update task queued for {selected_channel}!")
-                        st.markdown("""
-                        The update is now running in the background. You can continue using the application.
-                        This section will automatically refresh when the update is complete.
-                        """)
+                        # Perform the update action immediately
+                        try:
+                            analysis.update_channel_data(channel_id, use_api_key, options)
+                            st.success(f"✅ Update completed for {selected_channel}!")
+                            st.markdown("""
+                            The update is complete. Your data is now up-to-date.
+                            """)
+                        except Exception as e:
+                            st.error(f"Error during update: {str(e)}")
                     else:
                         st.error("Could not determine channel ID. Please try again.")
     else:
         st.warning("No YouTube API key available. Please enter an API key to update channel data.")
-    
-    # Add a section for task history
-    completed_tasks = {task_id: task for task_id, task in background_tasks.items() 
-                     if task['status'] in ['completed', 'error']}
-    
-    if completed_tasks:
-        st.subheader("Recently Completed Tasks")
-        
-        with st.expander("View Task History"):
-            # Convert to dataframe for sorting
-            tasks_df = pd.DataFrame([
-                {
-                    'Channel': task.get('channel_id', 'Unknown'),
-                    'Status': task['status'].capitalize(),
-                    'Started': datetime.fromisoformat(task['started_at']) if task.get('started_at') else None,
-                    'Completed': datetime.fromisoformat(task['completed_at']) if task.get('completed_at') else None,
-                    'Duration': (datetime.fromisoformat(task['completed_at']) - datetime.fromisoformat(task['started_at'])).total_seconds() / 60 if task.get('completed_at') and task.get('started_at') else None,
-                    'Result': 'Success' if task.get('result') else ('Error: ' + task.get('error', 'Unknown error')),
-                    'Saved': task.get('saved_to_storage', False)
-                }
-                for task_id, task in completed_tasks.items()
-            ])
-            
-            # Sort by completion time
-            if not tasks_df.empty and 'Completed' in tasks_df.columns:
-                tasks_df = tasks_df.sort_values('Completed', ascending=False)
-            
-            # Format duration
-            if 'Duration' in tasks_df.columns:
-                tasks_df['Duration'] = tasks_df['Duration'].apply(lambda x: f"{x:.1f} min" if pd.notnull(x) else "Unknown")
-            
-            # Format timestamps
-            for col in ['Started', 'Completed']:
-                if col in tasks_df.columns:
-                    tasks_df[col] = tasks_df[col].apply(lambda x: x.strftime("%Y-%m-%d %H:%M") if pd.notnull(x) else "Unknown")
-            
-            # Display dataframe
-            st.dataframe(tasks_df, use_container_width=True)
-            
-            # Add clear history button
-            if st.button("Clear Task History"):
-                # Import here to avoid circular imports
-                from src.utils.background_tasks import clear_completed_tasks
-                clear_completed_tasks()
-                st.success("Task history cleared")
-                st.rerun()  # Force refresh of the UI
     
     debug_log("Completed update section", performance_tag="end_update_section")
     debug_log("Completed data coverage dashboard render", performance_tag="end_coverage_dashboard")
