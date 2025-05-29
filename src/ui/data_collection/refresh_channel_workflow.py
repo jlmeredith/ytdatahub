@@ -430,12 +430,10 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         
         if 'playlist_saved' not in st.session_state:
             st.session_state['playlist_saved'] = False
-        if 'playlist_queued' not in st.session_state:
-            st.session_state['playlist_queued'] = False
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("💾 Save Playlist Data", key="save_playlist_data_btn_refresh", disabled=st.session_state['playlist_saved'] or st.session_state['playlist_queued']):
+            if st.button("💾 Save Playlist Data", key="save_playlist_data_btn_refresh", disabled=st.session_state['playlist_saved']):
                 try:
                     playlist_save_success = self.youtube_service.save_playlist_data(playlist_api)
                     if playlist_save_success:
@@ -445,9 +443,6 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                         st.error("❌ Failed to save playlist data.")
                 except Exception as e:
                     st.error(f"❌ Error saving playlist: {str(e)}")
-        with col2:
-            # Queue functionality removed - button disabled
-            st.button("📋 Queue Disabled", key="queue_playlist_btn_refresh", disabled=True, help="Queue functionality has been removed")
         with col3:
             if st.button("▶️ Continue to Videos", key="continue_to_videos_btn2_refresh", disabled=not st.session_state['playlist_saved']):
                 st.session_state['collection_step'] = 3
@@ -498,8 +493,6 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         # Initialize session state for video actions
         if 'videos_saved' not in st.session_state:
             st.session_state['videos_saved'] = False
-        if 'videos_queued' not in st.session_state:
-            st.session_state['videos_queued'] = False
             
         # If we have API videos, show the option to save them
         if api_video_count > 0:
@@ -517,7 +510,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
             
             with col1:
                 if st.button("💾 Save Video Data", key="save_videos_btn", 
-                           disabled=st.session_state['videos_saved'] or st.session_state['videos_queued']):
+                           disabled=st.session_state['videos_saved']):
                     try:
                         # Ensure we have all necessary fields for saving
                         api_data_with_videos = api_data.copy()
@@ -536,11 +529,6 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                             st.error("❌ Failed to save video data.")
                     except Exception as e:
                         st.error(f"❌ Error saving videos: {str(e)}")
-                        
-            with col2:
-                # Queue functionality removed - button disabled
-                st.button("📋 Queue Disabled", key="queue_videos_btn", disabled=True, help="Queue functionality has been removed")
-                        
             with col3:
                 if st.button("▶️ Continue to Comments", key="continue_to_comments_btn", 
                            disabled=not st.session_state['videos_saved']):
@@ -602,8 +590,6 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         # Initialize session state for comment actions
         if 'comments_saved' not in st.session_state:
             st.session_state['comments_saved'] = False
-        if 'comments_queued' not in st.session_state:
-            st.session_state['comments_queued'] = False
             
         # Comment collection options
         st.markdown("### Comment Collection Options")
@@ -640,7 +626,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         
         with col1:
             if st.button("🔄 Collect Comments", key="collect_comments_btn", 
-                       disabled=st.session_state['comments_saved'] or st.session_state['comments_queued']):
+                       disabled=st.session_state['comments_saved']):
                 try:
                     with st.spinner("Collecting comments..."):
                         # Need to collect comments for each video

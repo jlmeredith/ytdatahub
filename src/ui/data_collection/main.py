@@ -128,7 +128,7 @@ def render_data_collection_tab():
                 render_debug_panel()
         else:
             # Normal view with tabs
-            tabs = st.tabs(["New Collection", "Update Channel", "Queue Status"])
+            tabs = st.tabs(["New Collection", "Update Channel"])  # Removed 'Queue Status'
             
             # Tab 1: New Collection
             with tabs[0]:
@@ -236,33 +236,5 @@ def render_data_collection_tab():
                 channel_id = st.session_state.get('existing_channel_id', None)
                 workflow.initialize_workflow(channel_id)
                 workflow.render_current_step()
-            
-            # Tab 3: Queue Status
-            with tabs[2]:
-                # Queue Status tab is no longer available - show placeholder
-                st.info("Queue functionality has been removed. Data is now saved immediately.")
-                
-                # Add debug mode toggle for this tab
-                st.divider()
-                from .debug_ui import generate_unique_key
-                debug_toggle_key = generate_unique_key("debug_mode_toggle_queue_tab")
-                
-                # Add debug mode toggle
-                debug_enabled = st.checkbox(
-                    "Debug Mode", 
-                    value=st.session_state.get('debug_mode', False),
-                    key=debug_toggle_key
-                )
-                
-                # Update debug_mode in session state
-                if debug_enabled != st.session_state.get('debug_mode', False):
-                    st.session_state.debug_mode = debug_enabled
-                    toggle_debug_mode()
-                    st.rerun()
-                
-                # Show debug panel when debug mode is enabled
-                if st.session_state.get('debug_mode', False):
-                    from .debug_ui import render_debug_panel
-                    render_debug_panel()
     else:
         st.error("Please enter a YouTube API Key")

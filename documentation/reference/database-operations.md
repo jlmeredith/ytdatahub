@@ -212,3 +212,7 @@ Both the **New Channel** and **Update Channel** workflows in YTDataHub are desig
 - This parity is enforced by automated tests and code review to prevent regressions.
 
 **See also:** Debugging and error handling sections for more details on log visibility and error surfacing.
+
+---
+
+Note: The queue system has been fully removed. All data is now saved immediately during collection and update workflows. Any references to queue management are deprecated.

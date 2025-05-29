@@ -309,8 +309,6 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
         # Initialize session state for playlist actions
         if 'playlist_saved' not in st.session_state:
             st.session_state['playlist_saved'] = False
-        if 'playlist_queued' not in st.session_state:
-            st.session_state['playlist_queued'] = False
         
         # Action buttons
         st.markdown("---")
@@ -318,7 +316,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
         
         with col1:
             if st.button("💾 Save Playlist Data", key="save_playlist_data_btn", 
-                        disabled=st.session_state['playlist_saved'] or st.session_state['playlist_queued']):
+                        disabled=st.session_state['playlist_saved']):
                 try:
                     playlist_save_success = self.youtube_service.save_playlist_data(playlist_api)
                     if playlist_save_success:
@@ -328,20 +326,9 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                         st.error("❌ Failed to save playlist data.")
                 except Exception as e:
                     st.error(f"❌ Error saving playlist: {str(e)}")
-                    
-        with col2:
-            if st.button("📋 Save Playlist Data", key="save_playlist_btn", 
-                        disabled=st.session_state['playlist_saved']):
-                try:
-                    debug_log(f"[WORKFLOW] Playlist data saved for playlist_id={playlist_id}")
-                    st.session_state['playlist_saved'] = True
-                    st.success("✅ Playlist data saved!")
-                except Exception as e:
-                    st.error(f"❌ Error saving playlist data: {str(e)}")
-                    
         with col3:
             if st.button("▶️ Continue to Videos", key="continue_to_videos_btn2", 
-                        disabled=not (st.session_state['playlist_saved'] or st.session_state['playlist_queued'])):
+                        disabled=not st.session_state['playlist_saved']):
                 st.session_state['collection_step'] = 3
                 st.rerun()
     
@@ -574,7 +561,6 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.session_state['videos_fetched'] = True
                     st.info("📹 Video collection skipped.")
                     st.rerun()
-                    
         else:
             # Videos have been fetched, show them in the new AgGrid table
             if not videos_data:
@@ -844,43 +830,4 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 
             except Exception as e:
                 st.error(f"❌ Error during save operation: {str(e)}")
-                st.info("💡 Try saving again or add the data to the processing queue for later.")
-
-    def render_current_step(self):
-        """
-        Render only the current step as expanded, all others collapsed/hidden.
-        """
-        current_step = st.session_state.get('collection_step', 1)
-        if current_step == 1:
-            # Render directly to avoid nested expanders
-            self.render_step_1_channel_data()
-            with st.expander("Step 2: Playlist Review", expanded=False):
-                pass
-            with st.expander("Step 2: Videos Data", expanded=False):
-                pass
-            with st.expander("Step 3: Comments Data", expanded=False):
-                pass
-        elif current_step == 2:
-            with st.expander("Step 1: Channel Details", expanded=False):
-                pass
-            self.render_step_2_playlist_review()
-            with st.expander("Step 2: Videos Data", expanded=False):
-                pass
-            with st.expander("Step 3: Comments Data", expanded=False):
-                pass
-        elif current_step == 3:
-            with st.expander("Step 1: Channel Details", expanded=False):
-                pass
-            with st.expander("Step 2: Playlist Review", expanded=False):
-                pass
-            self.render_step_2_video_collection()
-            with st.expander("Step 3: Comments Data", expanded=False):
-                pass
-        elif current_step == 4:
-            with st.expander("Step 1: Channel Details", expanded=False):
-                pass
-            with st.expander("Step 2: Playlist Review", expanded=False):
-                pass
-            with st.expander("Step 2: Videos Data", expanded=False):
-                pass
-            self.render_step_3_comment_collection()
+               
