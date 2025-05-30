@@ -7,6 +7,7 @@ import pandas as pd
 import time
 from src.utils.cache_utils import clear_cache
 from src.utils.debug_utils import debug_log, get_ui_freeze_report
+from src.utils.debug_tools import log_app_state, format_duration_bar, get_performance_summary
 from src.config import Settings
 from src.ui.components.ui_utils import render_template_as_markdown
 from dotenv import find_dotenv, set_key
@@ -525,27 +526,141 @@ def render_utilities_tab():
                 st.info("No performance metrics collected yet. Enable debug mode and use the app to generate metrics.")
         if debug_enabled:
             st.subheader("Debug Actions")
-            if st.button("View Recent Debug Logs"):
-                try:
-                    possible_log_paths = [
-                        os.path.expanduser("~/.streamlit/logs/streamlit.log"),
-                        os.path.expanduser("~/Library/Application Support/streamlit/logs/streamlit.log"),
-                        os.path.expanduser("~/.streamlit/streamlit.log"),
-                        "streamlit.log"
-                    ]
-                    log_file = next((path for path in possible_log_paths if os.path.exists(path)), None)
-                    if log_file:
-                        with open(log_file, 'r') as f:
-                            lines = f.readlines()
-                            last_lines = lines[-50:] if len(lines) > 50 else lines
-                        with st.expander("Recent Debug Logs", expanded=True):
-                            for line in last_lines:
-                                if "DEBUG" in line:
-                                    st.text(line.strip())
-                    else:
-                        st.warning("Could not locate Streamlit log file. Try running the app with --log_level=debug")
-                except Exception as e:
-                    st.error(f"Error reading log file: {str(e)}")
+            # Create columns for buttons
+            debug_btn_col1, debug_btn_col2 = st.columns(2)
+            
+            with debug_btn_col1:
+                if st.button("View Recent Debug Logs", key="view_debug_logs_btn"):
+                    try:
+                        possible_log_paths = [
+                            os.path.expanduser("~/.streamlit/logs/streamlit.log"),
+                            os.path.expanduser("~/Library/Application Support/streamlit/logs/streamlit.log"),
+                            os.path.expanduser("~/.streamlit/streamlit.log"),
+                            "streamlit.log"
+                        ]
+                        log_file = next((path for path in possible_log_paths if os.path.exists(path)), None)
+                        if log_file:
+                            with open(log_file, 'r') as f:
+                                lines = f.readlines()
+                                last_lines = lines[-50:] if len(lines) > 50 else lines
+                            with st.expander("Recent Debug Logs", expanded=True):
+                                for line in last_lines:
+                                    if "DEBUG" in line:
+                                        st.text(line.strip())
+                        else:
+                            st.warning("Could not locate Streamlit log file. Try running the app with --log_level=debug")
+                    except Exception as e:
+                        st.error(f"Error reading log file: {str(e)}")
+            
+            with debug_btn_col2:
+                if st.button("Log Application State", key="log_app_state_btn"):
+                    # Generate a comprehensive application state log
+                    debug_report = log_app_state("Manual app state snapshot triggered from UI")
+                    st.success("Application state has been logged")
+                    
+                    # Display a summary of the logged information
+                    with st.expander("Application State Summary", expanded=True):
+                        if 'system' in debug_report:
+                            system_info = debug_report['system']
+                            st.subheader("System Information")
+                            system_info_md = f"""
+                            - **Timestamp**: {system_info.get('timestamp', 'N/A')}
+                            - **Python**: {system_info.get('python_version', 'N/A')}
+                            - **OS**: {system_info.get('os', 'N/A')}
+                            - **Processor**: {system_info.get('processor', 'N/A')}
+                            """
+                            
+                            # Add memory info if available
+                            if 'memory' in system_info:
+                                memory = system_info['memory']
+                                system_info_md += f"""
+                                - **Memory**: {memory.get('available_gb', 'N/A')}GB available / {memory.get('total_gb', 'N/A')}GB total ({memory.get('percent_used', 'N/A')}% used)
+                                """
+                            
+                            st.markdown(system_info_md)
+                        
+                        # Show session state summary in a table
+                        if 'session_state' in debug_report:
+                            st.subheader("Session State Summary")
+                            for category, values in debug_report['session_state'].items():
+                                if category != 'other':
+                                    st.write(f"**{category.upper()}**")
+                                    st.json(values)
+            
+            # Add advanced performance metrics visualization
+            if 'performance_metrics' in st.session_state and st.session_state.performance_metrics:
+                st.subheader("Advanced Performance Metrics")
+                
+                # Get performance summary
+                perf_summary = get_performance_summary()
+                
+                # Display performance statistics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Operations Measured", 
+                        perf_summary['summary']['total_measurements']
+                    )
+                with col2:
+                    st.metric(
+                        "Warning Operations",
+                        perf_summary['summary']['warning_count'],
+                        delta=f"{int(perf_summary['summary']['warning_count']/max(1, perf_summary['summary']['total_measurements'])*100)}%"
+                    )
+                with col3:
+                    st.metric(
+                        "Critical Operations",
+                        perf_summary['summary']['critical_count'],
+                        delta=f"{int(perf_summary['summary']['critical_count']/max(1, perf_summary['summary']['total_measurements'])*100)}%",
+                        delta_color="inverse"
+                    )
+                
+                # Show more detailed metrics
+                st.subheader("Operation Durations")
+                
+                # Convert metrics to a dataframe format that's easier to display
+                metrics_list = []
+                for key, metric in st.session_state.performance_metrics.items():
+                    if isinstance(metric, dict):
+                        operation = {
+                            'Operation': metric.get('tag', 'Unknown'),
+                            'Duration': metric.get('duration', 0),
+                            'Timestamp': metric.get('timestamp', 0),
+                            'Message': metric.get('message', '')
+                        }
+                        metrics_list.append(operation)
+                
+                # Sort by duration (slowest first)
+                metrics_list.sort(key=lambda x: x['Duration'], reverse=True)
+                
+                # Show as a table with visual duration bars
+                if metrics_list:
+                    # Create HTML for table
+                    html_table = """
+                    <table style="width:100%; border-collapse: collapse;">
+                        <tr style="border-bottom: 2px solid #dee2e6; background-color: #f8f9fa;">
+                            <th style="padding: 8px; text-align: left;">Operation</th>
+                            <th style="padding: 8px; text-align: left;">Duration</th>
+                            <th style="padding: 8px; text-align: left;">Message</th>
+                        </tr>
+                    """
+                    
+                    # Add rows for top 10 operations
+                    for i, op in enumerate(metrics_list[:10]):
+                        row_style = 'background-color: #fff0f0;' if op['Duration'] >= 3.0 else \
+                                   'background-color: #fffaf0;' if op['Duration'] >= 1.0 else ''
+                        
+                        html_table += f"""
+                        <tr style="border-bottom: 1px solid #dee2e6; {row_style}">
+                            <td style="padding: 8px;">{op['Operation']}</td>
+                            <td style="padding: 8px;">{format_duration_bar(op['Duration'])}</td>
+                            <td style="padding: 8px; font-size:0.9em;">{op['Message']}</td>
+                        </tr>
+                        """
+                    
+                    html_table += "</table>"
+                    
+                    st.markdown(html_table, unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Error in Debug Settings section: {e}")
 

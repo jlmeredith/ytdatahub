@@ -7,7 +7,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from src.api.youtube.base import YouTubeBaseClient
-from src.utils.debug_utils import debug_log, clean_channel_id
+from src.utils.debug_utils import debug_log
+from src.utils.validation import parse_channel_input
 
 class YouTubeChannelClient(YouTubeBaseClient):
     """Client for YouTube Channel API operations"""
@@ -23,7 +24,7 @@ class YouTubeChannelClient(YouTubeBaseClient):
             Dict with channel information or None if not found
         """
         debug_log(f"Getting channel info for: {channel_identifier}")
-        channel_id = clean_channel_id(channel_identifier)
+        channel_id = parse_channel_input(channel_identifier) or channel_identifier
         
         # Update API call status for debug panel
         if hasattr(st, 'session_state'):

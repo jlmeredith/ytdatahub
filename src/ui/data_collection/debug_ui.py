@@ -8,13 +8,89 @@ import io
 import random
 import time
 import json
+import re
 from src.utils.debug_utils import debug_log
+
+class HtmlFormatter(logging.Formatter):
+    """Custom formatter to output logs as HTML for Streamlit display."""
+    FORMATS = {
+        logging.DEBUG: '<span style="color:#808080; padding:1px 5px; border-radius:3px; background-color:#f8f9fa;"><b>[%(levelname)s]</b></span> <span style="color:#0088cc">[%(filename)s:%(lineno)d]</span> <span style="color:#333">%(message)s</span>',
+        logging.INFO: '<span style="color:#fff; background-color:#28a745; padding:1px 5px; border-radius:3px;"><b>[%(levelname)s]</b></span> <span style="color:#808080">[%(filename)s:%(lineno)d]</span> <span style="color:#333">%(message)s</span>',
+        logging.WARNING: '<span style="color:#fff; background-color:#ffc107; padding:1px 5px; border-radius:3px;"><b>[%(levelname)s]</b></span> <span style="color:#808080">[%(filename)s:%(lineno)d]</span> <span style="color:#333">%(message)s</span>',
+        logging.ERROR: '<span style="color:#fff; background-color:#dc3545; padding:1px 5px; border-radius:3px;"><b>[%(levelname)s]</b></span> <span style="color:#808080">[%(filename)s:%(lineno)d]</span> <span style="color:#333">%(message)s</span>',
+        logging.CRITICAL: '<span style="color:#fff; background-color:#dc3545; padding:1px 5px; border-radius:3px;"><b>[%(levelname)s]</b></span> <span style="color:#808080">[%(filename)s:%(lineno)d]</span> <span style="color:#333">%(message)s</span>',
+    }
+    
+    # Icons for different log categories
+    ICONS = {
+        'api': '🌐',
+        'db': '💾',
+        'ui': '🖥️',
+        'perf': '⏱️',
+        'success': '✅',
+        'error': '❌',
+        'warning': '⚠️',
+        'info': 'ℹ️',
+        'video': '🎬',
+        'channel': '📺',
+        'playlist': '📋',
+        'comment': '💬',
+        'auth': '🔑',
+        'config': '⚙️',
+        'start': '▶️',
+        'end': '⏹️',
+        'delta': '📊',
+    }
+    
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        formatted_msg = formatter.format(record)
+        
+        # Add decorative styling based on log content
+        styled_msg = self._apply_styling(formatted_msg, record)
+        
+        # Create a nice card-like container for each log entry
+        timestamp = self.formatTime(record)
+        return f'''<div style="margin-bottom:4px; padding:6px; border-left:3px solid {'#dc3545' if record.levelno >= logging.WARNING else '#28a745' if record.levelno == logging.INFO else '#0088cc'}; background-color:#{'fff0f0' if record.levelno >= logging.WARNING else 'f0fff0' if record.levelno == logging.INFO else 'f8f9fa'};">
+            <small style="color:#666; font-size:0.85em">{timestamp}</small><br>
+            {styled_msg}
+        </div>'''
+    
+    def _apply_styling(self, message, record):
+        """Apply additional styling based on message content"""
+        msg = record.getMessage().lower()
+        
+        # Add an icon based on message content
+        for key, icon in self.ICONS.items():
+            if key in msg:
+                # Insert the icon at the beginning, after any HTML tags
+                parts = message.split('</span>', 3)
+                if len(parts) >= 4:
+                    # Insert after the level, filename, and before the message content
+                    message = f"{parts[0]}</span>{parts[1]}</span>{parts[2]}</span> {icon} {parts[3]}"
+                break
+        
+        # Highlight any durations mentioned in the message
+        message = re.sub(r'(\d+\.\d+)s', r'<span style="font-weight:bold; color:#E74C3C">\1s</span>', message)
+        
+        # Highlight API keys (partial, for security)
+        message = re.sub(r'(API key|api_key)([^<]*)', r'<span style="color:#8E44AD">\1\2</span>', message)
+        
+        # Highlight any file paths or URLs
+        message = re.sub(r'(\/[a-zA-Z0-9_\/.]+)', r'<span style="color:#2C3E50">\1</span>', message)
+        
+        return message
+    
+    def formatTime(self, record):
+        return time.strftime('%H:%M:%S', time.localtime(record.created))
 
 class StringIOHandler(logging.StreamHandler):
     """Custom logging handler that captures logs in a StringIO buffer."""
     def __init__(self):
         self.string_io = io.StringIO()
         super().__init__(self.string_io)
+        self.setFormatter(HtmlFormatter())
         
     def activate(self):
         """Add this handler to the root logger."""
@@ -39,9 +115,47 @@ def render_debug_logs():
     
     log_content = st.session_state.debug_log_handler.getvalue()
     if log_content:
-        # Use a unique key for the text_area to avoid duplicate ID errors
-        key = generate_unique_key("debug_logs_text_area")
-        st.text_area("Debug Logs", log_content, height=400, key=key)
+        # Use a unique key for the container to avoid duplicate ID errors
+        key = generate_unique_key("debug_logs_container")
+        
+        # Create a stylish container with search functionality
+        st.markdown(
+            f'''
+            <div style="position:relative">
+                <div style="height:400px; overflow-y:auto; background-color:#f8f9fa; 
+                padding:10px; border-radius:5px; border:1px solid #dee2e6; font-size:0.9em;">
+                    {log_content}
+                </div>
+                <div style="position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.8); 
+                padding:5px; border-radius:3px; font-size:0.8em;">
+                    <span style="color:#28a745">■</span> INFO 
+                    <span style="color:#ffc107">■</span> WARNING 
+                    <span style="color:#dc3545">■</span> ERROR
+                </div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+        
+        # Add controls for the log viewer
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("Clear Logs", key=generate_unique_key("clear_logs")):
+                if st.session_state.get('debug_log_handler'):
+                    # Create a new handler to clear logs
+                    st.session_state.debug_log_handler.deactivate()
+                    st.session_state.debug_log_handler = StringIOHandler()
+                    st.session_state.debug_log_handler.activate()
+                    st.rerun()
+        with col2:
+            if st.download_button(
+                "Download Logs",
+                log_content.replace("<", "&lt;").replace(">", "&gt;"), 
+                file_name="ytdatahub_debug_logs.html",
+                mime="text/html",
+                key=generate_unique_key("download_logs")
+            ):
+                pass  # Download handled by Streamlit
     else:
         st.info("No debug logs captured yet.")
 
@@ -275,28 +389,52 @@ def render_debug_panel():
 
 def safe_display_json(data):
     """
-    Safely display JSON data without triggering Streamlit serialization errors.
+    Safely display JSON data with error handling.
+    Formats the data nicely for display in the UI.
     
     Args:
-        data: Data to display as JSON
+        data: The data to display
     """
+    if data is None:
+        st.info("No data available")
+        return
+    
     try:
-        if data is None:
-            st.info("No data available")
-            return
+        # Convert to JSON string with nice formatting
+        if isinstance(data, (dict, list)):
+            # Create a formatted JSON string with syntax highlighting
+            json_str = json.dumps(data, indent=2)
             
-        if isinstance(data, str):
-            # Try to parse string as JSON
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                # If it's not valid JSON, just display as text
-                st.text(data)
-                return
-                
-        # Use Streamlit's JSON display
-        st.json(data)
+            # Apply color highlighting based on data type
+            # Replace patterns with HTML-styled versions
+            formatted_json = json_str
+            
+            # Add color to keys (anything in quotes followed by a colon)
+            formatted_json = re.sub(r'("([^"]+)"\s*:)', r'<span style="color:#2E86C1">\1</span>', formatted_json)
+            
+            # Add color to string values (anything in quotes not followed by a colon)
+            formatted_json = re.sub(r':\s*"([^"]+)"', r': <span style="color:#27AE60">"\1"</span>', formatted_json)
+            
+            # Add color to numbers
+            formatted_json = re.sub(r':\s*(-?\d+\.?\d*)', r': <span style="color:#8E44AD">\1</span>', formatted_json)
+            
+            # Add color to booleans and null
+            formatted_json = re.sub(r':\s*(true|false|null)', r': <span style="color:#E74C3C">\1</span>', formatted_json)
+            
+            # Display the formatted JSON with syntax highlighting
+            st.markdown(
+                f'<pre style="background-color:#f8f9fa; padding:10px; border-radius:5px; '
+                f'border:1px solid #dee2e6; max-height:400px; overflow:auto; font-family:monospace;">'
+                f'{formatted_json}</pre>', 
+                unsafe_allow_html=True
+            )
+        else:
+            # For non-JSON data, use regular display
+            st.write(str(data))
     except Exception as e:
-        # If JSON display fails, fall back to text representation
-        st.error(f"Error displaying data as JSON: {str(e)}")
-        st.text(str(data)[:1000] + "..." if len(str(data)) > 1000 else str(data))
+        # If any error occurs, display the data as plain text
+        try:
+            st.warning(f"Could not format as JSON: {str(e)}")
+            st.text(str(data))
+        except:
+            st.error("Unable to display data")

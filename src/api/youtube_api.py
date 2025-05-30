@@ -7,25 +7,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from src.utils.debug_utils import debug_log
 from src.api.youtube import YouTubeAPI as ModularYouTubeAPI
-
-# Define the YouTubeAPIError class that was missing
-class YouTubeAPIError(Exception):
-    """
-    Custom exception class for YouTube API errors.
-    Provides structured error information with status code and error type.
-    """
-    def __init__(self, message, status_code=None, error_type=None, additional_info=None):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-        self.error_type = error_type
-        self.additional_info = additional_info or {}
-    
-    def __str__(self):
-        base_message = f"{self.message} (Status: {self.status_code}, Type: {self.error_type})"
-        if self.additional_info:
-            base_message += f" Additional info: {self.additional_info}"
-        return base_message
+from src.api.errors import YouTubeAPIError
 
 # For backward compatibility
 class YouTubeAPI(ModularYouTubeAPI):

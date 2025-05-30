@@ -90,6 +90,10 @@ class ChannelRepository(BaseRepository):
                 api_key = CANONICAL_FIELD_MAP.get(col, col)
                 v = flat_api_underscore.get(api_key, None)
                 
+                # If no value found with canonical mapping, try direct column name
+                if v is None and api_key != col:
+                    v = flat_api_underscore.get(col, None)
+                
                 if v is None:
                     # Field is missing from API response - use appropriate default
                     v = handle_missing_api_field(col, column_types.get(col))

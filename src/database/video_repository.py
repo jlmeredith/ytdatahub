@@ -13,6 +13,137 @@ import streamlit as st
 from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
+def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
+    """
+    Handle missing API fields by returning appropriate default values for videos table.
+    This helps distinguish between fields that are truly missing from the API response
+    vs. fields that are not being mapped correctly.
+    
+    Args:
+        field_name: The database column name
+        column_type: The SQLite column type (TEXT, INTEGER, BOOLEAN, etc.)
+    
+    Returns:
+        Appropriate default value based on the field semantics
+    """
+    # Fields that should explicitly indicate "not provided by API"
+    api_provided_fields = {
+        'snippet_default_language', 'snippet_default_audio_language', 
+        'snippet_category_id', 'snippet_localized_title', 'snippet_localized_description',
+        'content_details_duration', 'content_details_dimension', 'content_details_definition',
+        'content_details_caption', 'status_upload_status', 'status_failure_reason',
+        'status_rejection_reason', 'status_privacy_status', 'status_license',
+        'status_embeddable', 'status_public_stats_viewable', 'status_made_for_kids',
+        'player_embed_html', 'topic_details_topic_ids', 'topic_details_relevant_topic_ids',
+        'topic_details_topic_categories'
+    }
+    
+    # Complex fields that should be empty objects/arrays when missing
+    complex_fields = {
+        'localizations': '{}',  # Empty JSON object
+        'snippet_tags': '[]',  # Empty JSON array
+        'content_details_region_restriction_allowed': '[]',
+        'content_details_region_restriction_blocked': '[]',
+        'content_details_content_rating': '{}',
+        'topic_details_topic_ids': '[]',
+        'topic_details_relevant_topic_ids': '[]',
+        'topic_details_topic_categories': '[]'
+    }
+    
+    if field_name in api_provided_fields:
+        return "NOT_PROVIDED_BY_API"
+    elif field_name in complex_fields:
+        return complex_fields[field_name]
+    elif column_type == 'INTEGER':
+        return None
+    elif column_type == 'BOOLEAN':
+        return False
+    else:
+        return None
+
+# Define a canonical mapping of database columns to API fields
+CANONICAL_FIELD_MAP = {
+    # Basic info - map DB columns to flattened API field names
+    'youtube_id': 'id',
+    'kind': 'kind',
+    'etag': 'etag',
+    
+    # Snippet fields - Handle both duplicate and unique fields
+    'title': 'snippet_title',                              # Duplicate field
+    'description': 'snippet_description',                  # Duplicate field
+    'channel_id': 'snippet_channelId',                     # Duplicate field
+    'published_at': 'snippet_publishedAt',                 # Maps to snippet_publishedAt
+    'snippet_channel_id': 'snippet_channelId',             # Duplicate field
+    'snippet_channel_title': 'snippet_channelTitle',
+    'snippet_tags': 'snippet_tags',
+    'snippet_category_id': 'snippet_categoryId',
+    'snippet_live_broadcast_content': 'snippet_liveBroadcastContent',
+    'snippet_default_language': 'snippet_defaultLanguage',
+    'snippet_localized_title': 'snippet_localized_title',
+    'snippet_localized_description': 'snippet_localized_description',
+    'snippet_default_audio_language': 'snippet_defaultAudioLanguage',
+    
+    # Thumbnails - These come from snippet.thumbnails.{size}
+    'snippet_thumbnails_default': 'snippet_thumbnails_default',
+    'snippet_thumbnails_medium': 'snippet_thumbnails_medium',
+    'snippet_thumbnails_high': 'snippet_thumbnails_high',
+    'snippet_thumbnails_standard': 'snippet_thumbnails_standard',
+    'snippet_thumbnails_maxres': 'snippet_thumbnails_maxres',
+    
+    # Content details
+    'content_details_duration': 'contentDetails_duration',
+    'content_details_dimension': 'contentDetails_dimension',
+    'content_details_definition': 'contentDetails_definition',
+    'content_details_caption': 'contentDetails_caption',
+    'content_details_licensed_content': 'contentDetails_licensedContent',
+    'content_details_region_restriction_allowed': 'contentDetails_regionRestriction_allowed',
+    'content_details_region_restriction_blocked': 'contentDetails_regionRestriction_blocked',
+    'content_details_content_rating': 'contentDetails_contentRating',
+    'content_details_projection': 'contentDetails_projection',
+    'content_details_has_custom_thumbnail': 'contentDetails_hasCustomThumbnail',
+    
+    # Status
+    'status_upload_status': 'status_uploadStatus',
+    'status_failure_reason': 'status_failureReason',
+    'status_rejection_reason': 'status_rejectionReason',
+    'status_privacy_status': 'status_privacyStatus',
+    'status_publish_at': 'status_publishAt',
+    'status_license': 'status_license',
+    'status_embeddable': 'status_embeddable',
+    'status_public_stats_viewable': 'status_publicStatsViewable',
+    'status_made_for_kids': 'status_madeForKids',
+    
+    # Statistics
+    'statistics_view_count': 'statistics_viewCount',
+    'statistics_like_count': 'statistics_likeCount',
+    'statistics_comment_count': 'statistics_commentCount',
+    
+    # Player
+    'player_embed_html': 'player_embedHtml',
+    'player_embed_height': 'player_embedHeight',
+    'player_embed_width': 'player_embedWidth',
+    
+    # Topic details
+    'topic_details_topic_ids': 'topicDetails_topicIds',
+    'topic_details_relevant_topic_ids': 'topicDetails_relevantTopicIds',
+    'topic_details_topic_categories': 'topicDetails_topicCategories',
+    
+    # Live streaming details
+    'live_streaming_details_actual_start_time': 'liveStreamingDetails_actualStartTime',
+    'live_streaming_details_actual_end_time': 'liveStreamingDetails_actualEndTime',
+    'live_streaming_details_scheduled_start_time': 'liveStreamingDetails_scheduledStartTime',
+    'live_streaming_details_scheduled_end_time': 'liveStreamingDetails_scheduledEndTime',
+    'live_streaming_details_concurrent_viewers': 'liveStreamingDetails_concurrentViewers',
+    'live_streaming_details_active_live_chat_id': 'liveStreamingDetails_activeLiveChatId',
+    
+    # Localizations
+    'localizations': 'localizations',
+    
+    # Additional fields that might be missing
+    'fetched_at': 'fetched_at',
+    'updated_at': 'updated_at',
+}
+
 class VideoRepository(BaseRepository):
     """Repository for managing YouTube video data in the SQLite database."""
     
@@ -75,173 +206,176 @@ class VideoRepository(BaseRepository):
     
     def store_video_data(self, data, channel_db_id=None, fetched_at=None, retry_count=0):
         """
-        Save video data to SQLite database, mapping every API field (recursively) to a column, and insert full JSON into videos_history only.
+        Save video data to SQLite database with comprehensive field mapping.
 
         Args:
-            data (dict): The full YouTube API response for a video, or a dict with a 'video_info' key containing the full response. For best results, always pass the complete API response.
-            channel_db_id (int, optional): The database ID of the channel this video belongs to.
-            fetched_at (str, optional): Timestamp when the data was fetched.
-            retry_count (int, optional): Internal use for retrying on DB lock.
+            data (dict): The full YouTube API response for a video
+            channel_db_id (int, optional): The database ID of the channel this video belongs to
+            fetched_at (str, optional): Timestamp when the data was fetched
+            retry_count (int, optional): Internal use for retrying on DB lock
 
         Returns:
-            bool or dict: True if successful, False or error dict otherwise.
+            bool: True if successful, False otherwise
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
-                # --- Ensure youtube_id is present ---
+                # Ensure youtube_id is present
                 if 'youtube_id' not in data:
                     if 'video_id' in data:
                         data['youtube_id'] = data['video_id']
-                        debug_log(f"[DB PATCH] Set youtube_id from video_id: {data['youtube_id']}")
                     elif 'id' in data:
                         data['youtube_id'] = data['id']
-                        debug_log(f"[DB PATCH] Set youtube_id from id: {data['youtube_id']}")
                     else:
-                        debug_log(f"[DB ERROR] Skipping video with no youtube_id, video_id, or id: {data}")
+                        debug_log(f"[DB ERROR] Skipping video with no youtube_id: {data}")
                         return False
-                abs_db_path = os.path.abspath(self.db_path)
-                debug_log(f"[DB] Using database at: {abs_db_path}")
 
-                # --- Robust: Always flatten the full raw API response ---
+                # Flatten the raw API response
                 raw_api = data.get('raw_api_response') or data.get('video_info', data)
-                # --- Prepare a mapping for all schema fields ---
-                def get_nested(d, path, default=None):
-                    keys = path.split('.')
-                    for k in keys:
-                        if isinstance(d, dict) and k in d:
-                            d = d[k]
-                        else:
-                            return default
-                    return d
-                # --- Get all columns in the videos table ---
+                flat_api = self.flatten_dict(raw_api, sep='_')
+                
+                # Get all columns in the videos table
                 cursor = conn.cursor()
                 cursor.execute("PRAGMA table_info(videos)")
-                existing_cols = set(row[1] for row in cursor.fetchall())
+                table_info = cursor.fetchall()
+                existing_cols = set(row[1] for row in table_info)
+                column_types = {row[1]: row[2] for row in table_info}
+                
                 db_row = {}
-                # --- Map each column to the correct API field ---
-                field_map = {
-                    'youtube_id': 'id',
-                    'kind': 'kind',
-                    'etag': 'etag',
-                    'channel_id': 'snippet.channelId',
-                    'title': 'snippet.title',
-                    'description': 'snippet.description',
-                    'published_at': 'snippet.publishedAt',
-                    'snippet_channel_id': 'snippet.channelId',
-                    'snippet_channel_title': 'snippet.channelTitle',
-                    'snippet_tags': 'snippet.tags',
-                    'snippet_category_id': 'snippet.categoryId',
-                    'snippet_live_broadcast_content': 'snippet.liveBroadcastContent',
-                    'snippet_default_language': 'snippet.defaultLanguage',
-                    'snippet_localized_title': 'snippet.localized.title',
-                    'snippet_localized_description': 'snippet.localized.description',
-                    'snippet_default_audio_language': 'snippet.defaultAudioLanguage',
-                    'snippet_thumbnails_default': 'snippet.thumbnails.default',
-                    'snippet_thumbnails_medium': 'snippet.thumbnails.medium',
-                    'snippet_thumbnails_high': 'snippet.thumbnails.high',
-                    'snippet_thumbnails_standard': 'snippet.thumbnails.standard',
-                    'snippet_thumbnails_maxres': 'snippet.thumbnails.maxres',
-                    'content_details_duration': 'contentDetails.duration',
-                    'content_details_dimension': 'contentDetails.dimension',
-                    'content_details_definition': 'contentDetails.definition',
-                    'content_details_caption': 'contentDetails.caption',
-                    'content_details_licensed_content': 'contentDetails.licensedContent',
-                    'content_details_region_restriction_allowed': 'contentDetails.regionRestriction.allowed',
-                    'content_details_region_restriction_blocked': 'contentDetails.regionRestriction.blocked',
-                    'content_details_content_rating': 'contentDetails.contentRating',
-                    'content_details_projection': 'contentDetails.projection',
-                    'content_details_has_custom_thumbnail': 'contentDetails.hasCustomThumbnail',
-                    'status_upload_status': 'status.uploadStatus',
-                    'status_failure_reason': 'status.failureReason',
-                    'status_rejection_reason': 'status.rejectionReason',
-                    'status_privacy_status': 'status.privacyStatus',
-                    'status_publish_at': 'status.publishAt',
-                    'status_license': 'status.license',
-                    'status_embeddable': 'status.embeddable',
-                    'status_public_stats_viewable': 'status.publicStatsViewable',
-                    'status_made_for_kids': 'status.madeForKids',
-                    'statistics_view_count': 'statistics.viewCount',
-                    'statistics_like_count': 'statistics.likeCount',
-                    'statistics_dislike_count': 'statistics.dislikeCount',
-                    'statistics_favorite_count': 'statistics.favoriteCount',
-                    'statistics_comment_count': 'statistics.commentCount',
-                    'player_embed_html': 'player.embedHtml',
-                    'player_embed_height': 'player.embedHeight',
-                    'player_embed_width': 'player.embedWidth',
-                    'topic_details_topic_ids': 'topicDetails.topicIds',
-                    'topic_details_relevant_topic_ids': 'topicDetails.relevantTopicIds',
-                    'topic_details_topic_categories': 'topicDetails.topicCategories',
-                    'live_streaming_details_actual_start_time': 'liveStreamingDetails.actualStartTime',
-                    'live_streaming_details_actual_end_time': 'liveStreamingDetails.actualEndTime',
-                    'live_streaming_details_scheduled_start_time': 'liveStreamingDetails.scheduledStartTime',
-                    'live_streaming_details_scheduled_end_time': 'liveStreamingDetails.scheduledEndTime',
-                    'live_streaming_details_concurrent_viewers': 'liveStreamingDetails.concurrentViewers',
-                    'live_streaming_details_active_live_chat_id': 'liveStreamingDetails.activeLiveChatId',
-                    'localizations': 'localizations',
-                    'fetched_at': None,
-                    'updated_at': None
-                }
+                
+                # Map each database column to the correct API field
                 for col in existing_cols:
-                    if col in ['id']:
+                    if col == 'id':
                         continue
-                    api_path = field_map.get(col, col)
-                    value = get_nested(raw_api, api_path) if api_path else None
-                    # Serialize arrays/objects as JSON
-                    if col in [
-                        'snippet_tags', 'snippet_thumbnails_default', 'snippet_thumbnails_medium', 'snippet_thumbnails_high',
-                        'snippet_thumbnails_standard', 'snippet_thumbnails_maxres', 'content_details_region_restriction_allowed',
-                        'content_details_region_restriction_blocked', 'content_details_content_rating', 'topic_details_topic_ids',
-                        'topic_details_relevant_topic_ids', 'topic_details_topic_categories', 'localizations'
-                    ]:
-                        if value is not None:
-                            value = json.dumps(value)
+                        
+                    # Special handling for thumbnail fields - extract directly from original structure
+                    if col.startswith('snippet_thumbnails_'):
+                        thumbnail_size = col.replace('snippet_thumbnails_', '')
+                        
+                        # Extract thumbnail data directly from original structure
+                        value = None
+                        if 'snippet' in raw_api and 'thumbnails' in raw_api['snippet']:
+                            thumbnails = raw_api['snippet']['thumbnails']
+                            if thumbnail_size in thumbnails and isinstance(thumbnails[thumbnail_size], dict):
+                                value = json.dumps(thumbnails[thumbnail_size])
+                                debug_log(f"[DB THUMBNAIL] {col} extracted from original: {value}")
+                        
+                        if not value:
+                            value = handle_missing_api_field(col, column_types.get(col, 'TEXT'))
+                            debug_log(f"[DB THUMBNAIL] {col} not found, using default: {value}")
+                    else:
+                        # Regular field mapping
+                        api_field = CANONICAL_FIELD_MAP.get(col)
+                        value = None
+                        
+                        if api_field and api_field in flat_api:
+                            # Found the field in API response
+                            value = flat_api[api_field]
+                            debug_log(f"[DB MAPPING] {col} -> {api_field} = {str(value)[:100]}")
+                        else:
+                            # If no value found with canonical mapping, try direct column name
+                            if api_field and api_field != col and col in flat_api:
+                                value = flat_api[col]
+                                debug_log(f"[DB MAPPING] {col} -> {col} (direct) = {str(value)[:100]}")
+                            else:
+                                # Field not found in API response
+                                value = handle_missing_api_field(col, column_types.get(col, 'TEXT'))
+                                if value == "NOT_PROVIDED_BY_API":
+                                    debug_log(f"[DB MISSING] {col} not provided by API")
+                                else:
+                                    debug_log(f"[DB DEFAULT] {col} using default: {value}")
+                        
+                        # Handle JSON serialization for complex fields
+                        if col in [
+                            'snippet_tags', 'content_details_region_restriction_allowed', 'content_details_region_restriction_blocked',
+                            'content_details_content_rating', 'topic_details_topic_ids', 'topic_details_relevant_topic_ids',
+                            'topic_details_topic_categories', 'localizations'
+                        ]:
+                            if value is not None and not isinstance(value, str):
+                                value = json.dumps(value)
+                    
                     db_row[col] = value
-                # Add channel_id if provided
+                
+                # Handle duplicate fields - ensure consistency
+                # For fields that exist in both forms in the videos table:
+                # - channel_id vs snippet_channel_id (both exist)
+                # Note: title/description don't have snippet_ versions in videos table
+                duplicate_mappings = {
+                    ('channel_id', 'snippet_channel_id'): 'snippet_channelId',
+                    ('published_at',): 'snippet_publishedAt'
+                }
+                
+                # Sync duplicate fields to ensure consistency
+                for field_group, api_source in duplicate_mappings.items():
+                    if api_source in flat_api:
+                        api_value = flat_api[api_source]
+                        for field in field_group:
+                            if field in existing_cols:
+                                db_row[field] = api_value
+                                debug_log(f"[DB SYNC] Set {field} = {str(api_value)[:50]}")
+                
+                # Also ensure title and description get their values from snippet API fields
+                if 'title' in existing_cols and 'snippet_title' in flat_api:
+                    db_row['title'] = flat_api['snippet_title']
+                if 'description' in existing_cols and 'snippet_description' in flat_api:
+                    db_row['description'] = flat_api['snippet_description']
+                
+                # Add metadata fields
                 if channel_db_id:
                     db_row['channel_id'] = channel_db_id
-                # Ensure fetched_at and updated_at are set
+                
                 now = datetime.utcnow().isoformat()
-                if 'fetched_at' in existing_cols and not db_row.get('fetched_at'):
-                    db_row['fetched_at'] = now
-                if 'updated_at' in existing_cols and not db_row.get('updated_at'):
+                if 'fetched_at' in existing_cols:
+                    db_row['fetched_at'] = fetched_at or now
+                if 'updated_at' in existing_cols:
                     db_row['updated_at'] = now
-                debug_log(f"[DB] Final db_row for video {data.get('video_id') or data.get('id')}: {json.dumps(db_row, default=str)[:1000]}")
-                columns = []
-                values = []
-                for col in existing_cols:
-                    if col in ['id']:
-                        continue
-                    v = db_row.get(col, None)
-                    values.append(v)
-                    columns.append(col)
-                debug_log(f"[DB INSERT] Final video insert columns: {columns}")
-                debug_log(f"[DB INSERT] Final video insert values: {values}")
-                if not columns:
-                    debug_log("[DB WARNING] No columns to insert for video.")
-                    return False
+                
+                # Prepare for database insertion
+                columns = [col for col in existing_cols if col != 'id']
+                values = [db_row.get(col) for col in columns]
+                
+                debug_log(f"[DB INSERT] Video {data.get('youtube_id')} with {len(columns)} fields")
+                debug_log(f"[DB DEBUG] Columns: {list(columns)}")
+                debug_log(f"[DB DEBUG] youtube_id in columns: {'youtube_id' in columns}")
+                debug_log(f"[DB DEBUG] youtube_id value: {db_row.get('youtube_id')}")
+                debug_log(f"[DB DEBUG] Values: {values}")
+                
+                # Insert or update - using ON CONFLICT without column specification
                 placeholders = ','.join(['?'] * len(columns))
                 update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
-                cursor.execute(f'''
+                
+                sql_query = f'''
                     INSERT INTO videos ({','.join(columns)})
                     VALUES ({placeholders})
-                    ON CONFLICT(youtube_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
-                ''', values)
-                debug_log(f"Inserted/updated video: {db_row.get('youtube_id')}")
-                # --- Insert full JSON into videos_history only ---
-                fetched_at = fetched_at or datetime.utcnow().isoformat()
+                    ON CONFLICT DO UPDATE SET {update_clause}
+                '''
+                debug_log(f"[DB DEBUG] SQL Query: {sql_query}")
+                
+                cursor.execute(sql_query, values)
+                
+                # Store in history table
+                video_id = data.get('youtube_id') or data.get('id')
                 raw_video_info = json.dumps(raw_api)
-                debug_log(f"[DB PATCH] Saving to videos_history: video_id={db_row.get('youtube_id')}, json_keys={list(raw_api.keys()) if isinstance(raw_api, dict) else type(raw_api)}")
                 cursor.execute('''
-                    INSERT INTO videos_history (video_id, fetched_at, raw_video_info) VALUES (?, ?, ?)
-                ''', (db_row.get('youtube_id'), fetched_at, raw_video_info))
+                    INSERT INTO videos_history (video_id, fetched_at, raw_video_info) 
+                    VALUES (?, ?, ?)
+                    ON CONFLICT DO UPDATE SET raw_video_info=excluded.raw_video_info
+                ''', (video_id, fetched_at or now, raw_video_info))
+                
                 conn.commit()
+                debug_log(f"[DB SUCCESS] Stored video: {video_id}")
+                
                 # Save comments if present
                 comments = data.get('comments', [])
                 if comments:
-                    debug_log(f"[DB] Saving {len(comments)} comments for video {data.get('video_id') or data.get('id')}")
-                    comment_store_result = self.store_comments(comments, db_row.get('youtube_id'), fetched_at=None)
+                    debug_log(f"[DB] Saving {len(comments)} comments for video {video_id}")
+                    comment_store_result = self.store_comments(comments, video_id, fetched_at or now)
                     debug_log(f"[DB] store_comments result: {comment_store_result}")
+                
                 return True
+                
+        except Exception as e:
+            debug_log(f"[DB ERROR] Failed to store video: {str(e)}", e)
+            return False
         except sqlite3.OperationalError as e:
             error_msg = str(e).lower()
             # Handle database locked error with retries and exponential backoff

@@ -780,6 +780,34 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.session_state['collection_step'] = 3
                     st.rerun()
 
+    def render_current_step(self):
+        """
+        Render the current step of the workflow based on session state.
+        
+        Override the base class method to handle the 4-step new channel workflow:
+        Step 1: Channel Collection
+        Step 2: Playlist Collection  
+        Step 3: Video Collection
+        Step 4: Comment Collection
+        """
+        # Get the current step from session state
+        current_step = self._get_current_step()
+        
+        # Render the appropriate step
+        if current_step == 1:
+            self.render_step_1_channel_data()
+        elif current_step == 2:
+            self.render_step_2_playlist_review()
+        elif current_step == 3:
+            self.render_step_2_video_collection()
+        elif current_step == 4:
+            self.render_step_3_comment_collection()
+        else:
+            st.error(f"Unknown step: {current_step}")
+        
+        # Add debug mode toggle and panel at the bottom of all workflows
+        self.render_debug_controls()
+
     def save_data(self):
         """Save collected data to the database with user-friendly feedback."""
         channel_info = st.session_state.get('channel_info_temp')
@@ -830,4 +858,3 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 
             except Exception as e:
                 st.error(f"❌ Error during save operation: {str(e)}")
-               

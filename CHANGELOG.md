@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added missing `store_comment` method to CommentRepository for handling single comments
 - Fixed comment reply collection to properly store replies to top-level comments
 - Completed May 26, 2025: All temporary debug files and documentation related to comment collection fix removed
+- **MAJOR FIX**: Resolved duplicate field issues and NULL value problems across all database tables:
+  - Videos: Fixed duplicate data between `channel_id`/`snippet_channel_id` fields
+  - Playlists: Synchronized duplicate fields (`title`/`snippet_title`, `description`/`snippet_description`, `channel_id`/`snippet_channelId`)
+  - Comments: Enhanced field mapping including missing fields like `author_profile_image_url`
+  - Replaced NULL values with "NOT_PROVIDED_BY_API" for fields not provided by YouTube API
+  - Implemented comprehensive field mapping in all repository modules
+  - Added proper handling of missing API data vs. mapping errors
 
 ### Improved
 

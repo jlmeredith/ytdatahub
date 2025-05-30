@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import copy
 import sys
 
-from src.api.youtube_api import YouTubeAPIError
+from src.api.errors import YouTubeAPIError
 from googleapiclient.errors import HttpError
 
 from src.utils.video_formatter import fix_missing_views

@@ -27,7 +27,6 @@ except (ImportError, ModuleNotFoundError):
     st = DummySt()
 
 from src.utils.debug_utils import debug_log
-from src.services.youtube.error_handling_service import error_handling_service
 from src.utils.validation import validate_api_key as validate_api_key_format
 
 class YouTubeBaseClient:
@@ -102,6 +101,7 @@ class YouTubeBaseClient:
             Tuple of (is_valid, message)
         """
         # Use the centralized error handling service for API key validation
+        from src.services.youtube.error_handling_service import error_handling_service
         return error_handling_service.check_api_key(self, self.api_key)
 
     def _handle_api_error(self, error: Exception, operation: str):
@@ -112,6 +112,7 @@ class YouTubeBaseClient:
             operation: The operation that failed
         """
         # Use the centralized error handling service
+        from src.services.youtube.error_handling_service import error_handling_service
         return error_handling_service.handle_api_error(error, operation)
 
     def store_in_cache(self, key: str, value: Any, ttl_seconds: int = 3600):

@@ -14,6 +14,75 @@ from typing import Any, Dict, Optional, List, Union
 from src.utils.performance_tracking import start_timer, end_timer
 from src.utils.log_level_helper import get_log_level_int
 
+# Message type indicators for better visual distinction
+DEBUG_INDICATORS = {
+    'api': '🌐 ',      # Globe for API operations
+    'db': '💾 ',       # Disk for database operations
+    'ui': '🖥️ ',       # Screen for UI operations
+    'perf': '⏱️ ',     # Timer for performance related logs
+    'success': '✅ ',  # Checkmark for successful operations
+    'error': '❌ ',    # X mark for errors
+    'warning': '⚠️ ',  # Warning sign
+    'info': 'ℹ️ ',     # Info sign 
+    'video': '🎬 ',    # Movie camera for video operations
+    'channel': '📺 ',  # TV for channel operations
+    'playlist': '📋 ', # List for playlist operations
+    'comment': '💬 ',  # Speech bubble for comment operations
+    'auth': '🔑 ',     # Key for authentication operations
+    'config': '⚙️ ',   # Gear for configuration operations
+    'start': '▶️ ',    # Play button for start operations
+    'end': '⏹️ ',      # Stop button for end operations
+    'delta': '📊 ',    # Chart for delta operations
+}
+
+def get_indicator(message: str) -> str:
+    """
+    Determine the appropriate indicator based on message content
+    
+    Args:
+        message: The log message text
+        
+    Returns:
+        str: The icon prefix for the message
+    """
+    message_lower = message.lower()
+    
+    # Check for specific keywords in the message to determine type
+    if 'api' in message_lower:
+        return DEBUG_INDICATORS['api']
+    elif 'database' in message_lower or ' db ' in message_lower or 'sql' in message_lower:
+        return DEBUG_INDICATORS['db']
+    elif 'ui' in message_lower or 'interface' in message_lower:
+        return DEBUG_INDICATORS['ui']
+    elif 'performance' in message_lower or 'took' in message_lower or 'timer' in message_lower:
+        return DEBUG_INDICATORS['perf']
+    elif 'success' in message_lower or 'completed' in message_lower:
+        return DEBUG_INDICATORS['success']
+    elif 'error' in message_lower or 'fail' in message_lower or 'exception' in message_lower:
+        return DEBUG_INDICATORS['error']
+    elif 'warning' in message_lower or 'caution' in message_lower:
+        return DEBUG_INDICATORS['warning']
+    elif 'video' in message_lower:
+        return DEBUG_INDICATORS['video']
+    elif 'channel' in message_lower:
+        return DEBUG_INDICATORS['channel']
+    elif 'playlist' in message_lower:
+        return DEBUG_INDICATORS['playlist']
+    elif 'comment' in message_lower:
+        return DEBUG_INDICATORS['comment']
+    elif 'auth' in message_lower or 'login' in message_lower or 'credential' in message_lower:
+        return DEBUG_INDICATORS['auth']
+    elif 'config' in message_lower or 'setting' in message_lower:
+        return DEBUG_INDICATORS['config']
+    elif 'start' in message_lower or 'begin' in message_lower or 'init' in message_lower:
+        return DEBUG_INDICATORS['start']
+    elif 'end' in message_lower or 'finish' in message_lower or 'complete' in message_lower:
+        return DEBUG_INDICATORS['end']
+    elif 'delta' in message_lower or 'diff' in message_lower or 'change' in message_lower:
+        return DEBUG_INDICATORS['delta']
+    else:
+        return DEBUG_INDICATORS['info']
+
 def debug_log(message: str, data: Any = None, performance_tag: str = None):
     """
     Log debug messages to server console if debug mode is enabled
@@ -24,20 +93,24 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
         data: Optional data to include with the log
         performance_tag: Optional tag for performance tracking
     """
+    # Add an appropriate indicator symbol based on message content
+    indicator = get_indicator(message)
+    enhanced_message = f"{indicator}{message}"
+    
     # Append to UI debug logs for Streamlit UI regardless of log level
     try:
         if STREAMLIT_AVAILABLE and hasattr(st, 'session_state'):
             if 'ui_debug_logs' not in st.session_state:
                 st.session_state['ui_debug_logs'] = []
-            st.session_state['ui_debug_logs'].append(message)
+            st.session_state['ui_debug_logs'].append(enhanced_message)
             # Also append to debug_logs for backward compatibility
             if 'debug_logs' not in st.session_state:
                 st.session_state['debug_logs'] = []
-            st.session_state['debug_logs'].append(message)
+            st.session_state['debug_logs'].append(enhanced_message)
     except Exception:
         pass
     # Always print to console
-    print(message, file=sys.stderr)
+    print(enhanced_message, file=sys.stderr)
     
     # In test environments, st.session_state might not be available, so we need fallbacks
     if 'pytest' in sys.modules:
@@ -156,6 +229,47 @@ def log_error(message: str, error: Exception = None):
         except:
             # Ignore errors when trying to log to streamlit (might be outside streamlit context)
             pass
+
+def format_json_data(data: Any) -> str:
+    """
+    Format complex data types into a readable, colorful string
+    
+    Args:
+        data: Any data structure to format
+    
+    Returns:
+        str: Formatted string representation
+    """
+    if isinstance(data, dict):
+        try:
+            import json
+            # Format dictionary with indents and colors
+            result = []
+            result.append("{")
+            for key, value in data.items():
+                key_str = f'"{key}"' if isinstance(key, str) else str(key)
+                if isinstance(value, (dict, list)):
+                    value_str = json.dumps(value, indent=2)
+                    indented_value = "\n  ".join(value_str.split("\n"))
+                    result.append(f'  {key_str}: {indented_value},')
+                elif isinstance(value, str):
+                    result.append(f'  {key_str}: "{value}",')
+                else:
+                    result.append(f'  {key_str}: {value},')
+            result.append("}")
+            return "\n".join(result)
+        except:
+            return str(data)
+    elif isinstance(data, list):
+        try:
+            import json
+            # Format list with indents and colors
+            list_str = json.dumps(data, indent=2)
+            return list_str
+        except:
+            return str(data)
+    else:
+        return str(data)
 
 def get_ui_freeze_report():
     """

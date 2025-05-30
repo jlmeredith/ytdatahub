@@ -83,7 +83,7 @@ def test_storage_service_db_path_custom():
 def test_save_channel_data_logs_playlist_id_mapping(mocker):
     from src.services.youtube.storage_service import StorageService
     svc = StorageService()
-    mock_debug = mocker.patch('src.utils.helpers.debug_log')
+    mock_debug = mocker.patch('src.utils.debug_utils.debug_log')
     channel_data = {'channel_id': 'UC123', 'playlist_id': 'UU123'}
     svc.save_channel_data(channel_data, storage_type='sqlite')
     # Check that debug_log was called with the mapping message
@@ -100,7 +100,7 @@ def test_new_channel_workflow_playlist_id_logging(mocker):
     mixin.api = mock_api
     mixin.video_service = mock_video_service
     mixin.storage_service = mock_storage_service
-    mock_debug = mocker.patch('src.utils.helpers.debug_log')
+    mock_debug = mocker.patch('src.utils.debug_utils.debug_log')
     options = {'fetch_videos': False}
     result = mixin.collect_channel_data('UC123', options)
     # Should fetch playlist_id, store it, and log actions
@@ -119,7 +119,7 @@ def test_update_channel_workflow_playlist_id_logging(mocker):
     mixin.api = mock_api
     mixin.video_service = mock_video_service
     mixin.storage_service = mock_storage_service
-    mock_debug = mocker.patch('src.utils.helpers.debug_log')
+    mock_debug = mocker.patch('src.utils.debug_utils.debug_log')
     options = {'fetch_videos': False}
     existing_data = {'channel_id': 'UC456'}
     result = mixin.collect_channel_data('UC456', options, existing_data)

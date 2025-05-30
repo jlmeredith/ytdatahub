@@ -8,7 +8,8 @@ import copy
 from typing import Dict, List, Optional, Set, Any
 from datetime import datetime
 
-from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
+from src.api.youtube_api import YouTubeAPI
+from src.api.errors import YouTubeAPIError
 from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
 

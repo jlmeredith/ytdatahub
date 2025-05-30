@@ -439,82 +439,16 @@ class SQLiteDatabase:
     def store_playlist_data(self, playlist: dict) -> bool:
         """
         Save playlist data to SQLite database and insert full API response into playlists_history.
+        Delegated to PlaylistRepository for improved field mapping.
+        
         Args:
             playlist: Dictionary containing playlist data (must include playlist_id and channel_id)
         Returns:
             bool: True if successful, False otherwise
         """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            # --- Flatten all fields from the API response ---
-            flat_playlist = self.flatten_dict(playlist)
-            flat_playlist_underscore = {k.replace('.', '_'): v for k, v in flat_playlist.items()}
-            # --- Special handling for complex fields ---
-            import json
-            # snippet.thumbnails (dict)
-            if 'snippet.thumbnails' in flat_playlist:
-                flat_playlist_underscore['snippet_thumbnails'] = json.dumps(flat_playlist['snippet.thumbnails'])
-            # snippet.localized (dict)
-            if 'snippet.localized' in flat_playlist:
-                if isinstance(flat_playlist['snippet.localized'], dict):
-                    flat_playlist_underscore['snippet_localized_title'] = flat_playlist['snippet.localized'].get('title')
-                    flat_playlist_underscore['snippet_localized_description'] = flat_playlist['snippet.localized'].get('description')
-            # localizations (dict)
-            if 'localizations' in flat_playlist:
-                flat_playlist_underscore['localizations'] = json.dumps(flat_playlist['localizations'])
-            # player.embedHtml
-            if 'player.embedHtml' in flat_playlist:
-                flat_playlist_underscore['player_embedHtml'] = flat_playlist['player.embedHtml']
-            # contentDetails.itemCount
-            if 'contentDetails.itemCount' in flat_playlist:
-                try:
-                    flat_playlist_underscore['contentDetails_itemCount'] = int(flat_playlist['contentDetails.itemCount'])
-                except Exception:
-                    flat_playlist_underscore['contentDetails_itemCount'] = None
-            debug_log(f"[DB DEBUG] flat_playlist_underscore: {flat_playlist_underscore}")
-            # --- Get all columns in the playlists table ---
-            cursor.execute("PRAGMA table_info(playlists)")
-            existing_cols = set(row[1] for row in cursor.fetchall())
-            # --- Prepare columns and values for insert/update ---
-            columns = []
-            values = []
-            for col in existing_cols:
-                if col in ['created_at', 'updated_at']:
-                    continue
-                v = flat_playlist_underscore.get(col, None)
-                # Serialize lists/dicts
-                if isinstance(v, (list, dict)):
-                    v = json.dumps(v)
-                values.append(v)
-                columns.append(col)
-            debug_log(f"[DB INSERT] Final playlist insert columns: {columns}")
-            debug_log(f"[DB INSERT] Final playlist insert values: {values}")
-            if not columns:
-                debug_log("[DB WARNING] No columns to insert for playlist.")
-                conn.close()
-                return False
-            placeholders = ','.join(['?'] * len(columns))
-            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
-            cursor.execute(f'''
-                INSERT INTO playlists ({','.join(columns)})
-                VALUES ({placeholders})
-                ON CONFLICT(playlist_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
-            ''', values)
-            # Insert full JSON into playlists_history
-            now = datetime.utcnow().isoformat()
-            raw_playlist_info = json.dumps(playlist)
-            cursor.execute('''
-                INSERT INTO playlists_history (playlist_id, fetched_at, raw_playlist_info)
-                VALUES (?, ?, ?)
-            ''', (playlist.get('playlist_id'), now, raw_playlist_info))
-            conn.commit()
-            conn.close()
-            debug_log(f"Inserted/updated playlist: {playlist.get('playlist_id')} and saved to playlists_history.")
-            return True
-        except Exception as e:
-            debug_log(f"Exception in store_playlist_data: {str(e)}")
-            return False
+        from src.database.playlist_repository import PlaylistRepository
+        playlist_repo = PlaylistRepository(self.db_path)
+        return playlist_repo.store_playlist_data(playlist)
 
 # Keep the original functions for backward compatibility, but delegate to the class
 def create_sqlite_tables():

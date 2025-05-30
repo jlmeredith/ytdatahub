@@ -8,7 +8,8 @@ from typing import Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from src.api.youtube_api import YouTubeAPI, YouTubeAPIError
+from src.api.youtube_api import YouTubeAPI
+from src.api.errors import YouTubeAPIError
 from src.utils.debug_utils import debug_log
 from src.services.youtube.base_service import BaseService
 

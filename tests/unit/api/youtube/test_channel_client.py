@@ -14,7 +14,7 @@ def channel_client(mock_youtube):
     return client
 
 def test_get_channel_info_success(channel_client, mock_youtube):
-    with patch('src.api.youtube.channel_client.clean_channel_id', return_value='UC123'):
+    with patch('src.utils.validation.parse_channel_input', return_value='UC123'):
         # Mock API response
         mock_response = {
             'items': [{
@@ -37,7 +37,7 @@ def test_get_channel_info_success(channel_client, mock_youtube):
         assert result['playlist_id'] == 'UU123'
 
 def test_get_channel_info_not_found(channel_client, mock_youtube):
-    with patch('src.api.youtube.channel_client.clean_channel_id', return_value='UC123'):
+    with patch('src.utils.validation.parse_channel_input', return_value='UC123'):
         # Mock empty response
         mock_youtube.channels().list().execute.return_value = {'items': []}
 
@@ -78,7 +78,7 @@ def test_get_channel_by_username_not_found(channel_client, mock_youtube):
     assert result is None
 
 def test_search_channel_success(channel_client, mock_youtube):
-    with patch('src.api.youtube.channel_client.clean_channel_id', return_value='UC123'):
+    with patch('src.utils.validation.parse_channel_input', return_value='UC123'):
         # Mock API response
         mock_response = {
             'items': [
@@ -107,7 +107,7 @@ def test_search_channel_success(channel_client, mock_youtube):
         assert result[0]['channel_name'] == 'Test Channel'
 
 def test_search_channel_no_results(channel_client, mock_youtube):
-    with patch('src.api.youtube.channel_client.clean_channel_id', return_value='UC123'):
+    with patch('src.utils.validation.parse_channel_input', return_value='UC123'):
         # Mock empty response
         mock_youtube.search().list().execute.return_value = {'items': []}
 

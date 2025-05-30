@@ -1,6 +1,7 @@
 """
 Tests for data conversion utilities.
 """
+import logging
 import pytest
 from unittest.mock import MagicMock, patch
 import streamlit as st

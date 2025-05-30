@@ -60,7 +60,7 @@ class TestChannelSelector(unittest.TestCase):
     
         # Create a minimal set of mocks for testing just the session state behavior
         with patch('src.analysis.youtube_analysis.YouTubeAnalysis') as mock_analysis, \
-             patch('src.utils.helpers.debug_log'), \
+             patch('src.utils.debug_utils.debug_log'), \
              patch('pandas.DataFrame', return_value=test_channels_df), \
              patch('streamlit.info'), \
              patch('streamlit.success'), \
@@ -156,7 +156,7 @@ class TestChannelSelector(unittest.TestCase):
         
         # Add minimal mocks for testing
         with patch('src.analysis.youtube_analysis.YouTubeAnalysis') as mock_analysis, \
-             patch('src.utils.helpers.debug_log'), \
+             patch('src.utils.debug_utils.debug_log'), \
              patch('pandas.DataFrame', return_value=test_channels_df), \
              patch('streamlit.info'), \
              patch('streamlit.success'), \

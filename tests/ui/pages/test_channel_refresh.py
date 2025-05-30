@@ -193,7 +193,7 @@ class TestChannelRefresh:
              patch("streamlit.rerun"), \
              patch("streamlit.metric"), \
              patch("streamlit.columns", return_value=[MagicMock(), MagicMock(), MagicMock()]), \
-             patch("src.utils.helpers.debug_log") as mock_debug_log, \
+             patch("src.utils.debug_utils.debug_log") as mock_debug_log, \
              patch("src.ui.data_collection.render_delta_report") as mock_render_delta:
             # Test implementation would be here
             pass
@@ -247,7 +247,7 @@ class TestChannelRefresh:
              patch("streamlit.rerun"), \
              patch("streamlit.metric"), \
              patch("streamlit.columns", return_value=[MagicMock(), MagicMock(), MagicMock()]), \
-             patch("src.utils.helpers.debug_log"):
+             patch("src.utils.debug_utils.debug_log"):
             # Test implementation would be here
             pass
 
@@ -290,7 +290,7 @@ class TestChannelRefresh:
              patch("streamlit.rerun"), \
              patch("streamlit.metric"), \
              patch("streamlit.columns", return_value=[MagicMock(), MagicMock(), MagicMock()]), \
-             patch("src.utils.helpers.debug_log"):
+             patch("src.utils.debug_utils.debug_log"):
             # Test implementation would be here
             pass
 

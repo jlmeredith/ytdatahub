@@ -51,13 +51,18 @@ def render_data_analysis_tab():
         db = SQLiteDatabase(SQLITE_DB_PATH)
         channels = db.get_channels_list()
         
-        if not channels:
-            st.warning("No channels found in the database. Please collect data first.")
-            return
-        
         # Add sidebar navigation and controls for the Data Analysis section
         with st.sidebar:
             st.subheader("Analytics Navigation")
+            
+            # Show data status
+            if not channels:
+                st.warning("⚠️ No channels found in database")
+                st.info("💡 Go to 'Data Collection' tab to add channels first")
+                st.divider()
+            else:
+                st.success(f"✅ {len(channels)} channel(s) available")
+                st.divider()
             
             # Create section selector with buttons stacked vertically
             st.write("Select Analysis Section")
@@ -186,11 +191,53 @@ def render_data_analysis_tab():
         
         # The channel selector will always be visible at the top
         # Render channel selector component first to establish selected channel
-        with st.spinner("Retrieving channel list..."):
-            selected_channel, channel_data = render_channel_selector(channels, db)
-        
-        if not selected_channel or not channel_data:
-            st.warning("No channel data found in database. Please collect data first.")
+        if channels:
+            with st.spinner("Retrieving channel list..."):
+                selected_channel, channel_data = render_channel_selector(channels, db)
+            
+            if not selected_channel or not channel_data:
+                st.warning("No channel data found in database. Please collect data first.")
+                return
+        else:
+            # No channels available - show helpful message
+            st.warning("📊 No channels found in the database")
+            st.info("""
+            To get started with data analysis:
+            1. Go to the **Data Collection** tab
+            2. Add a YouTube channel by entering its URL or Channel ID
+            3. Collect some data (videos, comments, etc.)
+            4. Return here to analyze your data
+            """)
+            
+            # Show the analysis section selector cards even without data
+            st.subheader("Available Analysis Sections")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("""
+                ### 📊 Dashboard
+                Get a comprehensive overview of your channel's performance metrics and trends.
+                """)
+                st.button("View Dashboard", key="dashboard_card_btn", disabled=True)
+                    
+                st.markdown("""
+                ### 🎬 Videos
+                Explore your videos and analyze their individual performance.
+                """)
+                st.button("Explore Videos", key="videos_card_btn", disabled=True)
+            
+            with col2:
+                st.markdown("""
+                ### 📈 Data Coverage
+                Check the completeness of your data and update it as needed.
+                """)
+                st.button("Check Data Coverage", key="coverage_card_btn", disabled=True)
+                    
+                st.markdown("""
+                ### 💬 Comments
+                Analyze comments, sentiment, and audience engagement.
+                """)
+                st.button("Analyze Comments", key="comments_card_btn", disabled=True)
+            
             return
         
         # Handle the case when no analysis section is selected

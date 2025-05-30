@@ -10,6 +10,63 @@ import os
 from src.utils.debug_utils import debug_log
 from src.database.base_repository import BaseRepository
 
+def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
+    """
+    Handle missing API fields by returning appropriate default values for comments table.
+    This helps distinguish between fields that are truly missing from the API response
+    vs. fields that are not being mapped correctly.
+    
+    Args:
+        field_name: The database column name
+        column_type: The SQLite column type (TEXT, INTEGER, BOOLEAN, etc.)
+    
+    Returns:
+        Appropriate default value based on the field semantics
+    """
+    # Fields that should explicitly indicate "not provided by API"
+    api_provided_fields = {
+        'author_channel_url', 'author_channel_id', 'can_rate', 
+        'viewer_rating', 'moderation_status', 'parent_id',
+        'can_reply', 'total_reply_count', 'is_public'
+    }
+    
+    if field_name in api_provided_fields:
+        return "NOT_PROVIDED_BY_API"
+    elif column_type == 'INTEGER':
+        return None
+    elif column_type == 'BOOLEAN':
+        return False
+    else:
+        return None
+
+# Define a canonical mapping of database columns to API fields
+CANONICAL_FIELD_MAP = {
+    # Basic comment info - Comments use a consistent field naming approach
+    # without the duplicate field problem found in videos and playlists
+    'comment_id': 'id',
+    'video_id': 'video_id',  # This comes from the parameter
+    'text': 'snippet_textDisplay',
+    'author_display_name': 'snippet_authorDisplayName',
+    'author_profile_image_url': 'snippet_authorProfileImageUrl',
+    'author_channel_url': 'snippet_authorChannelUrl',
+    'author_channel_id': 'snippet_authorChannelId_value',
+    'like_count': 'snippet_likeCount',
+    'published_at': 'snippet_publishedAt',
+    'updated_at': 'snippet_updatedAt',
+    'parent_id': 'snippet_parentId',
+    'is_reply': 'is_reply',
+    'fetched_at': 'fetched_at',  # This comes from the parameter
+    
+    # Additional fields that might be missing from API
+    'can_rate': 'snippet_canRate',
+    'viewer_rating': 'snippet_viewerRating',
+    'moderation_status': 'snippet_moderationStatus',
+    'can_reply': 'snippet_canReply',
+    'total_reply_count': 'snippet_totalReplyCount',
+    'is_public': 'snippet_isPublic',
+    'etag': 'etag'
+}
+
 class CommentRepository(BaseRepository):
     """Repository for managing YouTube comment data in the SQLite database."""
     
@@ -69,67 +126,94 @@ class CommentRepository(BaseRepository):
         return self.store_comments([comment], video_db_id, fetched_at)
         
     def store_comments(self, comments, video_db_id=None, fetched_at=None):
-        """Save comments to SQLite database, mapping every API field (recursively) to a column, and insert full JSON into comments_history only."""
+        """Save comments to SQLite database with proper field mapping and handling of missing API data."""
         abs_db_path = os.path.abspath(self.db_path)
         debug_log(f"[DB] Using database at: {abs_db_path}")
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        expected_fields = {
-            'comment_id': '',
-            'comment_text': '',
-            'comment_author': '',
-            'comment_published_at': '',
-            'like_count': '0',
-            'parent_id': '',
-            'is_reply': False,
-            'author_profile_image_url': '',
-            'author_channel_id': '',
-            'video_id': video_db_id if video_db_id else '',
-            'fetched_at': fetched_at or datetime.utcnow().isoformat(),
-        }
-        for comment in comments:
-            api = comment.get('comment_info', comment)
-            # Standardize comment fields
-            for field, default in expected_fields.items():
-                if field not in api or api[field] is None:
-                    api[field] = default
-                    debug_log(f"store_comments: Field '{field}' missing in comment {api.get('comment_id', '')}, defaulting to {repr(default)}")
-            flat_api = self.flatten_dict(api)
-            cursor.execute("PRAGMA table_info(comments)")
-            existing_cols = set(row[1] for row in cursor.fetchall())
-            columns = []
-            values = []
-            flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
-            for col in existing_cols:
-                if col == 'id' or col == 'created_at' or col == 'updated_at':
-                    continue
-                if col in flat_api_underscore:
-                    columns.append(col)
-                    values.append(flat_api_underscore[col])
-            if video_db_id and 'video_id' in existing_cols:
-                columns.append('video_id')
-                values.append(video_db_id)
-            debug_log(f"[DB INSERT] Final comment insert columns: {columns}")
-            debug_log(f"[DB INSERT] Final comment insert values: {values}")
-            if not columns:
-                debug_log("[DB WARNING] No columns to insert for comment.")
-                continue
-            placeholders = ','.join(['?'] * len(columns))
-            update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
-            cursor.execute(f'''
-                INSERT INTO comments ({','.join(columns)})
-                VALUES ({placeholders})
-                ON CONFLICT(comment_id) DO UPDATE SET {update_clause}, updated_at=CURRENT_TIMESTAMP
-            ''', values)
-            debug_log(f"Inserted/updated comment: {flat_api.get('comment_id') or flat_api.get('id')}")
-            # --- Insert full JSON into comments_history only ---
-            fetched_at_val = fetched_at or datetime.utcnow().isoformat()
-            raw_comment_info = json.dumps(api)
-            cursor.execute('''
-                INSERT INTO comments_history (comment_id, fetched_at, raw_comment_info) VALUES (?, ?, ?)
-            ''', (flat_api.get('comment_id') or flat_api.get('id'), fetched_at_val, raw_comment_info))
-        conn.commit()
-        conn.close()
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get column information for the comments table
+                cursor.execute("PRAGMA table_info(comments)")
+                table_info = cursor.fetchall()
+                existing_cols = set(row[1] for row in table_info)
+                column_types = {row[1]: row[2] for row in table_info}
+                
+                for comment in comments:
+                    # Get the raw API data
+                    raw_api = comment.get('comment_info', comment)
+                    
+                    # Flatten the API response using dot notation
+                    flat_api = self.flatten_dict(raw_api)
+                    
+                    # Convert dot notation to underscore for direct mapping
+                    flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
+                    
+                    db_row = {}
+                    
+                    # Map each database column to the correct flattened API field
+                    for col in existing_cols:
+                        if col == 'id':
+                            continue
+                        
+                        # Get the corresponding flattened API field from canonical mapping
+                        api_field = CANONICAL_FIELD_MAP.get(col)
+                        value = None
+                        
+                        if api_field and api_field in flat_api_underscore:
+                            # Found the field in API response
+                            value = flat_api_underscore[api_field]
+                            debug_log(f"[DB MAPPING] {col} -> {api_field} = {str(value)[:100]}")
+                        elif col == 'video_id' and video_db_id:
+                            # Special handling for video_id which comes from parameter
+                            value = video_db_id
+                        elif col == 'fetched_at':
+                            # Special handling for fetched_at timestamp
+                            value = fetched_at or datetime.utcnow().isoformat()
+                        else:
+                            # Field not found in API response
+                            value = handle_missing_api_field(col, column_types.get(col, 'TEXT'))
+                            if value == "NOT_PROVIDED_BY_API":
+                                debug_log(f"[DB MISSING] {col} not provided by API")
+                            else:
+                                debug_log(f"[DB DEFAULT] {col} using default: {value}")
+                        
+                        db_row[col] = value
+                    
+                    # Prepare for database insertion
+                    columns = [col for col in existing_cols if col != 'id']
+                    values = [db_row.get(col) for col in columns]
+                    
+                    debug_log(f"[DB INSERT] Comment {comment.get('comment_id') or comment.get('id')} with {len(columns)} fields")
+                    
+                    # Insert or update
+                    placeholders = ','.join(['?'] * len(columns))
+                    update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
+                    
+                    cursor.execute(f'''
+                        INSERT INTO comments ({','.join(columns)})
+                        VALUES ({placeholders})
+                        ON CONFLICT(comment_id) DO UPDATE SET {update_clause}
+                    ''', values)
+                    
+                    # Store in history table
+                    comment_id = comment.get('comment_id') or comment.get('id')
+                    raw_comment_info = json.dumps(raw_api)
+                    cursor.execute('''
+                        INSERT INTO comments_history (comment_id, fetched_at, raw_comment_info) 
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(comment_id, fetched_at) DO UPDATE SET raw_comment_info=excluded.raw_comment_info
+                    ''', (comment_id, fetched_at or datetime.utcnow().isoformat(), raw_comment_info))
+                    
+                    debug_log(f"[DB SUCCESS] Stored comment: {comment_id}")
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            debug_log(f"[DB ERROR] Failed to store comments: {str(e)}", e)
+            return False
         return True
     
     def get_video_comments(self, video_db_id: int) -> List[Dict[str, Any]]:

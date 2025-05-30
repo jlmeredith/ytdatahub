@@ -14,7 +14,7 @@ from src.api.youtube.comment import CommentClient
 @pytest.fixture(autouse=True)
 def mock_debug_log():
     """Mock the debug_log function to prevent session_state errors"""
-    with patch('src.utils.helpers.debug_log') as mock:
+    with patch('src.utils.debug_utils.debug_log') as mock:
         yield mock
 
 

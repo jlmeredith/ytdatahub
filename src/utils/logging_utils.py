@@ -21,12 +21,66 @@ except ImportError:
     PANDAS_AVAILABLE = False
 from src.utils.log_level_helper import get_log_level_int
 
-# Configure logging with detailed format and set to DEBUG level to show all logs
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s',
-    datefmt='%H:%M:%S'
-)
+# ANSI Color codes for terminal output
+COLORS = {
+    'RESET': '\033[0m',
+    'BOLD': '\033[1m',
+    'BLACK': '\033[30m',
+    'RED': '\033[31m',
+    'GREEN': '\033[32m',
+    'YELLOW': '\033[33m',
+    'BLUE': '\033[34m',
+    'MAGENTA': '\033[35m',
+    'CYAN': '\033[36m',
+    'WHITE': '\033[37m',
+    'GRAY': '\033[90m',
+    'BRIGHT_RED': '\033[91m',
+    'BRIGHT_GREEN': '\033[92m',
+    'BRIGHT_YELLOW': '\033[93m',
+    'BRIGHT_BLUE': '\033[94m',
+    'BRIGHT_MAGENTA': '\033[95m',
+    'BRIGHT_CYAN': '\033[96m',
+    'BRIGHT_WHITE': '\033[97m',
+    'BG_BLACK': '\033[40m',
+    'BG_RED': '\033[41m',
+    'BG_GREEN': '\033[42m',
+    'BG_YELLOW': '\033[43m',
+    'BG_BLUE': '\033[44m',
+    'BG_MAGENTA': '\033[45m',
+    'BG_CYAN': '\033[46m',
+    'BG_WHITE': '\033[47m',
+}
+
+class ColoredFormatter(logging.Formatter):
+    """
+    Custom formatter to add colors to log messages based on level
+    """
+    FORMATS = {
+        logging.DEBUG: COLORS['GRAY'] + '%(asctime)s ' + COLORS['BRIGHT_CYAN'] + '[%(levelname)s]' + COLORS['RESET'] + COLORS['GRAY'] + ' [%(filename)s:%(lineno)d]' + COLORS['RESET'] + ' %(message)s',
+        logging.INFO: COLORS['GRAY'] + '%(asctime)s ' + COLORS['BRIGHT_GREEN'] + '[%(levelname)s]' + COLORS['RESET'] + COLORS['GRAY'] + ' [%(filename)s:%(lineno)d]' + COLORS['RESET'] + ' %(message)s',
+        logging.WARNING: COLORS['GRAY'] + '%(asctime)s ' + COLORS['BRIGHT_YELLOW'] + '[%(levelname)s]' + COLORS['RESET'] + COLORS['GRAY'] + ' [%(filename)s:%(lineno)d]' + COLORS['RESET'] + ' %(message)s',
+        logging.ERROR: COLORS['GRAY'] + '%(asctime)s ' + COLORS['BRIGHT_RED'] + '[%(levelname)s]' + COLORS['RESET'] + COLORS['GRAY'] + ' [%(filename)s:%(lineno)d]' + COLORS['RESET'] + ' %(message)s',
+        logging.CRITICAL: COLORS['GRAY'] + '%(asctime)s ' + COLORS['BOLD'] + COLORS['BG_RED'] + '[%(levelname)s]' + COLORS['RESET'] + COLORS['GRAY'] + ' [%(filename)s:%(lineno)d]' + COLORS['RESET'] + ' %(message)s',
+    }
+    
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt, datefmt='%H:%M:%S')
+        return formatter.format(record)
+
+# Create colored formatter for console
+colored_formatter = ColoredFormatter()
+
+# Configure logging with colored format and set to DEBUG level to show all logs
+handler = logging.StreamHandler()
+handler.setFormatter(colored_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+# Remove any existing handlers
+for hdlr in root_logger.handlers[:]:
+    root_logger.removeHandler(hdlr)
+root_logger.addHandler(handler)
 
 def initialize_performance_tracking():
     """Initialize performance tracking variables in session state."""
@@ -77,7 +131,7 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             
             # Only log if debug mode is on
             if debug_mode and log_level_int <= logging.DEBUG:
-                logging.debug(f"⏱️ START TIMER [{tag}]: {message}")
+                logging.debug(f"{COLORS['BRIGHT_CYAN']}⏱️ START TIMER [{tag}]{COLORS['RESET']}: {message}")
             return
         elif performance_tag and performance_tag.startswith('end_'):
             tag = performance_tag[4:]  # Remove 'end_' prefix
@@ -104,11 +158,11 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
                     
                     # Log with appropriate severity based on elapsed time
                     if elapsed >= 3.0:  # Critical
-                        logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - CRITICAL PERFORMANCE ISSUE")
+                        logging.warning(f"{COLORS['BOLD']}{COLORS['BRIGHT_RED']}⏱️ END TIMER [{tag}]{COLORS['RESET']}: {message} {COLORS['BRIGHT_RED']}(took {elapsed:.2f}s) - CRITICAL PERFORMANCE ISSUE{COLORS['RESET']}")
                     elif elapsed >= 1.0:  # Warning
-                        logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - PERFORMANCE WARNING")
+                        logging.warning(f"{COLORS['BRIGHT_YELLOW']}⏱️ END TIMER [{tag}]{COLORS['RESET']}: {message} {COLORS['BRIGHT_YELLOW']}(took {elapsed:.2f}s) - PERFORMANCE WARNING{COLORS['RESET']}")
                     elif debug_mode and get_log_level_int(log_level) <= logging.DEBUG:  # Normal
-                        logging.debug(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s)")
+                        logging.debug(f"{COLORS['BRIGHT_GREEN']}⏱️ END TIMER [{tag}]{COLORS['RESET']}: {message} {COLORS['GRAY']}(took {elapsed:.2f}s){COLORS['RESET']}")
             
             return
         
@@ -148,7 +202,7 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
         
         # Only log if debug mode is on
         if debug_mode and log_level <= logging.DEBUG:
-            logging.debug(f"⏱️ START TIMER [{tag}]: {message}")
+            logging.debug(f"{COLORS['BRIGHT_CYAN']}⏱️ START TIMER [{tag}]{COLORS['RESET']}: {message}")
         return
         
     elif performance_tag and performance_tag.startswith('end_'):
@@ -167,16 +221,22 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             # Set indicator based on elapsed time
             if elapsed >= critical_threshold:
                 indicator = "🔴"  # Red circle for critical
-                logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - CRITICAL PERFORMANCE ISSUE")
+                severity_bar = "█████"  # Full bar for critical
+                severity_color = COLORS['BRIGHT_RED']
+                logging.warning(f"{severity_color}{indicator} END TIMER [{tag}]{COLORS['RESET']}: {message} {severity_color}(took {elapsed:.2f}s){COLORS['RESET']} {severity_color}{severity_bar} CRITICAL PERFORMANCE ISSUE{COLORS['RESET']}")
             elif elapsed >= warning_threshold:
                 indicator = "🟠"  # Orange circle for warning
-                logging.warning(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s) - PERFORMANCE WARNING")
+                severity_bar = "███▒▒"  # Partial bar for warning
+                severity_color = COLORS['BRIGHT_YELLOW']
+                logging.warning(f"{severity_color}{indicator} END TIMER [{tag}]{COLORS['RESET']}: {message} {severity_color}(took {elapsed:.2f}s){COLORS['RESET']} {severity_color}{severity_bar} PERFORMANCE WARNING{COLORS['RESET']}")
             else:
                 indicator = "🟢"  # Green circle for good
+                severity_bar = "█▒▒▒▒"  # Low bar for good
+                severity_color = COLORS['BRIGHT_GREEN']
                 # Only log in debug mode and if log level allows it
                 log_level_int = get_log_level_int(st.session_state.log_level)
                 if st.session_state.debug_mode and log_level_int <= logging.DEBUG:
-                    logging.debug(f"⏱️ END TIMER [{tag}]: {message} (took {elapsed:.2f}s)")
+                    logging.debug(f"{severity_color}{indicator} END TIMER [{tag}]{COLORS['RESET']}: {message} {COLORS['GRAY']}(took {elapsed:.2f}s){COLORS['RESET']} {severity_color}{severity_bar}{COLORS['RESET']}")
             
             # Add UI blocking analysis
             ui_impact = ""
@@ -220,7 +280,17 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
             # Format data for display
             if isinstance(data, dict) or isinstance(data, list):
                 try:
-                    data_str = json.dumps(data, indent=2)
+                    # Use a more readable format for JSON data with indentation and color
+                    data_str = json.dumps(data, indent=2, sort_keys=True)
+                    
+                    # Add ANSI colors for values based on type (works in terminals with color support)
+                    if 'pytest' not in sys.modules:  # Only in non-test mode
+                        # Add colors for strings, numbers, and booleans
+                        data_str = re.sub(r'(".*?"):', f'{COLORS["CYAN"]}\\1{COLORS["RESET"]}:', data_str)  # Keys
+                        data_str = re.sub(r': (".*?")(,?)$', f': {COLORS["GREEN"]}\\1{COLORS["RESET"]}\\2', data_str, flags=re.MULTILINE)  # String values
+                        data_str = re.sub(r': (true|false)(,?)$', f': {COLORS["YELLOW"]}\\1{COLORS["RESET"]}\\2', data_str, flags=re.MULTILINE)  # Booleans
+                        data_str = re.sub(r': ([-+]?\d*\.?\d+)(,?)$', f': {COLORS["MAGENTA"]}\\1{COLORS["RESET"]}\\2', data_str, flags=re.MULTILINE)  # Numbers
+                        data_str = re.sub(r': (null)(,?)$', f': {COLORS["RED"]}\\1{COLORS["RESET"]}\\2', data_str, flags=re.MULTILINE)  # Null
                 except:
                     data_str = str(data)
             else:
