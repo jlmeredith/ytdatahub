@@ -11,7 +11,7 @@ from datetime import datetime
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
 from src.api.youtube_api import YouTubeAPI
-from src.utils.debug_utils import debug_log
+from src.utils.debug_utils import debug_log, ensure_debug_panel_state
 
 # Import functions from the bulk_import package
 from src.ui.bulk_import.logger import update_debug_log
@@ -41,6 +41,8 @@ def render_bulk_import_tab():
             'in_progress': True
         }
     
+    ensure_debug_panel_state()
+    
     st.header("Bulk Import")
     
     st.write("""
@@ -56,7 +58,17 @@ def render_bulk_import_tab():
         # Read CSV data
         try:
             df = pd.read_csv(uploaded_file)
-            
+
+            # --- Google Takeout CSV mapping ---
+            takeout_cols = {'Channel Id', 'Channel Url', 'Channel Title'}
+            if takeout_cols.issubset(set(df.columns)):
+                df = df.rename(columns={
+                    'Channel Id': 'channel_id',
+                    'Channel Url': 'channel_url',
+                    'Channel Title': 'channel_title',
+                })
+                st.info("Google Takeout CSV detected. Columns mapped for import.")
+
             # Extract channel IDs
             if 'channel_id' in df.columns:
                 channel_ids = df['channel_id'].tolist()
@@ -140,3 +152,17 @@ UCsBjURrPoezykLs9EqgamOA
                 file_name="channel_ids_template.csv",
                 mime="text/csv"
             )
+    
+    st.divider()
+    show_debug_panel = st.checkbox(
+        "Show Debug Panel", 
+        value=st.session_state.get('show_debug_panel', False),
+        key="show_debug_panel_checkbox_bulk_import",
+        help="Enable to display the debug panel for troubleshooting."
+    )
+    if show_debug_panel != st.session_state.get('show_debug_panel', False):
+        st.session_state.show_debug_panel = show_debug_panel
+        st.rerun()
+    if st.session_state.get('show_debug_panel', False):
+        from src.ui.data_collection.debug_ui import render_debug_panel
+        render_debug_panel()

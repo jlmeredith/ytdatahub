@@ -75,7 +75,13 @@ def render_channel_selector(channels, db):
         
         # Handle selection actions
         selected_channel_data = apply_selection_action(selected_channels, db)
-    
-    debug_log("Finished channel selector rendering", performance_tag="end_channel_selector")
-    
+
+        # Only end the timer if performance tracking is enabled and the timer was started
+        perf_enabled = st.session_state.get('show_performance_metrics', False) or st.session_state.get('debug_mode', False)
+        timers = st.session_state.get('performance_timers', {})
+        if perf_enabled and 'channel_selector' in timers:
+            debug_log("Finished channel selector rendering", performance_tag="end_channel_selector")
+        else:
+            debug_log("Finished channel selector rendering (timer not started or perf tracking off)")
+
     return selected_channels, selected_channel_data

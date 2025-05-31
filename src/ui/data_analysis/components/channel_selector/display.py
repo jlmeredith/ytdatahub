@@ -40,7 +40,9 @@ def render_channel_table(channels_df):
     if 'Avg Views' in display_df.columns:
         display_df['Avg Views'] = display_df['Avg Views'].apply(format_number)
     if 'Engagement' in display_df.columns:
-        display_df['Engagement'] = display_df['Engagement'].apply(lambda x: f"{x:.2f}%")
+        display_df['Engagement'] = display_df['Engagement'].apply(
+            lambda x: f"{float(x):.2f}%" if pd.notnull(x) and (isinstance(x, (int, float)) or (isinstance(x, str) and x.replace('.', '', 1).isdigit())) else str(x)
+        )
     
     # Create a column set used for display only
     display_columns = core_columns + [col for col in additional_columns if col in display_df.columns]
@@ -57,36 +59,26 @@ def render_channel_table(channels_df):
         "Avg Views": st.column_config.TextColumn("Avg Views", width="small")
     }
     
-    # Create the selectable table
-    selected_rows = st.data_editor(
+    # Display the table (read-only, no selection)
+    st.data_editor(
         display_df[display_columns],
         column_config=col_config,
         hide_index=True,
         use_container_width=True,
-        key="channel_selector_table",
-        selection_mode="multi-row",
-        on_selection_change=handle_selection_change,
+        key="channel_selector_table"
     )
-    
-    # Process selection
-    if selected_rows:
-        selected_indices = selected_rows['rows']
-        selected_channels = []
-        for idx in selected_indices:
-            if 0 <= idx < len(channels_df):
-                channel_name = channels_df.iloc[idx]['Channel']
-                selected_channels.append(channel_name)
-        
-        st.session_state.selected_channels = selected_channels
-    else:
-        selected_channels = st.session_state.selected_channels if 'selected_channels' in st.session_state else []
-    
-    # Display the channel selection status
-    if selected_channels:
-        st.success(f"Selected {len(selected_channels)} channels: {', '.join(selected_channels)}")
-    else:
-        st.info("No channels selected. Please select one or more channels to analyze.")
-    
+
+    # Use a multiselect widget for channel selection (compatible with all Streamlit versions)
+    channel_options = display_df['Channel'].tolist()
+    default_selected = st.session_state.get('selected_channels', [])
+    selected_channels = st.multiselect(
+        "Select channels to analyze:",
+        options=channel_options,
+        default=default_selected,
+        key="channel_selector_multiselect"
+    )
+    st.session_state.selected_channels = selected_channels
+
     return selected_channels
 
 def render_metadata_card(channel_data):

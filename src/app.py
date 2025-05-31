@@ -11,6 +11,7 @@ import streamlit as st
 from src.config import init_session_state, Settings
 from src.database.sqlite import SQLiteDatabase
 from src.storage.factory import StorageFactory
+from src.utils.debug_utils import initialize_performance_and_debug_state
 
 class YTDataHubApp:
     """
@@ -43,6 +44,9 @@ class YTDataHubApp:
     
     def _init_app_state(self):
         """Initialize application state variables."""
+        # Ensure debug and performance metrics are disabled by default and safe
+        initialize_performance_and_debug_state()
+        
         if 'api_cache' not in st.session_state:
             st.session_state.api_cache = {}
             

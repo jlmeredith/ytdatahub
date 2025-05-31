@@ -4,7 +4,7 @@ Renders the data collection tab and orchestrates the UI components.
 """
 import streamlit as st
 import os
-from src.utils.debug_utils import debug_log
+from src.utils.debug_utils import debug_log, ensure_debug_panel_state
 from src.services.youtube_service import YouTubeService
 from src.database.sqlite import SQLiteDatabase
 from src.config import SQLITE_DB_PATH
@@ -23,7 +23,34 @@ def render_data_collection_tab():
     """
     Render the Data Collection tab UI.
     """
-    st.header("YouTube Data Collection")
+    st.header("📥 Data Collection")
+    st.markdown("*Collect YouTube data to power your analytics insights*")
+
+    # Check if analytics data exists
+    from src.config import Settings
+    from src.storage.factory import StorageFactory
+    settings = Settings()
+    sqlite_db = StorageFactory.get_storage_provider("SQLite Database", settings)
+    existing_channels = sqlite_db.get_channels_list()
+    
+    if existing_channels:
+        st.info(f"📊 **Good news!** You already have data from {len(existing_channels)} channel{'s' if len(existing_channels) != 1 else ''}. You can collect more data or update existing channels below.")
+    else:
+        st.markdown("### 🚀 Start Your Analytics Journey")
+        st.markdown("Collect your first YouTube channel data to unlock powerful analytics features.")
+    
+    # Emphasize analytics purpose
+    with st.expander("💡 Why Collect Data?", expanded=not existing_channels):
+        st.markdown("""
+        **Data collection enables powerful analytics:**
+        
+        📈 **Performance Tracking**: Monitor views, likes, and engagement trends over time  
+        📹 **Content Analysis**: Identify your best-performing videos and content patterns  
+        💬 **Audience Insights**: Understand what your viewers are saying in comments  
+        📊 **Growth Analytics**: Track channel growth and subscriber engagement
+        
+        *The more data you collect, the richer your analytics insights become.*
+        """)
 
     # Add custom CSS to improve tab visibility and styling
     st.markdown("""
@@ -89,6 +116,9 @@ def render_data_collection_tab():
         # Store service initialization status for debug purposes
         st.session_state.api_initialized = True
         
+        # Ensure debug panel state
+        ensure_debug_panel_state()
+        
         # MAIN UI RENDERING BASED ON VIEW STATE
         
         # Check if we're in comparison view mode
@@ -103,29 +133,6 @@ def render_data_collection_tab():
                 if 'refresh_workflow_step' in st.session_state:
                     st.session_state.refresh_workflow_step = 1
                 st.rerun()
-                
-            # Add debug mode toggle at the bottom for comparison view
-            st.divider()
-            from .debug_ui import generate_unique_key
-            debug_toggle_key = generate_unique_key("debug_mode_toggle_comparison")
-            
-            # Add debug mode toggle
-            debug_enabled = st.checkbox(
-                "Debug Mode", 
-                value=st.session_state.get('debug_mode', False),
-                key=debug_toggle_key
-            )
-            
-            # Update debug_mode in session state
-            if debug_enabled != st.session_state.get('debug_mode', False):
-                st.session_state.debug_mode = debug_enabled
-                toggle_debug_mode()
-                st.rerun()
-            
-            # Show debug panel when debug mode is enabled
-            if st.session_state.get('debug_mode', False):
-                from .debug_ui import render_debug_panel
-                render_debug_panel()
         else:
             # Normal view with tabs
             tabs = st.tabs(["New Collection", "Update Channel"])  # Removed 'Queue Status'
@@ -193,29 +200,6 @@ def render_data_collection_tab():
                         
                         Tip: Start with a small number of videos and comments to save quota.
                         """)
-                    
-                    # Add debug toggle at bottom of the new collection form
-                    st.divider()
-                    from .debug_ui import generate_unique_key
-                    debug_toggle_key = generate_unique_key("debug_mode_toggle_new_channel")
-                    
-                    # Add debug mode toggle
-                    debug_enabled = st.checkbox(
-                        "Debug Mode", 
-                        value=st.session_state.get('debug_mode', False),
-                        key=debug_toggle_key
-                    )
-                    
-                    # Update debug_mode in session state
-                    if debug_enabled != st.session_state.get('debug_mode', False):
-                        st.session_state.debug_mode = debug_enabled
-                        toggle_debug_mode()
-                        st.rerun()
-                    
-                    # Show debug panel when debug mode is enabled
-                    if st.session_state.get('debug_mode', False):
-                        from .debug_ui import render_debug_panel
-                        render_debug_panel()
             
             # Tab 2: Update Channel (Refresh)
             with tabs[1]:
@@ -236,5 +220,20 @@ def render_data_collection_tab():
                 channel_id = st.session_state.get('existing_channel_id', None)
                 workflow.initialize_workflow(channel_id)
                 workflow.render_current_step()
+        
+        # Debug panel toggle and rendering
+        st.divider()
+        show_debug_panel = st.checkbox(
+            "Show Debug Panel", 
+            value=st.session_state.get('show_debug_panel', False),
+            key="show_debug_panel_checkbox_collection",
+            help="Enable to display the debug panel for troubleshooting."
+        )
+        if show_debug_panel != st.session_state.get('show_debug_panel', False):
+            st.session_state.show_debug_panel = show_debug_panel
+            st.rerun()
+        if st.session_state.get('show_debug_panel', False):
+            from .debug_ui import render_debug_panel
+            render_debug_panel()
     else:
         st.error("Please enter a YouTube API Key")

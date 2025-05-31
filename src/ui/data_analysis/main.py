@@ -12,12 +12,15 @@ from src.ui.data_analysis.components import (
     render_data_coverage_dashboard
 )
 from src.ui.data_analysis.utils.session_state import initialize_chart_toggles, initialize_analysis_section
-from src.utils.debug_utils import debug_log
+from src.utils.debug_utils import debug_log, ensure_debug_panel_state
 from src.utils.logging_utils import log_error
 
 def render_data_analysis_tab():
     """Render the data analysis tab."""
     st.header("YouTube Channel Analytics")
+    
+    # Ensure the debug panel state is synchronized
+    ensure_debug_panel_state()
     
     # Initialize session state for chart display toggles and active section
     initialize_chart_toggles()
@@ -323,3 +326,17 @@ def render_data_analysis_tab():
         
         # Show error in the UI
         st.error(f"Error analyzing YouTube data: {str(e)}")
+    
+    st.divider()
+    show_debug_panel = st.checkbox(
+        "Show Debug Panel", 
+        value=st.session_state.get('show_debug_panel', False),
+        key="show_debug_panel_checkbox_analysis",
+        help="Enable to display the debug panel for troubleshooting."
+    )
+    if show_debug_panel != st.session_state.get('show_debug_panel', False):
+        st.session_state.show_debug_panel = show_debug_panel
+        st.rerun()
+    if st.session_state.get('show_debug_panel', False):
+        from src.ui.data_collection.debug_ui import render_debug_panel
+        render_debug_panel()

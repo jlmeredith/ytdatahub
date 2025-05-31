@@ -188,15 +188,16 @@ def debug_log(message: str, data: Any = None, performance_tag: str = None):
         # We're running in a normal environment - use session_state for debug mode and log level
         debug_mode = st.session_state.get('debug_mode', False)
         log_level = st.session_state.get('log_level', logging.WARNING)
-        
-        # Handle performance tagging with a separate function
-        if performance_tag and performance_tag.startswith('start_'):
-            tag = performance_tag[6:]  # Remove 'start_' prefix
-            start_timer(tag, message)
-            return
-        elif performance_tag and performance_tag.startswith('end_'):
-            tag = performance_tag[4:]  # Remove 'end_' prefix
-            end_timer(tag, message)
+        perf_enabled = st.session_state.get('show_performance_metrics', False) or debug_mode
+        # Only run performance tracking if enabled
+        if performance_tag and (performance_tag.startswith('start_') or performance_tag.startswith('end_')):
+            if perf_enabled:
+                if performance_tag.startswith('start_'):
+                    tag = performance_tag[6:]
+                    start_timer(tag, message)
+                elif performance_tag.startswith('end_'):
+                    tag = performance_tag[4:]
+                    end_timer(tag, message)
             return
     
     # Regular debug logging (no performance tagging)
@@ -335,3 +336,35 @@ def get_ui_freeze_report():
     
     # Sort by duration (longest first)
     return sorted(freezes, key=lambda x: x['duration'], reverse=True)
+
+def initialize_performance_and_debug_state():
+    """
+    Ensure performance metrics and debug options are disabled by default and safe.
+    Call this at the top of your main app and utility entrypoints.
+    """
+    import logging
+    if 'debug_mode' not in st.session_state:
+        st.session_state.debug_mode = False
+    if 'log_level' not in st.session_state:
+        st.session_state.log_level = logging.WARNING
+    if 'performance_metrics' not in st.session_state:
+        st.session_state.performance_metrics = {}
+    if 'performance_timers' not in st.session_state:
+        st.session_state.performance_timers = {}
+    if 'ui_freeze_thresholds' not in st.session_state:
+        st.session_state.ui_freeze_thresholds = {
+            'warning': 1.0,
+            'critical': 3.0,
+            'ui_blocking': 0.5
+        }
+    if 'show_performance_metrics' not in st.session_state:
+        st.session_state.show_performance_metrics = False
+    if 'show_debug_options' not in st.session_state:
+        st.session_state.show_debug_options = False
+
+def ensure_debug_panel_state():
+    """
+    Ensure the debug panel toggle is initialized in session state.
+    """
+    if 'show_debug_panel' not in st.session_state:
+        st.session_state.show_debug_panel = False

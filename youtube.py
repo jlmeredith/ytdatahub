@@ -67,9 +67,18 @@ def process_url_params():
     # Set active tab from URL if present
     if 'tab' in params:
         tab = params['tab']
-        valid_tabs = ["Data Collection", "Data Analysis", "Utilities"]
+        valid_tabs = ["📈 Analytics Dashboard", "📥 Data Collection", "📋 Bulk Import", "⚙️ Utilities"]
         # URL-decode the tab name
         tab = urllib.parse.unquote(tab)
+        # Also handle legacy tab names for backward compatibility
+        legacy_tab_mapping = {
+            "Data Analysis": "📈 Analytics Dashboard",
+            "Data Collection": "📥 Data Collection", 
+            "Bulk Import": "📋 Bulk Import",
+            "Utilities": "⚙️ Utilities"
+        }
+        if tab in legacy_tab_mapping:
+            tab = legacy_tab_mapping[tab]
         if tab in valid_tabs:
             st.session_state.active_tab = tab
             
@@ -121,16 +130,36 @@ def main():
         
         # Application header
         st.title("📊 YTDataHub")
-        st.markdown("*YouTube Data Collection, Storage, and Analysis*")
+        st.markdown("*YouTube Analytics and Insights Platform*")
         
-        # Main navigation tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["Data Collection", "Data Analysis", "Bulk Import", "Utilities"])
+        # Check if we have existing channels to guide the user experience
+        sqlite_db = StorageFactory.get_storage_provider("SQLite Database", settings)
+        existing_channels = sqlite_db.get_channels_list()
+        
+        # Display welcome message based on data availability
+        if not existing_channels:
+            st.info("👋 **Welcome to YTDataHub!** Start by collecting some YouTube channel data to unlock powerful analytics insights.")
+        else:
+            st.success(f"🎯 **Ready for Analysis!** You have data from {len(existing_channels)} channel{'s' if len(existing_channels) != 1 else ''} ready to explore.")
+        
+        # Main navigation tabs - Analytics first to emphasize the primary purpose
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Analytics Dashboard", "📥 Data Collection", "📋 Bulk Import", "⚙️ Utilities"])
         
         with tab1:
-            render_data_collection_tab()
+            if not existing_channels:
+                st.warning("🔍 **No data available for analysis yet.** Switch to the 'Data Collection' tab to start gathering YouTube data.")
+                st.markdown("### What you can do with YTDataHub Analytics:")
+                st.markdown("""
+                - 📊 **Performance Dashboard**: Track views, likes, comments, and engagement over time
+                - 📹 **Video Explorer**: Browse and analyze your video collection with advanced filtering
+                - 💬 **Comment Analysis**: Understand audience sentiment and engagement patterns  
+                - 📈 **Data Coverage**: Visualize the completeness of your data collection
+                """)
+            else:
+                render_data_analysis_tab()
             
         with tab2:
-            render_data_analysis_tab()
+            render_data_collection_tab()
             
         with tab3:
             render_bulk_import_tab()

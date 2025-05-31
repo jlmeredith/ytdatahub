@@ -62,7 +62,7 @@ def fix_session_state_for_tests():
         
         # Initialize with common default values
         session_state = SessionStateDict()
-        session_state['debug_mode'] = True
+        session_state['debug_mode'] = False
         session_state['log_level'] = logging.DEBUG
         
         st.session_state = session_state
