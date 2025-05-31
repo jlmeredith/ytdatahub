@@ -264,7 +264,9 @@ class CommentClient(YouTubeBaseClient):
                                     'comment_text': comment['textDisplay'],
                                     'comment_author': comment['authorDisplayName'],
                                     'comment_published_at': comment['publishedAt'],
-                                    'like_count': comment.get('likeCount', 0)
+                                    'like_count': comment.get('likeCount', 0),
+                                    'author_profile_image_url': comment.get('authorProfileImageUrl', ''),
+                                    'updated_at': comment.get('updatedAt', comment.get('publishedAt', ''))
                                 }
                                 if max_comments_per_video > 0 and total_comments_fetched + 1 > max_comments_per_video:
                                     debug_log(f"[COMMENT CAP] Would exceed max_comments_per_video with top-level comment, skipping.")
@@ -285,7 +287,9 @@ class CommentClient(YouTubeBaseClient):
                                         'comment_author': reply_snippet['authorDisplayName'],
                                         'comment_published_at': reply_snippet['publishedAt'],
                                         'like_count': reply_snippet.get('likeCount', 0),
-                                        'parent_id': item['id']
+                                        'parent_id': item['id'],
+                                        'author_profile_image_url': reply_snippet.get('authorProfileImageUrl', ''),
+                                        'updated_at': reply_snippet.get('updatedAt', reply_snippet.get('publishedAt', ''))
                                     }
                                     video['comments'].append(reply_data)
                                     total_comments_fetched += 1

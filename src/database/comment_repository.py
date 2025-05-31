@@ -40,31 +40,22 @@ def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
         return None
 
 # Define a canonical mapping of database columns to API fields
+# The comment API client creates a simple flattened structure with direct field names
+# Only include columns that actually exist in the comments table
 CANONICAL_FIELD_MAP = {
-    # Basic comment info - Comments use a consistent field naming approach
-    # without the duplicate field problem found in videos and playlists
-    'comment_id': 'id',
+    # Basic comment info - Maps to the structure created by CommentClient
+    'comment_id': 'comment_id',
     'video_id': 'video_id',  # This comes from the parameter
-    'text': 'snippet_textDisplay',
-    'author_display_name': 'snippet_authorDisplayName',
-    'author_profile_image_url': 'snippet_authorProfileImageUrl',
-    'author_channel_url': 'snippet_authorChannelUrl',
-    'author_channel_id': 'snippet_authorChannelId_value',
-    'like_count': 'snippet_likeCount',
-    'published_at': 'snippet_publishedAt',
-    'updated_at': 'snippet_updatedAt',
-    'parent_id': 'snippet_parentId',
+    'text': 'comment_text',
+    'author_display_name': 'comment_author',
+    'author_profile_image_url': 'author_profile_image_url',
+    'author_channel_id': 'author_channel_id',
+    'like_count': 'like_count',
+    'published_at': 'comment_published_at',
+    'updated_at': 'updated_at',
+    'parent_id': 'parent_id',
     'is_reply': 'is_reply',
     'fetched_at': 'fetched_at',  # This comes from the parameter
-    
-    # Additional fields that might be missing from API
-    'can_rate': 'snippet_canRate',
-    'viewer_rating': 'snippet_viewerRating',
-    'moderation_status': 'snippet_moderationStatus',
-    'can_reply': 'snippet_canReply',
-    'total_reply_count': 'snippet_totalReplyCount',
-    'is_public': 'snippet_isPublic',
-    'etag': 'etag'
 }
 
 class CommentRepository(BaseRepository):
@@ -99,6 +90,33 @@ class CommentRepository(BaseRepository):
             return None
         except Exception as e:
             debug_log(f"Error retrieving comment by ID {id}: {str(e)}", e)
+            return None
+
+    def get_by_comment_id(self, comment_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a comment by its YouTube comment ID.
+        
+        Args:
+            comment_id: The YouTube comment ID string
+            
+        Returns:
+            Optional[Dict[str, Any]]: The comment data as a dictionary, or None if not found
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # Use Row to access by column name
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM comments WHERE comment_id = ?", (comment_id,))
+            row = cursor.fetchone()
+            
+            conn.close()
+            
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            debug_log(f"Error retrieving comment by comment_id {comment_id}: {str(e)}", e)
             return None
     
     def flatten_dict(self, d, parent_key='', sep='.'):
@@ -141,29 +159,24 @@ class CommentRepository(BaseRepository):
                 column_types = {row[1]: row[2] for row in table_info}
                 
                 for comment in comments:
-                    # Get the raw API data
+                    # Comment data is already in a flat structure from CommentClient
+                    # No need to flatten - just use the data directly
                     raw_api = comment.get('comment_info', comment)
-                    
-                    # Flatten the API response using dot notation
-                    flat_api = self.flatten_dict(raw_api)
-                    
-                    # Convert dot notation to underscore for direct mapping
-                    flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
                     
                     db_row = {}
                     
-                    # Map each database column to the correct flattened API field
+                    # Map each database column to the correct API field
                     for col in existing_cols:
                         if col == 'id':
                             continue
                         
-                        # Get the corresponding flattened API field from canonical mapping
+                        # Get the corresponding API field from canonical mapping
                         api_field = CANONICAL_FIELD_MAP.get(col)
                         value = None
                         
-                        if api_field and api_field in flat_api_underscore:
+                        if api_field and api_field in raw_api:
                             # Found the field in API response
-                            value = flat_api_underscore[api_field]
+                            value = raw_api[api_field]
                             debug_log(f"[DB MAPPING] {col} -> {api_field} = {str(value)[:100]}")
                         elif col == 'video_id' and video_db_id:
                             # Special handling for video_id which comes from parameter
@@ -171,6 +184,9 @@ class CommentRepository(BaseRepository):
                         elif col == 'fetched_at':
                             # Special handling for fetched_at timestamp
                             value = fetched_at or datetime.utcnow().isoformat()
+                        elif col == 'is_reply':
+                            # Special handling for is_reply - determine from parent_id
+                            value = bool(raw_api.get('parent_id'))
                         else:
                             # Field not found in API response
                             value = handle_missing_api_field(col, column_types.get(col, 'TEXT'))
@@ -181,29 +197,41 @@ class CommentRepository(BaseRepository):
                         
                         db_row[col] = value
                     
+                    # Validate required NOT NULL fields
+                    if not db_row.get('comment_id'):
+                        debug_log(f"[DB ERROR] Missing required comment_id")
+                        continue
+                    if not db_row.get('video_id'):
+                        debug_log(f"[DB ERROR] Missing required video_id")
+                        continue
+                    
                     # Prepare for database insertion
                     columns = [col for col in existing_cols if col != 'id']
                     values = [db_row.get(col) for col in columns]
                     
-                    debug_log(f"[DB INSERT] Comment {comment.get('comment_id') or comment.get('id')} with {len(columns)} fields")
+                    debug_log(f"[DB INSERT] Comment {db_row.get('comment_id')} with {len(columns)} fields")
+                    debug_log(f"[DB INSERT] Columns: {columns}")
+                    debug_log(f"[DB INSERT] Values: {[str(v)[:50] if v else 'NULL' for v in values]}")
                     
                     # Insert or update
                     placeholders = ','.join(['?'] * len(columns))
                     update_clause = ','.join([f'{col}=excluded.{col}' for col in columns])
                     
-                    cursor.execute(f'''
+                    sql = f'''
                         INSERT INTO comments ({','.join(columns)})
                         VALUES ({placeholders})
                         ON CONFLICT(comment_id) DO UPDATE SET {update_clause}
-                    ''', values)
+                    '''
+                    debug_log(f"[DB SQL] {sql}")
                     
-                    # Store in history table
+                    cursor.execute(sql, values)
+                    
+                    # Store in history table (without ON CONFLICT since table doesn't have unique constraint)
                     comment_id = comment.get('comment_id') or comment.get('id')
                     raw_comment_info = json.dumps(raw_api)
                     cursor.execute('''
                         INSERT INTO comments_history (comment_id, fetched_at, raw_comment_info) 
                         VALUES (?, ?, ?)
-                        ON CONFLICT(comment_id, fetched_at) DO UPDATE SET raw_comment_info=excluded.raw_comment_info
                     ''', (comment_id, fetched_at or datetime.utcnow().isoformat(), raw_comment_info))
                     
                     debug_log(f"[DB SUCCESS] Stored comment: {comment_id}")
