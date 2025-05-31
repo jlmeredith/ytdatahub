@@ -208,7 +208,7 @@ def _render_step_2_review_data(youtube_service):
         if st.button("Update Channel Data"):
             with st.spinner("Updating channel data..."):
                 # Save API data to the database
-                success = youtube_service.save_channel_data(api_data, "sqlite")
+                success = youtube_service.save_channel_data(api_data, "SQLite Database")
                 if success:
                     st.success("Channel data updated successfully!")
                 else:

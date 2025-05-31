@@ -39,6 +39,10 @@ def normalize_channel_data_for_save(channel_data, workflow_type="unknown"):
     normalized['channel_name'] = _extract_channel_name(channel_data)
     normalized['playlist_id'] = _extract_playlist_id(channel_data)
     
+    # --- API metadata fields ---
+    normalized['kind'] = _extract_kind(channel_data)
+    normalized['etag'] = _extract_etag(channel_data)
+    
     # --- Statistics (ensure integer type and consistent defaults) ---
     normalized['subscribers'] = _normalize_integer_field(channel_data, ['subscribers', 'subscriber_count', 'statistics_subscriberCount'], 0)
     normalized['views'] = _normalize_integer_field(channel_data, ['views', 'view_count', 'statistics_viewCount'], 0)
@@ -117,6 +121,24 @@ def _extract_playlist_id(data):
         data.get('raw_channel_info', {}).get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads') or
         data.get('channel_info', {}).get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads') or
         data.get('contentDetails_relatedPlaylists_uploads') or
+        ''
+    )
+
+def _extract_kind(data):
+    """Extract kind from various possible locations."""
+    return (
+        data.get('kind') or
+        data.get('raw_channel_info', {}).get('kind') or
+        data.get('channel_info', {}).get('kind') or
+        ''
+    )
+
+def _extract_etag(data):
+    """Extract etag from various possible locations."""
+    return (
+        data.get('etag') or
+        data.get('raw_channel_info', {}).get('etag') or
+        data.get('channel_info', {}).get('etag') or
         ''
     )
 

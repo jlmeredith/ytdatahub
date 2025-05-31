@@ -53,5 +53,4 @@ tree.sh
 code_audit_output.txt
 .github/.copilot-instructions.md
 documentation/coverage_reports
-/debug
-
+debug/

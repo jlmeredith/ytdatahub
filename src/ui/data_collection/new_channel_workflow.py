@@ -332,10 +332,10 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 st.session_state['collection_step'] = 3
                 st.rerun()
     
-    def render_step_2_video_collection(self):
-        """Render step 2: Collect and display video data in a user-friendly way."""
-        st.subheader("Step 2: Videos Data")
-        self.show_progress_indicator(2)
+    def render_step_3_video_collection(self):
+        """Render step 3: Collect and display video data in a user-friendly way."""
+        st.subheader("Step 3: Videos Data")
+        self.show_progress_indicator(3)
         
         channel_info = st.session_state.get('channel_info_temp', {})
         channel_id = channel_info.get('channel_id', '')
@@ -623,10 +623,10 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                     st.session_state['videos_fetched'] = False
                     st.rerun()
     
-    def render_step_3_comment_collection(self):
-        """Render step 3: Collect and display comment data in a user-friendly way."""
-        st.subheader("Step 3: Comments Data")
-        self.show_progress_indicator(3)
+    def render_step_4_comment_collection(self):
+        """Render step 4: Collect and display comment data in a user-friendly way."""
+        st.subheader("Step 4: Comments Data")
+        self.show_progress_indicator(4)
         
         channel_info = st.session_state.get('channel_info_temp', {})
         channel_id = channel_info.get('channel_id', '')
@@ -799,14 +799,23 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
         elif current_step == 2:
             self.render_step_2_playlist_review()
         elif current_step == 3:
-            self.render_step_2_video_collection()
+            self.render_step_3_video_collection()
         elif current_step == 4:
-            self.render_step_3_comment_collection()
+            self.render_step_4_comment_collection()
         else:
             st.error(f"Unknown step: {current_step}")
         
         # Add debug mode toggle and panel at the bottom of all workflows
         self.render_debug_controls()
+
+    # Delegation methods to satisfy base class interface
+    def render_step_2_video_collection(self):
+        """Delegate to step 3 video collection (new channel workflow uses different numbering)."""
+        return self.render_step_3_video_collection()
+    
+    def render_step_3_comment_collection(self):
+        """Delegate to step 4 comment collection (new channel workflow uses different numbering)."""
+        return self.render_step_4_comment_collection()
 
     def save_data(self):
         """Save collected data to the database with user-friendly feedback."""

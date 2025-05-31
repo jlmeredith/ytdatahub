@@ -41,14 +41,12 @@ class BaseCollectionWorkflow(ABC):
         """Render step 1: Collect and display channel data."""
         pass
     
-    @abstractmethod
     def render_step_2_video_collection(self):
-        """Render step 2: Collect and display video data."""
+        """Render step 2: Collect and display video data. Optional - implement in subclass if needed."""
         pass
     
-    @abstractmethod
     def render_step_3_comment_collection(self):
-        """Render step 3: Collect and display comment data."""
+        """Render step 3: Collect and display comment data. Optional - implement in subclass if needed."""
         pass
     
     @abstractmethod
@@ -56,25 +54,13 @@ class BaseCollectionWorkflow(ABC):
         """Save collected data to the database."""
         pass
     
+    @abstractmethod
     def render_current_step(self):
         """
         Render the current step of the workflow based on the session state.
+        Each workflow implements its own step structure.
         """
-        # Get the current step from session state
-        current_step = self._get_current_step()
-        
-        # Render the appropriate step
-        if current_step == 1:
-            self.render_step_1_channel_data()
-        elif current_step == 2:
-            self.render_step_2_video_collection()
-        elif current_step == 3:
-            self.render_step_3_comment_collection()
-        else:
-            st.error(f"Unknown step: {current_step}")
-        
-        # Add debug mode toggle and panel at the bottom of all workflows
-        self.render_debug_controls()
+        pass
     
     def _get_current_step(self):
         """

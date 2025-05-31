@@ -50,7 +50,7 @@ class SaveOperationManager:
             
             # Perform the save operation
             try:
-                success = youtube_service.save_channel_data(api_data, "sqlite")
+                success = youtube_service.save_channel_data(api_data, "SQLite Database")
                 
                 # Calculate duration
                 duration = time.time() - start_time

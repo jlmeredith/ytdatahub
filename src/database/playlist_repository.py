@@ -49,22 +49,18 @@ def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
         return None
 
 # Define a canonical mapping of database columns to API fields
+# This maps each database column to its corresponding flattened API field
+# NOTE: Each API field should only appear ONCE in this mapping to avoid conflicts
 CANONICAL_FIELD_MAP = {
-    # Basic info - map DB columns to flattened API field names
+    # Basic info
     'playlist_id': 'id',
+    'type': 'type',
     
-    # IMPORTANT: We're standardizing on the prefixed field names (snippet_title, etc.)
-    # The non-prefixed fields (title, description, etc.) are deprecated
-    # but kept for backward compatibility
-    'channel_id': 'snippet_channelId',  # Use snippet_channelId instead
-    'title': 'snippet_title',  # Use snippet_title instead
-    'description': 'snippet_description',  # Use snippet_description instead
-    
-    # Direct mappings to flattened API field names
+    # Kind and etag
     'kind': 'kind',
     'etag': 'etag',
     
-    # Snippet fields - these are the preferred fields to use
+    # Snippet fields - these are the canonical field names (no more legacy fields)
     'snippet_publishedAt': 'snippet_publishedAt',
     'snippet_channelId': 'snippet_channelId',
     'snippet_title': 'snippet_title',
@@ -86,10 +82,7 @@ CANONICAL_FIELD_MAP = {
     'player_embedHtml': 'player_embedHtml',
     
     # Localizations
-    'localizations': 'localizations',
-    
-    # Type field (for uploads playlists)
-    'type': 'type'
+    'localizations': 'localizations'
 }
 
 class PlaylistRepository(BaseRepository):
@@ -195,23 +188,6 @@ class PlaylistRepository(BaseRepository):
                     
                     db_row[col] = value
                 
-                # Handle duplicate fields - ensure consistency
-                # For fields that exist in both forms (title/snippet_title, etc.)
-                duplicate_mappings = {
-                    ('title', 'snippet_title'): 'snippet_title',
-                    ('description', 'snippet_description'): 'snippet_description', 
-                    ('channel_id', 'snippet_channelId'): 'snippet_channelId'
-                }
-                
-                # Sync duplicate fields to ensure consistency
-                for field_group, api_source in duplicate_mappings.items():
-                    if api_source in flat_api_underscore:
-                        api_value = flat_api_underscore[api_source]
-                        for field in field_group:
-                            if field in existing_cols:
-                                db_row[field] = api_value
-                                debug_log(f"[DB SYNC] Set {field} = {str(api_value)[:50]}")
-                
                 # Prepare columns and values for SQL insert
                 columns = [col for col in existing_cols if col not in ['created_at', 'updated_at']]
                 values = [db_row.get(col) for col in columns]
@@ -264,7 +240,7 @@ class PlaylistRepository(BaseRepository):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_id,))
+            cursor.execute("SELECT playlist_id FROM playlists WHERE snippet_channelId = ? AND type = 'uploads'", (channel_id,))
             row = cursor.fetchone()
             
             conn.close()
@@ -295,7 +271,7 @@ class PlaylistRepository(BaseRepository):
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM playlists WHERE channel_id = ?", (channel_id,))
+            cursor.execute("SELECT * FROM playlists WHERE snippet_channelId = ?", (channel_id,))
             rows = cursor.fetchall()
             
             playlists = [dict(row) for row in rows]

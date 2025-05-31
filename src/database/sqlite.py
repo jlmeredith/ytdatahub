@@ -44,7 +44,7 @@ class SQLiteDatabase:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            # Create the channels table (full schema)
+            # Create the channels table (no duplicate fields - only normalized columns)
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,6 @@ class SQLiteDatabase:
                 video_count INTEGER,
                 kind TEXT,
                 etag TEXT,
-                snippet_title TEXT,
                 snippet_description TEXT,
                 snippet_customUrl TEXT,
                 snippet_publishedAt TEXT,
@@ -65,25 +64,12 @@ class SQLiteDatabase:
                 snippet_thumbnails_default_url TEXT,
                 snippet_thumbnails_medium_url TEXT,
                 snippet_thumbnails_high_url TEXT,
-                snippet_localized_title TEXT,
-                snippet_localized_description TEXT,
-                contentDetails_relatedPlaylists_uploads TEXT,
-                contentDetails_relatedPlaylists_likes TEXT,
-                contentDetails_relatedPlaylists_favorites TEXT,
-                statistics_viewCount INTEGER,
-                statistics_subscriberCount INTEGER,
                 statistics_hiddenSubscriberCount BOOLEAN,
-                statistics_videoCount INTEGER,
-                brandingSettings_channel_title TEXT,
-                brandingSettings_channel_description TEXT,
                 brandingSettings_channel_keywords TEXT,
-                brandingSettings_channel_country TEXT,
-                brandingSettings_image_bannerExternalUrl TEXT,
                 status_privacyStatus TEXT,
                 status_isLinked BOOLEAN,
                 status_longUploadsStatus TEXT,
                 status_madeForKids BOOLEAN,
-                topicDetails_topicIds TEXT,
                 topicDetails_topicCategories TEXT,
                 localizations TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -103,10 +89,7 @@ class SQLiteDatabase:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS playlists (
                 playlist_id TEXT PRIMARY KEY,
-                channel_id TEXT NOT NULL,
                 type TEXT DEFAULT 'uploads',
-                title TEXT,
-                description TEXT,
                 kind TEXT,
                 etag TEXT,
                 snippet_publishedAt TEXT,
@@ -124,7 +107,7 @@ class SQLiteDatabase:
                 localizations TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (channel_id) REFERENCES channels (channel_id)
+                FOREIGN KEY (snippet_channelId) REFERENCES channels (channel_id)
             )
             ''')
             # Create the videos table (full public YouTube API schema for non-owners)
@@ -134,9 +117,8 @@ class SQLiteDatabase:
                 youtube_id TEXT UNIQUE NOT NULL,
                 kind TEXT,
                 etag TEXT,
-                channel_id TEXT,
-                title TEXT,
-                description TEXT,
+                snippet_title TEXT,
+                snippet_description TEXT,
                 published_at TEXT,
                 snippet_channel_id TEXT,
                 snippet_channel_title TEXT,

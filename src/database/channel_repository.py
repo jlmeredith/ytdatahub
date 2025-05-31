@@ -64,11 +64,17 @@ class ChannelRepository(BaseRepository):
             # --- Flatten the actual raw API response ---
             raw_api = data.get('raw_channel_info') or data.get('channel_info', data)
             flat_api = flatten_dict(raw_api)
-            # --- Merge in extra fields from the wrapper dict (e.g., channel_id, channel_title) ---
-            extra_fields = {k: v for k, v in data.items() if k not in ['raw_channel_info', 'channel_info']}
-            flat_api.update(extra_fields)
-            # --- Map dot notation to underscores for DB columns ---
+            # --- Map dot notation to underscores for DB columns FIRST (before merging extra fields) ---
             flat_api_underscore = {k.replace('.', '_'): v for k, v in flat_api.items()}
+            
+            # --- Merge in extra fields from the wrapper dict (e.g., channel_id, channel_title) ---
+            # BUT preserve raw API fields - don't let normalized fields override raw API fields
+            extra_fields = {k: v for k, v in data.items() if k not in ['raw_channel_info', 'channel_info']}
+            for key, value in extra_fields.items():
+                # Only add the field if it doesn't already exist in the raw API data
+                # This preserves raw API fields like statistics_subscriberCount while adding normalized fields
+                if key not in flat_api_underscore:
+                    flat_api_underscore[key] = value
             debug_log(f"[DB DEBUG] flat_api_underscore: {flat_api_underscore}")
             # --- Get all columns in the channels table ---
             cursor.execute("PRAGMA table_info(channels)")
@@ -246,7 +252,7 @@ class ChannelRepository(BaseRepository):
                     except Exception as e:
                         debug_log(f"Error loading raw_channel_info JSON: {str(e)}")
             # Fetch uploads playlist from playlists table
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (record['channel_id'],))
+            cursor.execute("SELECT playlist_id FROM playlists WHERE snippet_channelId = ? AND type = 'uploads'", (record['channel_id'],))
             playlist_row = cursor.fetchone()
             uploads_playlist_id = playlist_row[0] if playlist_row else record.get('uploads_playlist_id', '')
             # Always set playlist_id from uploads_playlist_id if present
@@ -379,7 +385,7 @@ class ChannelRepository(BaseRepository):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT playlist_id FROM playlists WHERE channel_id = ? AND type = 'uploads'", (channel_id,))
+            cursor.execute("SELECT playlist_id FROM playlists WHERE snippet_channelId = ? AND type = 'uploads'", (channel_id,))
             row = cursor.fetchone()
             conn.close()
             if row:
@@ -406,29 +412,29 @@ def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
     Returns:
         Appropriate default value based on the field semantics
     """
-    # Fields that should explicitly indicate "not provided by API"
+    # Fields that should explicitly indicate "not provided by API" when missing
     api_provided_fields = {
-        'snippet_defaultLanguage', 'snippet_country', 'snippet_localized_title', 
-        'snippet_localized_description', 'contentDetails_relatedPlaylists_likes',
-        'contentDetails_relatedPlaylists_favorites', 'brandingSettings_channel_keywords',
-        'brandingSettings_channel_country', 'brandingSettings_image_bannerExternalUrl',
-        'topicDetails_topicIds'
+        'snippet_defaultLanguage', 'snippet_country', 'snippet_customUrl',
+        'brandingSettings_channel_keywords', 'topicDetails_topicCategories'
     }
     
-    # Complex fields that should be empty objects/arrays when missing
+    # Complex fields that should be empty structures when missing (not "NOT_PROVIDED_BY_API")
     complex_fields = {
         'localizations': '{}',  # Empty JSON object
-        'topicDetails_topicCategories': '[]',  # Empty JSON array
-        'snippet_thumbnails_default_url': None,
-        'snippet_thumbnails_medium_url': None,
-        'snippet_thumbnails_high_url': None
+        'topicDetails_topicCategories': '[]',  # Empty JSON array when no categories
     }
     
-    # Boolean fields that should default to False
+    # Boolean fields that should default to False when missing
     boolean_fields = {
         'statistics_hiddenSubscriberCount': False,
         'status_isLinked': False,
         'status_madeForKids': False
+    }
+    
+    # Thumbnail fields should be None/NULL when missing (not "NOT_PROVIDED_BY_API")
+    thumbnail_fields = {
+        'snippet_thumbnails_default_url', 'snippet_thumbnails_medium_url', 
+        'snippet_thumbnails_high_url'
     }
     
     if field_name in api_provided_fields:
@@ -437,90 +443,55 @@ def handle_missing_api_field(field_name: str, column_type: str = 'TEXT') -> Any:
         return complex_fields[field_name]
     elif field_name in boolean_fields:
         return boolean_fields[field_name]
+    elif field_name in thumbnail_fields:
+        return None  # Thumbnails should be NULL when missing
     elif column_type == 'INTEGER':
         return None  # Let SQLite handle NULL for numeric fields
     elif column_type == 'BOOLEAN':
-        return False
+        return False  # Default boolean value
     else:
-        return None  # Default to NULL for text fields
+        # For most text fields, return None (NULL) when missing from API
+        # This distinguishes between "field missing from API" vs "field present but empty"
+        return None
 
 CANONICAL_FIELD_MAP = {
-    # Basic channel info - map DB columns to flattened API field names
-    'channel_id': 'id',  # API field 'id' maps to DB column 'channel_id'
-    'channel_title': 'snippet_title',  # API field 'snippet.title' -> 'snippet_title'
-    'uploads_playlist_id': 'contentDetails_relatedPlaylists_uploads',
+    # Basic channel info - map to normalized field names only
+    'channel_id': 'channel_id',
+    'channel_title': 'channel_name',  # Normalized field name from channel normalizer
+    'uploads_playlist_id': 'uploads_playlist_id',
     
-    # Kind and etag - direct mapping
+    # Kind and etag
     'kind': 'kind',
     'etag': 'etag',
     
-    # Snippet fields - direct mapping to flattened API field names
-    'snippet_title': 'snippet_title',
-    'snippet_description': 'snippet_description', 
-    'snippet_customUrl': 'snippet_customUrl',
-    'snippet_publishedAt': 'snippet_publishedAt',
-    'snippet_defaultLanguage': 'snippet_defaultLanguage',
-    'snippet_country': 'snippet_country',
-    'snippet_thumbnails_default_url': 'snippet_thumbnails_default_url',
-    'snippet_thumbnails_medium_url': 'snippet_thumbnails_medium_url', 
-    'snippet_thumbnails_high_url': 'snippet_thumbnails_high_url',
-    'snippet_localized_title': 'snippet_localized_title',
-    'snippet_localized_description': 'snippet_localized_description',
+    # Snippet fields - map to normalized field names
+    'snippet_description': 'channel_description',
+    'snippet_customUrl': 'custom_url',
+    'snippet_publishedAt': 'published_at',
+    'snippet_defaultLanguage': 'default_language',
+    'snippet_country': 'country',
+    'snippet_thumbnails_default_url': 'thumbnail_default',
+    'snippet_thumbnails_medium_url': 'thumbnail_medium',
+    'snippet_thumbnails_high_url': 'thumbnail_high',
     
-    # Content details - direct mapping
-    'contentDetails_relatedPlaylists_uploads': 'contentDetails_relatedPlaylists_uploads',
-    'contentDetails_relatedPlaylists_likes': 'contentDetails_relatedPlaylists_likes',
-    'contentDetails_relatedPlaylists_favorites': 'contentDetails_relatedPlaylists_favorites',
+    # Statistics - map to normalized field names only (no duplicates)
+    'subscriber_count': 'subscribers',
+    'view_count': 'views',
+    'video_count': 'total_videos',
+    'statistics_hiddenSubscriberCount': 'hidden_subscriber_count',
     
-    # Statistics - direct mapping plus backward compatibility
-    'subscriber_count': 'statistics_subscriberCount',
-    'view_count': 'statistics_viewCount', 
-    'video_count': 'statistics_videoCount',
-    'statistics_viewCount': 'statistics_viewCount',
-    'statistics_subscriberCount': 'statistics_subscriberCount',
-    'statistics_hiddenSubscriberCount': 'statistics_hiddenSubscriberCount',
-    'statistics_videoCount': 'statistics_videoCount',
+    # Branding settings - only essential fields
+    'brandingSettings_channel_keywords': 'keywords',
     
-    # Branding settings - direct mapping
-    'brandingSettings_channel_title': 'brandingSettings_channel_title',
-    'brandingSettings_channel_description': 'brandingSettings_channel_description',
-    'brandingSettings_channel_keywords': 'brandingSettings_channel_keywords',
-    'brandingSettings_channel_country': 'brandingSettings_channel_country',
-    'brandingSettings_image_bannerExternalUrl': 'brandingSettings_image_bannerExternalUrl',
+    # Status fields - map to normalized field names
+    'status_privacyStatus': 'privacy_status',
+    'status_isLinked': 'is_linked',
+    'status_longUploadsStatus': 'long_uploads_status',
+    'status_madeForKids': 'made_for_kids',
     
-    # Status - direct mapping
-    'status_privacyStatus': 'status_privacyStatus',
-    'status_isLinked': 'status_isLinked',
-    'status_longUploadsStatus': 'status_longUploadsStatus',
-    'status_madeForKids': 'status_madeForKids',
+    # Topic details - only essential fields
+    'topicDetails_topicCategories': 'topic_categories',
     
-    # Topic details - direct mapping
-    'topicDetails_topicIds': 'topicDetails_topicIds',
-    'topicDetails_topicCategories': 'topicDetails_topicCategories',
-    
-    # Localizations - direct mapping
+    # Localizations
     'localizations': 'localizations',
-    
-    # Legacy/simplified field mappings for application compatibility
-    'channel_name': 'channel_title',
-    'channel_description': 'snippet_description',
-    'description': 'snippet_description',
-    'custom_url': 'snippet_customUrl',
-    'published_at': 'snippet_publishedAt',
-    'country': 'snippet_country',
-    'default_language': 'snippet_defaultLanguage',
-    'thumbnail_default': 'snippet_thumbnails_default_url',
-    'thumbnail_medium': 'snippet_thumbnails_medium_url',
-    'thumbnail_high': 'snippet_thumbnails_high_url',
-    'subscribers': 'statistics_subscriberCount',
-    'views': 'statistics_viewCount',
-    'total_videos': 'statistics_videoCount',
-    'privacy_status': 'status_privacyStatus',
-    'is_linked': 'status_isLinked',
-    'long_uploads_status': 'status_longUploadsStatus',
-    'made_for_kids': 'status_madeForKids',
-    'hidden_subscriber_count': 'statistics_hiddenSubscriberCount',
-    'keywords': 'brandingSettings_channel_keywords',
-    'topic_categories': 'topicDetails_topicCategories',
-    'playlist_id': 'uploads_playlist_id',
 }

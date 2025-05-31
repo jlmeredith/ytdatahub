@@ -47,7 +47,7 @@ def render_video_section(videos_data, youtube_service, channel_id):
                 }
                 
                 # Save to database using the youtube_service
-                success = youtube_service.save_channel_data(data_to_save, "sqlite")
+                success = youtube_service.save_channel_data(data_to_save, "SQLite Database")
                 
                 if success:
                     st.success(f"Successfully saved {len(videos_data)} videos to database!")

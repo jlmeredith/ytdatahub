@@ -47,6 +47,15 @@ def process_video_data(videos_data):
         
         debug_log(f"Processing video {video_id}")
         
+        # Extract kind and etag from top level if available
+        if 'kind' not in video:
+            # Extract kind from the raw API response if available
+            video['kind'] = video.get('kind', None)
+            
+        if 'etag' not in video:
+            # Extract etag from the raw API response if available  
+            video['etag'] = video.get('etag', None)
+        
         # Store original values for diagnostic purposes
         orig_views = video.get('views')
         orig_comment_count = video.get('comment_count')

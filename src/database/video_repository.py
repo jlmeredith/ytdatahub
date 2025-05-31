@@ -68,13 +68,12 @@ CANONICAL_FIELD_MAP = {
     'kind': 'kind',
     'etag': 'etag',
     
-    # Snippet fields - Handle both duplicate and unique fields
-    'title': 'snippet_title',                              # Duplicate field
-    'description': 'snippet_description',                  # Duplicate field
-    'channel_id': 'snippet_channelId',                     # Duplicate field
-    'published_at': 'snippet_publishedAt',                 # Maps to snippet_publishedAt
-    'snippet_channel_id': 'snippet_channelId',             # Duplicate field
+    # Snippet fields - Using only normalized prefixed field names (no duplicates)
+    'snippet_title': 'snippet_title',
+    'snippet_description': 'snippet_description',
+    'snippet_channel_id': 'snippet_channelId',
     'snippet_channel_title': 'snippet_channelTitle',
+    'published_at': 'snippet_publishedAt',
     'snippet_tags': 'snippet_tags',
     'snippet_category_id': 'snippet_categoryId',
     'snippet_live_broadcast_content': 'snippet_liveBroadcastContent',

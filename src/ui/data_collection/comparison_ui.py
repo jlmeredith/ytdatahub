@@ -286,7 +286,7 @@ def render_comparison_view(youtube_service):
                         api_data['data_source'] = 'api'
                         
                         # Save the updated data
-                        success = youtube_service.save_channel_data(api_data, "sqlite")
+                        success = youtube_service.save_channel_data(api_data, "SQLite Database")
                         
                         if success:
                             # Set a flag to indicate that the update was successful
@@ -473,7 +473,7 @@ def render_api_db_comparison(st):
                 # Save the updated data
                 from src.services.youtube_service import YouTubeService
                 youtube_service = YouTubeService(st.session_state.get('api_key', ''))
-                success = youtube_service.save_channel_data(api_data, "sqlite")
+                success = youtube_service.save_channel_data(api_data, "SQLite Database")
                 
                 if success:
                     st.success("✅ Database updated successfully with new data!")

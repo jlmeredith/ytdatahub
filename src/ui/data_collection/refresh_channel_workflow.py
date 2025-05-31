@@ -521,7 +521,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                         # Normalize the data before saving to ensure consistent format
                         normalized_data = normalize_channel_data_for_save(api_data_with_videos, "refresh_channel_videos")
                             
-                        save_success = self.youtube_service.save_channel_data(normalized_data, 'sqlite')
+                        save_success = self.youtube_service.save_channel_data(normalized_data, 'SQLite Database')
                         if save_success:
                             st.session_state['videos_saved'] = True
                             st.success(f"✅ Saved {api_video_count} videos successfully!")
@@ -544,6 +544,12 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                 st.rerun()
     
     def render_step_3_comment_collection(self):
+        """Render step 3: Comment collection (delegates to step 5 in refresh workflow)."""
+        # In the refresh workflow, comment collection is step 5, not step 3
+        # This method exists to satisfy the abstract base class requirement
+        return self.render_step_5_comment_collection()
+    
+    def render_step_5_comment_collection(self):
         """Render step 5 (in refresh workflow): Collect and display comment data."""
         st.subheader("Step 5: Comment Collection")
         self.show_progress_indicator(5)
@@ -676,7 +682,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
                     if 'channel_id' not in api_data_to_save:
                         api_data_to_save['channel_id'] = channel_id
                         
-                    save_success = self.youtube_service.save_channel_data(api_data_to_save, 'sqlite')
+                    save_success = self.youtube_service.save_channel_data(api_data_to_save, 'SQLite Database')
                     if save_success:
                         st.session_state['comments_saved'] = True
                         st.success(f"✅ Saved {total_comments} comments successfully!")
@@ -770,7 +776,7 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         elif current_step == 4:
             self.render_step_4_video_collection()
         elif current_step == 5:
-            self.render_step_3_comment_collection()
+            self.render_step_5_comment_collection()
         else:
             st.error(f"Unknown step: {current_step}")
         
