@@ -245,90 +245,191 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                 st.rerun()
     
     def render_step_2_playlist_review(self):
-        """Render playlist review step in a user-friendly way."""
-        st.subheader("Step 2: Playlist Review")
+        """Render playlist review step with multi-playlist selection."""
+        st.subheader("Step 2: Playlist Review & Selection")
         
         channel_info = st.session_state.get('channel_info_temp', {})
-        playlist_id = channel_info.get('playlist_id')
+        channel_id = channel_info.get('channel_id')
+        uploads_playlist_id = channel_info.get('playlist_id')
         
-        if not playlist_id:
-            st.info("📋 No playlist found for this channel.")
-            # Skip to videos step
-            if st.button("Continue to Videos Data", key="skip_to_videos_btn"):
-                st.session_state['collection_step'] = 2
+        if not channel_id:
+            st.error("❌ No channel ID found. Cannot fetch playlists.")
+            return
+        
+        # Initialize session state for playlist selections
+        if 'selected_playlists' not in st.session_state:
+            st.session_state['selected_playlists'] = []
+        if 'all_playlists_data' not in st.session_state:
+            st.session_state['all_playlists_data'] = []
+        if 'playlists_saved' not in st.session_state:
+            st.session_state['playlists_saved'] = False
+        
+        # Fetch all channel playlists (from session or API)
+        all_playlists = st.session_state.get('all_playlists_data')
+        if not all_playlists:
+            try:
+                with st.spinner("Fetching all channel playlists..."):
+                    all_playlists = self.youtube_service.get_channel_playlists(channel_id, max_results=100)
+                    st.session_state['all_playlists_data'] = all_playlists
+            except Exception as e:
+                st.error(f"❌ Error fetching playlists: {str(e)}")
+                return
+        
+        if not all_playlists:
+            st.info("📋 No public playlists found for this channel.")
+            # Allow user to continue without playlists
+            if st.button("Continue to Videos Data", key="skip_playlists_btn"):
+                st.session_state['collection_step'] = 3
                 st.rerun()
             return
         
-        # Fetch playlist API response (from session or API)
-        playlist_api = st.session_state.get('playlist_api_data')
-        if not playlist_api:
-            try:
-                with st.spinner("Fetching playlist information..."):
-                    playlist_api = self.youtube_service.get_playlist_info(playlist_id)
-                    st.session_state['playlist_api_data'] = playlist_api
-            except Exception as e:
-                st.error(f"❌ Error fetching playlist data: {str(e)}")
-                return
+        # Display playlist selection interface
+        st.info(f"📋 Found **{len(all_playlists)}** playlists for this channel. Select which ones to include:")
         
-        # Prepare playlist data for saving
-        if playlist_api:
-            if 'id' in playlist_api:
-                playlist_api['playlist_id'] = playlist_api['id']
-            if 'snippet' in playlist_api and 'channelId' in playlist_api['snippet']:
-                playlist_api['channel_id'] = playlist_api['snippet']['channelId']
+        # Create a more organized display with checkboxes
+        selected_playlist_ids = []
         
-        # Show playlist summary (user-friendly)
-        if playlist_api and 'snippet' in playlist_api:
-            snippet = playlist_api['snippet']
-            st.success(f"✅ Playlist found: **{snippet.get('title', 'Untitled Playlist')}**")
+        # Auto-select uploads playlist if it exists in the list
+        if not st.session_state.get('playlist_selections_initialized', False):
+            # Look for uploads playlist using both methods for compatibility
+            uploads_found = False
+            for playlist in all_playlists:
+                # Check if this is marked as uploads playlist OR matches the uploads playlist ID
+                if (playlist.get('is_uploads_playlist', False) or 
+                    (uploads_playlist_id and playlist['playlist_id'] == uploads_playlist_id)):
+                    st.session_state['selected_playlists'] = [playlist['playlist_id']]
+                    uploads_found = True
+                    debug_log(f"[UI] Auto-selected uploads playlist: {playlist['title']} ({playlist['playlist_id']})")
+                    break
             
-            # Show basic playlist info
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"📅 **Published:** {snippet.get('publishedAt', 'Unknown')[:10]}")
-                st.write(f"📝 **Description:** {snippet.get('description', 'No description')[:100]}...")
-            with col2:
-                video_count = playlist_api.get('contentDetails', {}).get('itemCount', 'Unknown')
-                st.write(f"🎬 **Videos in playlist:** {video_count}")
-                privacy_status = playlist_api.get('status', {}).get('privacyStatus', 'Unknown')
-                st.write(f"🔒 **Privacy:** {privacy_status.title()}")
+            if not uploads_found:
+                debug_log(f"[UI] No uploads playlist found to auto-select")
+            st.session_state['playlist_selections_initialized'] = True
         
-        # Store raw/delta in debug state
+        # Display playlists in a grid format
+        cols_per_row = 2
+        for i in range(0, len(all_playlists), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, playlist in enumerate(all_playlists[i:i+cols_per_row]):
+                if j < len(cols):
+                    with cols[j]:
+                        # Create a container for each playlist
+                        container = st.container()
+                        with container:
+                            # Checkbox for selection
+                            is_uploads = (playlist.get('is_uploads_playlist', False) or 
+                                        (uploads_playlist_id and playlist['playlist_id'] == uploads_playlist_id))
+                            checkbox_label = f"{'🎬 ' if is_uploads else '📋 '}{playlist['title']}"
+                            if is_uploads:
+                                checkbox_label += " (Uploads)"
+                            
+                            is_selected = st.checkbox(
+                                checkbox_label,
+                                value=playlist['playlist_id'] in st.session_state.get('selected_playlists', []),
+                                key=f"playlist_select_{playlist['playlist_id']}"
+                            )
+                            
+                            if is_selected:
+                                if playlist['playlist_id'] not in selected_playlist_ids:
+                                    selected_playlist_ids.append(playlist['playlist_id'])
+                            
+                            # Show playlist details
+                            st.caption(f"**Videos:** {playlist.get('item_count', 'Unknown')} | **Privacy:** {playlist.get('privacy_status', 'Unknown').title()}")
+                            if playlist.get('description'):
+                                st.caption(f"**Description:** {playlist['description'][:100]}{'...' if len(playlist['description']) > 100 else ''}")
+                            st.caption(f"**Published:** {playlist.get('published_at', 'Unknown')[:10]}")
+        
+        # Update session state with current selections
+        st.session_state['selected_playlists'] = selected_playlist_ids
+        
+        # Show selection summary
+        if selected_playlist_ids:
+            st.success(f"✅ **{len(selected_playlist_ids)}** playlist(s) selected")
+            
+            # Show selected playlists
+            with st.expander("📋 Selected Playlists", expanded=False):
+                for playlist_id in selected_playlist_ids:
+                    playlist = next((p for p in all_playlists if p['playlist_id'] == playlist_id), None)
+                    if playlist:
+                        is_uploads = (playlist.get('is_uploads_playlist', False) or 
+                                    (uploads_playlist_id and playlist['playlist_id'] == uploads_playlist_id))
+                        st.write(f"{'🎬' if is_uploads else '📋'} **{playlist['title']}**{' (Uploads)' if is_uploads else ''}")
+                        st.caption(f"Videos: {playlist.get('item_count', 'Unknown')} | Privacy: {playlist.get('privacy_status', 'Unknown').title()}")
+        else:
+            st.warning("⚠️ No playlists selected. Select at least one playlist to continue.")
+        
+        # Store selected playlists data for debug/next steps
+        selected_playlists_data = [p for p in all_playlists if p['playlist_id'] in selected_playlist_ids]
+        
         if 'debug_raw_data' not in st.session_state:
             st.session_state['debug_raw_data'] = {}
         if 'debug_delta_data' not in st.session_state:
             st.session_state['debug_delta_data'] = {}
-        st.session_state['debug_raw_data']['playlist'] = {
+        st.session_state['debug_raw_data']['playlists'] = {
             'db': None,  # No DB in new channel step
-            'api': playlist_api
+            'api': selected_playlists_data
         }
-        st.session_state['debug_delta_data']['playlist'] = {
+        st.session_state['debug_delta_data']['playlists'] = {
             'delta': None
         }
-        
-        # Initialize session state for playlist actions
-        if 'playlist_saved' not in st.session_state:
-            st.session_state['playlist_saved'] = False
         
         # Action buttons
         st.markdown("---")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save Playlist Data", key="save_playlist_data_btn", 
-                        disabled=st.session_state['playlist_saved']):
+            if st.button("💾 Save Selected Playlists", key="save_playlists_btn", 
+                        disabled=st.session_state['playlists_saved'] or not selected_playlist_ids):
                 try:
-                    playlist_save_success = self.youtube_service.save_playlist_data(playlist_api)
-                    if playlist_save_success:
-                        st.session_state['playlist_saved'] = True
-                        st.success("✅ Playlist data saved successfully!")
+                    saved_count = 0
+                    errors = []
+                    for playlist_data in selected_playlists_data:
+                        # Prepare playlist data for saving (convert to expected format)
+                        playlist_save_data = {
+                            'id': playlist_data['playlist_id'],
+                            'playlist_id': playlist_data['playlist_id'],
+                            'snippet': {
+                                'channelId': playlist_data['channel_id'],
+                                'title': playlist_data['title'],
+                                'description': playlist_data['description'],
+                                'publishedAt': playlist_data['published_at'],
+                                'channelTitle': playlist_data['channel_title'],
+                                'thumbnails': {'medium': {'url': playlist_data['thumbnail_url']}} if playlist_data['thumbnail_url'] else {}
+                            },
+                            'contentDetails': {
+                                'itemCount': playlist_data['item_count']
+                            },
+                            'status': {
+                                'privacyStatus': playlist_data['privacy_status']
+                            },
+                            'raw_playlist_info': playlist_data['raw_api_response']
+                        }
+                        
+                        # Set type for uploads playlist using both detection methods
+                        if (playlist_data.get('is_uploads_playlist', False) or 
+                            (uploads_playlist_id and playlist_data['playlist_id'] == uploads_playlist_id)):
+                            playlist_save_data['type'] = 'uploads'
+                        
+                        success = self.youtube_service.save_playlist_data(playlist_save_data)
+                        if success:
+                            saved_count += 1
+                        else:
+                            errors.append(playlist_data['title'])
+                    
+                    if saved_count == len(selected_playlists_data):
+                        st.session_state['playlists_saved'] = True
+                        st.success(f"✅ All {saved_count} selected playlists saved successfully!")
+                    elif saved_count > 0:
+                        st.warning(f"⚠️ {saved_count} of {len(selected_playlists_data)} playlists saved. Errors with: {', '.join(errors)}")
                     else:
-                        st.error("❌ Failed to save playlist data.")
+                        st.error(f"❌ Failed to save playlists. Errors with: {', '.join(errors)}")
+                        
                 except Exception as e:
-                    st.error(f"❌ Error saving playlist: {str(e)}")
+                    st.error(f"❌ Error saving playlists: {str(e)}")
+        
         with col3:
             if st.button("▶️ Continue to Videos", key="continue_to_videos_btn2", 
-                        disabled=not st.session_state['playlist_saved']):
+                        disabled=not st.session_state['playlists_saved']):
                 st.session_state['collection_step'] = 3
                 st.rerun()
     

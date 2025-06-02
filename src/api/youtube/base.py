@@ -28,6 +28,7 @@ except (ImportError, ModuleNotFoundError):
 
 from src.utils.debug_utils import debug_log
 from src.utils.validation import validate_api_key as validate_api_key_format
+from src.config import ENABLE_VERBOSE_API_LOGGING
 
 class YouTubeBaseClient:
     """Base class for YouTube API clients"""
@@ -51,7 +52,14 @@ class YouTubeBaseClient:
 
     def _initialize_api(self):
         """Initialize the YouTube API client"""
-        debug_log("Initializing YouTube API client")
+        # Check if we've already logged API initialization this session and if verbose logging is enabled
+        if ENABLE_VERBOSE_API_LOGGING:
+            if hasattr(st, 'session_state'):
+                if not st.session_state.get('api_init_logged', False):
+                    debug_log("Initializing YouTube API client")
+                    st.session_state.api_init_logged = True
+            else:
+                debug_log("Initializing YouTube API client")
         
         if not self.api_key:
             debug_log("No API key provided. Cannot initialize.")
@@ -68,7 +76,14 @@ class YouTubeBaseClient:
                 "youtube", "v3", developerKey=self.api_key, cache_discovery=False
             )
             self._initialized = True
-            debug_log("YouTube API client initialized successfully")
+            # Only log success message once per session and if verbose logging is enabled
+            if ENABLE_VERBOSE_API_LOGGING:
+                if hasattr(st, 'session_state'):
+                    if not st.session_state.get('api_success_logged', False):
+                        debug_log("YouTube API client initialized successfully")
+                        st.session_state.api_success_logged = True
+                else:
+                    debug_log("YouTube API client initialized successfully")
             
             if hasattr(st, 'session_state'):
                 st.session_state.api_client_initialized = True

@@ -334,3 +334,116 @@ class VideoClient(YouTubeBaseClient):
         except Exception as e:
             debug_log(f"[API][ERROR] Exception in get_playlist_items: {str(e)}")
             return []
+    
+    def get_channel_playlists(self, channel_id: str, max_results: int = 50) -> List[Dict]:
+        """
+        Get all playlists for a channel from the YouTube Data API, including the uploads playlist
+        
+        Args:
+            channel_id: YouTube channel ID
+            max_results: Maximum number of playlists to return (default 50)
+            
+        Returns:
+            List of playlist data dictionaries
+        """
+        debug_log(f"[API] get_channel_playlists called with channel_id: {channel_id}, max_results: {max_results}")
+        if not self.is_initialized():
+            debug_log("YouTube API client not initialized. Cannot fetch channel playlists.")
+            return []
+            
+        try:
+            all_playlists = []
+            
+            # Step 1: Get the uploads playlist ID from channel information
+            debug_log(f"[API] First fetching uploads playlist ID for channel {channel_id}")
+            uploads_playlist_id = None
+            try:
+                channel_request = self.youtube.channels().list(
+                    part="contentDetails,snippet",
+                    id=channel_id
+                )
+                channel_response = channel_request.execute()
+                
+                if channel_response.get('items'):
+                    channel_data = channel_response['items'][0]
+                    uploads_playlist_id = channel_data.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads')
+                    debug_log(f"[API] Found uploads playlist ID: {uploads_playlist_id}")
+                    
+                    # Add uploads playlist to the list first (if found)
+                    if uploads_playlist_id:
+                        uploads_info = self.get_playlist_info(uploads_playlist_id)
+                        if uploads_info:
+                            uploads_data = {
+                                'playlist_id': uploads_playlist_id,
+                                'title': uploads_info['snippet']['title'],
+                                'description': uploads_info['snippet'].get('description', ''),
+                                'published_at': uploads_info['snippet']['publishedAt'],
+                                'channel_id': uploads_info['snippet']['channelId'],
+                                'channel_title': uploads_info['snippet']['channelTitle'],
+                                'item_count': uploads_info.get('contentDetails', {}).get('itemCount', 0),
+                                'privacy_status': uploads_info.get('status', {}).get('privacyStatus', 'public'),
+                                'thumbnail_url': uploads_info['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
+                                'raw_api_response': uploads_info,
+                                'is_uploads_playlist': True  # Mark this as the uploads playlist
+                            }
+                            all_playlists.append(uploads_data)
+                            debug_log(f"[API] Added uploads playlist to results: {uploads_data['title']}")
+                    else:
+                        debug_log(f"[API] No uploads playlist ID found for channel {channel_id}")
+                        
+            except Exception as e:
+                debug_log(f"[API] Error fetching uploads playlist: {str(e)}")
+            
+            # Step 2: Get regular playlists created by the channel
+            debug_log(f"[API] Now fetching regular playlists for channel {channel_id}")
+            next_page_token = None
+            regular_playlists_count = 0
+            
+            while True:
+                # Make the API request to get channel playlists
+                request = self.youtube.playlists().list(
+                    part="snippet,contentDetails,status,player,localizations",
+                    channelId=channel_id,
+                    maxResults=min(50, max_results - len(all_playlists)),  # Account for uploads playlist
+                    pageToken=next_page_token
+                )
+                response = request.execute()
+                
+                # Extract playlist data
+                items = response.get('items', [])
+                debug_log(f"[API] Found {len(items)} regular playlists in page for channel {channel_id}")
+                
+                # Transform items to include playlist_id at the top level and other useful fields
+                for item in items:
+                    # Skip uploads playlist if it somehow appears in regular playlists
+                    if uploads_playlist_id and item['id'] == uploads_playlist_id:
+                        debug_log(f"[API] Skipping duplicate uploads playlist from regular playlist results")
+                        continue
+                        
+                    playlist_data = {
+                        'playlist_id': item['id'],
+                        'title': item['snippet']['title'],
+                        'description': item['snippet'].get('description', ''),
+                        'published_at': item['snippet']['publishedAt'],
+                        'channel_id': item['snippet']['channelId'],
+                        'channel_title': item['snippet']['channelTitle'],
+                        'item_count': item.get('contentDetails', {}).get('itemCount', 0),
+                        'privacy_status': item.get('status', {}).get('privacyStatus', 'unknown'),
+                        'thumbnail_url': item['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
+                        'raw_api_response': item,  # Store full response
+                        'is_uploads_playlist': False
+                    }
+                    all_playlists.append(playlist_data)
+                    regular_playlists_count += 1
+                
+                # Check if we've reached our maximum or there are no more pages
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token or len(all_playlists) >= max_results:
+                    break
+            
+            debug_log(f"[API] Total playlists fetched for channel {channel_id}: {len(all_playlists)} (1 uploads + {regular_playlists_count} regular)")
+            return all_playlists[:max_results]  # Ensure we don't exceed max_results
+            
+        except Exception as e:
+            debug_log(f"[API][ERROR] Exception in get_channel_playlists: {str(e)}")
+            return []

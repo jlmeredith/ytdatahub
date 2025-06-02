@@ -20,7 +20,8 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # Default application settings
 DEFAULT_MAX_VIDEOS = 25
-DEFAULT_DEBUG_MODE = True  # Temporarily enabled for debugging
+DEFAULT_DEBUG_MODE = False  # Debug mode disabled by default
+ENABLE_VERBOSE_API_LOGGING = False  # Reduce API initialization verbosity
 
 class Settings:
     """

@@ -1214,3 +1214,22 @@ class YouTubeService(YouTubeServiceImpl):
         except Exception as e:
             debug_log(f"[WORKFLOW][ERROR] Error collecting comments for video_id={video_id}: {str(e)}")
             return {'video_id': video_id, 'comments': []}
+    
+    def get_channel_playlists(self, channel_id: str, max_results: int = 50):
+        """
+        Get all playlists for a channel from the YouTube API.
+        Args:
+            channel_id (str): The YouTube channel ID
+            max_results (int): Maximum number of playlists to return
+        Returns:
+            List[Dict]: List of playlist data dictionaries
+        """
+        debug_log(f"[WORKFLOW] get_channel_playlists called with channel_id: {channel_id}")
+        try:
+            api = self.api if hasattr(self, 'api') else self
+            playlists = api.video_client.get_channel_playlists(channel_id, max_results)
+            debug_log(f"[WORKFLOW] Channel playlists fetched for channel_id={channel_id}: {len(playlists)} playlists")
+            return playlists
+        except Exception as e:
+            debug_log(f"[WORKFLOW][ERROR] Exception in get_channel_playlists: {str(e)}")
+            return []

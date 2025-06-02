@@ -28,7 +28,8 @@ def initialize_session_state():
     
     # Debug mode
     if 'debug_mode' not in st.session_state:
-        st.session_state['debug_mode'] = False
+        from src.config import DEFAULT_DEBUG_MODE
+        st.session_state['debug_mode'] = DEFAULT_DEBUG_MODE
     if 'debug_raw_data' not in st.session_state:
         st.session_state['debug_raw_data'] = {}
     if 'debug_delta_data' not in st.session_state:

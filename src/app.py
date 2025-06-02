@@ -114,7 +114,8 @@ class YTDataHubApp:
 
         # Debug mode
         if 'debug_mode' not in st.session_state:
-            st.session_state.debug_mode = True
+            from src.config import DEFAULT_DEBUG_MODE
+            st.session_state.debug_mode = DEFAULT_DEBUG_MODE
     
     def _initialize_data_directory(self):
         """Create necessary data directories."""

@@ -51,13 +51,26 @@ def end_timer(tag: str, message: str = None) -> float:
         start = st.session_state.get(f"timer_{tag}", None)
     else:
         start = globals().get(f"timer_{tag}", None)
+    
     if start is None:
-        logging.warning(f"Timer {tag} ended but no timers have been initialized")
+        # Only show timer warnings if performance monitoring is enabled or debug mode is on
+        perf_enabled = st.session_state.get('show_performance_metrics', False) if STREAMLIT_AVAILABLE else False
+        debug_enabled = st.session_state.get('debug_mode', False) if STREAMLIT_AVAILABLE else False
+        
+        if perf_enabled or debug_enabled:
+            logging.warning(f"Timer {tag} ended but no timers have been initialized")
         return 0.0
     
-    if tag not in st.session_state.performance_timers:
-        logging.warning(f"Timer {tag} ended but was never started")
-        return 0.0
+    # Check if performance timers tracking is enabled before checking the timers dict
+    if STREAMLIT_AVAILABLE and 'performance_timers' in st.session_state:
+        if tag not in st.session_state.performance_timers:
+            # Only show timer warnings if performance monitoring is enabled or debug mode is on
+            perf_enabled = st.session_state.get('show_performance_metrics', False)
+            debug_enabled = st.session_state.get('debug_mode', False)
+            
+            if perf_enabled or debug_enabled:
+                logging.warning(f"Timer {tag} ended but was never started")
+            return 0.0
     
     # Calculate elapsed time
     elapsed = time.time() - start

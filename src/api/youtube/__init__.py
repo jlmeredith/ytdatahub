@@ -148,6 +148,19 @@ class YouTubeAPI:
         """
         return self.video_client.get_playlist_items(playlist_id, max_results, page_token)
     
+    def get_channel_playlists(self, channel_id, max_results=50):
+        """
+        Get all playlists for a channel
+        
+        Args:
+            channel_id: YouTube channel ID
+            max_results: Maximum number of playlists to return
+            
+        Returns:
+            List of playlist data dictionaries
+        """
+        return self.video_client.get_channel_playlists(channel_id, max_results)
+    
     def test_connection(self):
         """
         Test the API connection with a simple request

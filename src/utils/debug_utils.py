@@ -344,7 +344,8 @@ def initialize_performance_and_debug_state():
     """
     import logging
     if 'debug_mode' not in st.session_state:
-        st.session_state.debug_mode = False
+        from src.config import DEFAULT_DEBUG_MODE
+        st.session_state.debug_mode = DEFAULT_DEBUG_MODE
     if 'log_level' not in st.session_state:
         st.session_state.log_level = logging.WARNING
     if 'performance_metrics' not in st.session_state:

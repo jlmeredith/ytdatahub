@@ -49,6 +49,22 @@ logs/
 instance/
 config.local.py
 documentation/old-to-new-schema.md
+
+# Temporary files and debugging
+temp/
+*.tmp
+test_*.py.bak
+debug_*.py.bak
+
+# Prevent root-level clutter (common AI assistant mistakes)
+/test_integration*.py
+/test_playlist*.py
+/test_uploads*.py
+/MULTI_PLAYLIST*.md
+/UPLOADS_PLAYLIST*.md
+/demo_*.py
+/validate_*.py
+/simple_test*.py
 tree.sh
 code_audit_output.txt
 .github/.copilot-instructions.md

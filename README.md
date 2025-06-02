@@ -5,6 +5,10 @@ The latest code push has the collection system mapping all Youtube public API de
 
 > **Development Status**: This project is under active development as of May 2025. While most of the core functionality is working, some features may be experimental. A stable release version (1.0) is planned for June 2025.
 
+## 📋 Project Guidelines
+
+**IMPORTANT**: Please read [PROJECT_CONVENTIONS.md](PROJECT_CONVENTIONS.md) for file organization guidelines and conventions. This helps maintain a clean, organized codebase.
+
 ## Codebase Improvements
 
 The codebase has undergone significant refactoring to improve maintainability and performance:

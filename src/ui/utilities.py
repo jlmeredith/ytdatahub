@@ -432,6 +432,25 @@ def render_utilities_tab():
             st.success("API key cleared from session and .env file.")
             st.rerun()  # Rerun to update the UI
     
+    # WebSocket Keepalive Test Section
+    st.divider()
+    st.subheader("🚀 WebSocket Keepalive Test")
+    st.write("Test the WebSocket keepalive functionality for comment collection operations.")
+    
+    if st.button("🔧 Open WebSocket Test Page"):
+        try:
+            from src.ui.test.websocket_test import render_websocket_test_page
+            
+            # Create a new container for the test page
+            with st.container():
+                st.divider()
+                render_websocket_test_page()
+                
+        except ImportError as e:
+            st.error(f"❌ Could not import WebSocket test page: {e}")
+        except Exception as e:
+            st.error(f"❌ Error loading WebSocket test page: {e}")
+    
     # Add a new section for Debug Settings
     st.divider()
     import os
