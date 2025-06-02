@@ -748,51 +748,135 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
             total_videos = len(videos)
             st.write(f"📹 Found **{total_videos}** videos to collect comments from")
             
-            # Add comment import controls above the video table
-            st.markdown("### Comment Import Controls")
-            max_top_level_comments = st.slider(
-                "Top-Level Comments Per Video",
-                min_value=0,
-                max_value=100,
-                value=st.session_state.get('max_top_level_comments', 20),
-                key='max_top_level_comments',
-                help="Maximum number of top-level comments to import per video (0 to skip comments)"
-            )
-            max_replies_per_comment = st.slider(
-                "Replies Per Top-Level Comment",
-                min_value=0,
-                max_value=50,
-                value=st.session_state.get('max_replies_per_comment', 5),
-                key='max_replies_per_comment',
-                help="Maximum number of replies to fetch for each top-level comment"
-            )
-            st.caption("Adjust these to control comment import granularity before proceeding.")
+            # Strategic Comment Collection Options
+            st.markdown("### 🎯 Comment Collection Strategy")
+            st.markdown("""
+            **Choose your strategy based on your analysis goals:**
+            - Each video costs 1 API unit regardless of comment count
+            - Maximize value by choosing the right strategy for your needs
+            """)
             
-            # Comment collection controls
-            max_comments = st.slider(
-                "Maximum number of comments to fetch per video",
-                min_value=0,
-                max_value=100,
-                value=20,
-                help="Set to 0 to skip comment collection entirely"
+            # Strategy selection
+            strategy_options = {
+                "Speed Mode": {
+                    "description": "🚀 **Fast sampling** - Get quick insights from minimal comments",
+                    "comments": 5,
+                    "replies": 0,
+                    "benefits": "• Fastest collection (3-5x faster)\n• Minimal API usage\n• Good for sentiment overview",
+                    "best_for": "Quick content sampling, basic sentiment analysis"
+                },
+                "Balanced Mode": {
+                    "description": "⚖️ **Balanced approach** - Good mix of speed and data richness", 
+                    "comments": 20,
+                    "replies": 5,
+                    "benefits": "• Moderate collection time\n• Comprehensive conversation context\n• Good engagement insights",
+                    "best_for": "General analysis, audience engagement studies"
+                },
+                "Comprehensive Mode": {
+                    "description": "📊 **Maximum data** - Extract maximum value from each API call",
+                    "comments": 50,
+                    "replies": 10,
+                    "benefits": "• Complete conversation threads\n• Deep engagement analysis\n• Maximum ROI on API quota",
+                    "best_for": "In-depth research, complete conversation analysis"
+                },
+                "Custom": {
+                    "description": "⚙️ **Custom settings** - Fine-tune parameters for your specific needs",
+                    "comments": 20,
+                    "replies": 5,
+                    "benefits": "• Full control over parameters\n• Tailored to specific use cases\n• Flexible configuration",
+                    "best_for": "Specific research requirements, advanced users"
+                }
+            }
+            
+            # Strategy selection radio buttons
+            selected_strategy = st.radio(
+                "Select your comment collection strategy:",
+                options=list(strategy_options.keys()),
+                format_func=lambda x: strategy_options[x]["description"],
+                help="Each strategy optimizes for different goals and API usage patterns"
             )
+            
+            # Show strategy details
+            strategy = strategy_options[selected_strategy]
+            
+            # Display strategy information in columns
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.markdown(f"**✅ Benefits:**\n{strategy['benefits']}")
+            
+            with col2:
+                st.markdown(f"**🎯 Best for:** {strategy['best_for']}")
+            
+            # Strategy-specific controls
+            if selected_strategy == "Custom":
+                st.markdown("#### Custom Parameters")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    max_top_level_comments = st.slider(
+                        "Top-Level Comments Per Video",
+                        min_value=0,
+                        max_value=100,
+                        value=st.session_state.get('max_top_level_comments', 20),
+                        key='max_top_level_comments',
+                        help="Maximum number of top-level comments to import per video (0 to skip comments)"
+                    )
+                
+                with col2:
+                    max_replies_per_comment = st.slider(
+                        "Replies Per Top-Level Comment",
+                        min_value=0,
+                        max_value=50,
+                        value=st.session_state.get('max_replies_per_comment', 5),
+                        key='max_replies_per_comment',
+                        help="Maximum number of replies to fetch for each top-level comment"
+                    )
+            else:
+                # Use predefined strategy values
+                max_top_level_comments = strategy["comments"]
+                max_replies_per_comment = strategy["replies"]
+                
+                # Show the selected values
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Comments per Video", max_top_level_comments)
+                with col2:
+                    st.metric("Replies per Comment", max_replies_per_comment)
+            
+            # API efficiency information
+            estimated_time = total_videos * 0.3  # Optimized timing
+            with st.expander("📊 Collection Efficiency Details"):
+                st.markdown(f"""
+                **API Constraints & Optimization:**
+                - YouTube API requires 1 call per video (cannot be batched)
+                - Total API calls needed: **{total_videos}** (1 per video)
+                - Estimated collection time: **~{estimated_time:.1f} seconds** (optimized)
+                - Comments per video: **{max_top_level_comments}** (maximum value per API unit)
+                - Replies per comment: **{max_replies_per_comment}**
+                
+                **Why we've optimized this:**
+                - RAPID MODE processing with 0.3s delays (maximum safe speed)
+                - Pre-filtering to skip videos with disabled comments
+                - Exact fetch counts to eliminate over-fetching waste
+                """)
             
             col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("🚀 Fetch Comments from API", key="fetch_comments_btn", type="primary"):
-                    if max_comments == 0:
+                if st.button("🚀 Start Comment Collection", key="fetch_comments_btn", type="primary"):
+                    if max_top_level_comments == 0:
                         st.info("💬 Comment collection skipped as requested.")
                         st.session_state['comments_fetched'] = True
                         st.rerun()
                     else:
-                        with st.spinner(f"Fetching up to {max_comments} comments per video from YouTube API..."):
+                        with st.spinner(f"Collecting comments using {selected_strategy}..."):
                             try:
                                 options = {
                                     'fetch_channel_data': False,
                                     'fetch_videos': False,
                                     'fetch_comments': True,
-                                    'max_comments_per_video': max_comments,
+                                    'max_comments_per_video': max_top_level_comments,
                                     'max_top_level_comments': max_top_level_comments,
                                     'max_replies_per_comment': max_replies_per_comment
                                 }
@@ -809,7 +893,7 @@ class NewChannelWorkflow(BaseCollectionWorkflow):
                                     total_comments = sum(len(video.get('comments', [])) for video in updated_data['video_id'])
                                     videos_with_comments = sum(1 for video in updated_data['video_id'] if video.get('comments'))
                                     
-                                    st.success(f"✅ Successfully fetched **{total_comments}** comments from **{videos_with_comments}** videos!")
+                                    st.success(f"✅ Successfully collected **{total_comments}** comments from **{videos_with_comments}** videos using {selected_strategy}!")
                                     st.rerun()
                                 else:
                                     st.error("❌ Failed to fetch comments. Please try again.")

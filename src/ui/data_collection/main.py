@@ -134,92 +134,15 @@ def render_data_collection_tab():
                     st.session_state.refresh_workflow_step = 1
                 st.rerun()
         else:
-            # Normal view with tabs
-            tabs = st.tabs(["New Collection", "Update Channel"])  # Removed 'Queue Status'
+            # Use unified workflow instead of separate tabs
+            st.subheader("YouTube Data Collection")
+            st.markdown("*Streamlined workflow for both new and existing channels*")
             
-            # Tab 1: New Collection
-            with tabs[0]:
-                st.session_state['collection_mode'] = "new_channel"
-                # Only render workflow if not in form context
-                if st.session_state.get('trigger_new_channel_workflow'):
-                    from .workflow_factory import create_workflow
-                    workflow = create_workflow(youtube_service, "new_channel")
-                    workflow.initialize_workflow(st.session_state['channel_input'])
-                    workflow.render_current_step()
-                    st.session_state['trigger_new_channel_workflow'] = False
-                    st.stop()
-                elif ('channel_info_temp' in st.session_state and 
-                    st.session_state.get('channel_info_temp') is not None and 
-                    st.session_state.channel_data_fetched):
-                    from .workflow_factory import create_workflow
-                    workflow = create_workflow(youtube_service, "new_channel")
-                    workflow.initialize_workflow(st.session_state.channel_input)
-                    workflow.render_current_step()
-                else:
-                    st.subheader("Channel Data Collection")
-                    st.write("Enter a YouTube Channel URL or ID to start collecting data.")
-                    with st.form("channel_form", clear_on_submit=False):
-                        channel_input = st.text_input(
-                            "Enter a YouTube Channel URL or ID:", 
-                            help="For example: https://www.youtube.com/c/ChannelName or UCxxxxx"
-                        )
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.form_submit_button("Fetch Channel Data", type="primary"):
-                                st.session_state['channel_input'] = channel_input
-                                st.session_state['trigger_new_channel_workflow'] = True
-                                st.rerun()
-                        with col2:
-                            if st.form_submit_button("Clear Form", type="secondary"):
-                                if 'channel_info_temp' in st.session_state:
-                                    del st.session_state.channel_info_temp
-                                if 'current_channel_data' in st.session_state:
-                                    del st.session_state.current_channel_data
-                                st.session_state.channel_data_fetched = False
-                                st.session_state.videos_fetched = False
-                                st.session_state.comments_fetched = False
-                                st.session_state.show_all_videos = False
-                                st.rerun()
-                    
-                    # Display helpful information about collection process
-                    with st.expander("How Data Collection Works"):
-                        st.write("""
-                        ### Collection Process
-                        
-                        1. **Channel Data**: Basic channel information like name, description, and subscriber count.
-                        2. **Videos**: Metadata for the channel's videos (titles, views, likes).
-                        3. **Comments**: Comments on the videos (optional).
-                        4. **Save Data**: Store collected data for analysis.
-                        
-                        ### YouTube API Quota
-                        
-                        Data collection uses YouTube API quota. Each day you have a limited number of requests.
-                        - Channel data: 1 unit
-                        - Videos list: 1 unit per 50 videos
-                        - Comments: 1 unit per 100 comments
-                        
-                        Tip: Start with a small number of videos and comments to save quota.
-                        """)
-            
-            # Tab 2: Update Channel (Refresh)
-            with tabs[1]:
-                # Set collection mode to refresh_channel
-                st.session_state['collection_mode'] = "refresh_channel"
-                
-                # When entering the Update Channel tab, reset any leftover comparison view flag
-                if not st.session_state.get('update_tab_initialized', False):
-                    if 'compare_data_view' in st.session_state:
-                        st.session_state.compare_data_view = False
-                    st.session_state.update_tab_initialized = True
-                
-                # Use our new workflow system for the refresh workflow
-                from .workflow_factory import create_workflow
-                workflow = create_workflow(youtube_service, "refresh_channel")
-                
-                # Get the channel ID from session state if available
-                channel_id = st.session_state.get('existing_channel_id', None)
-                workflow.initialize_workflow(channel_id)
-                workflow.render_current_step()
+            # Create and render unified workflow
+            from .workflow_factory import create_workflow
+            workflow = create_workflow(youtube_service, "unified")
+            workflow.initialize_workflow()
+            workflow.render_current_step()
         
         # Debug panel toggle and rendering
         st.divider()

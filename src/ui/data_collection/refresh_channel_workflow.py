@@ -597,24 +597,131 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         if 'comments_saved' not in st.session_state:
             st.session_state['comments_saved'] = False
             
-        # Comment collection options
-        st.markdown("### Comment Collection Options")
+        # Strategic Comment Collection Options
+        st.markdown("### 🎯 Comment Collection Strategy")
+        st.markdown("""
+        **Choose your strategy based on your analysis goals:**
+        - Each video costs 1 API unit regardless of comment count
+        - Maximize value by choosing the right strategy for your needs
+        """)
         
-        max_comments_per_video = st.slider(
-            "Maximum comments per video:", 
-            min_value=0, 
-            max_value=500, 
-            value=100,
-            step=25
+        # Strategy selection
+        strategy_options = {
+            "Speed Mode": {
+                "description": "🚀 **Fast sampling** - Get quick insights from minimal comments",
+                "comments": 5,
+                "replies": 0,
+                "benefits": "• Fastest collection (3-5x faster)\n• Minimal API usage\n• Good for sentiment overview",
+                "best_for": "Quick content sampling, basic sentiment analysis"
+            },
+            "Balanced Mode": {
+                "description": "⚖️ **Balanced approach** - Good mix of speed and data richness", 
+                "comments": 20,
+                "replies": 5,
+                "benefits": "• Moderate collection time\n• Comprehensive conversation context\n• Good engagement insights",
+                "best_for": "General analysis, audience engagement studies"
+            },
+            "Comprehensive Mode": {
+                "description": "📊 **Maximum data** - Extract maximum value from each API call",
+                "comments": 50,
+                "replies": 10,
+                "benefits": "• Complete conversation threads\n• Deep engagement analysis\n• Maximum ROI on API quota",
+                "best_for": "In-depth research, complete conversation analysis"
+            },
+            "Custom": {
+                "description": "⚙️ **Custom settings** - Fine-tune parameters for your specific needs",
+                "comments": 20,
+                "replies": 5,
+                "benefits": "• Full control over parameters\n• Tailored to specific use cases\n• Flexible configuration",
+                "best_for": "Specific research requirements, advanced users"
+            }
+        }
+        
+        # Strategy selection radio buttons
+        selected_strategy = st.radio(
+            "Select your comment collection strategy:",
+            options=list(strategy_options.keys()),
+            format_func=lambda x: strategy_options[x]["description"],
+            help="Each strategy optimizes for different goals and API usage patterns"
         )
         
+        # Show strategy details
+        strategy = strategy_options[selected_strategy]
+        
+        # Display strategy information in columns
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown(f"**✅ Benefits:**\n{strategy['benefits']}")
+        
+        with col2:
+            st.markdown(f"**🎯 Best for:** {strategy['best_for']}")
+        
+        # Strategy-specific controls
+        if selected_strategy == "Custom":
+            st.markdown("#### Custom Parameters")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                max_comments_per_video = st.slider(
+                    "Maximum comments per video:", 
+                    min_value=0, 
+                    max_value=100, 
+                    value=20,
+                    step=5
+                )
+            
+            with col2:
+                max_replies_per_comment = st.slider(
+                    "Replies per comment:",
+                    min_value=0,
+                    max_value=50,
+                    value=5,
+                    step=1
+                )
+        else:
+            # Use predefined strategy values
+            max_comments_per_video = strategy["comments"]
+            max_replies_per_comment = strategy["replies"]
+            
+            # Show the selected values
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Comments per Video", max_comments_per_video)
+            with col2:
+                st.metric("Replies per Comment", max_replies_per_comment)
+        
+        # Additional options
         comment_sort_order = st.selectbox(
             "Comment sort order:",
             options=["relevance", "time"],
-            index=0
+            index=0,
+            help="Order in which comments are retrieved from YouTube"
         )
         
-        include_replies = st.checkbox("Include comment replies", value=True)
+        include_replies = st.checkbox(
+            "Include comment replies", 
+            value=max_replies_per_comment > 0,
+            disabled=max_replies_per_comment == 0,
+            help="Automatically set based on your strategy selection"
+        )
+        
+        # API efficiency information
+        estimated_time = video_count * 0.3  # Optimized timing
+        with st.expander("📊 Collection Efficiency Details"):
+            st.markdown(f"""
+            **API Constraints & Optimization:**
+            - YouTube API requires 1 call per video (cannot be batched)
+            - Total API calls needed: **{video_count}** (1 per video)
+            - Estimated collection time: **~{estimated_time:.1f} seconds** (optimized)
+            - Comments per video: **{max_comments_per_video}** (maximum value per API unit)
+            - Replies per comment: **{max_replies_per_comment}**
+            
+            **Why we've optimized this:**
+            - RAPID MODE processing with 0.3s delays (maximum safe speed)
+            - Pre-filtering to skip videos with disabled comments
+            - Exact fetch counts to eliminate over-fetching waste
+            """)
         
         # Create options dictionary
         options = {
@@ -622,6 +729,8 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
             'fetch_videos': False,
             'fetch_comments': True,
             'max_comments_per_video': max_comments_per_video,
+            'max_top_level_comments': max_comments_per_video,
+            'max_replies_per_comment': max_replies_per_comment,
             'comment_sort_order': comment_sort_order,
             'include_replies': include_replies
         }
@@ -631,10 +740,10 @@ class RefreshChannelWorkflow(BaseCollectionWorkflow):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🔄 Collect Comments", key="collect_comments_btn", 
+            if st.button(f"🚀 Start Comment Collection ({selected_strategy})", key="collect_comments_btn", 
                        disabled=st.session_state['comments_saved']):
                 try:
-                    with st.spinner("Collecting comments..."):
+                    with st.spinner(f"Collecting comments using {selected_strategy}..."):
                         # Need to collect comments for each video
                         updated_api_data = api_data.copy()
                         

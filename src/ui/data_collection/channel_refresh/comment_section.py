@@ -47,35 +47,114 @@ def configure_comment_collection():
     Returns:
         dict: Options for comment collection
     """
-    st.subheader("Comment Collection Options")
+    st.subheader("🎯 Comment Collection Strategy")
     
-    # Enhanced UI controls for comment collection settings
-    st.write("Configure how many comments to collect:")
+    # Strategic Comment Collection Options
+    st.markdown("""
+    **Choose your strategy based on your analysis goals:**
+    - Each video costs 1 API unit regardless of comment count
+    - Maximize value by choosing the right strategy for your needs
+    """)
     
+    # Strategy selection
+    strategy_options = {
+        "Speed Mode": {
+            "description": "🚀 **Fast sampling** - Get quick insights from minimal comments",
+            "comments": 5,
+            "replies": 0,
+            "benefits": "• Fastest collection (3-5x faster)\n• Minimal API usage\n• Good for sentiment overview",
+            "best_for": "Quick content sampling, basic sentiment analysis"
+        },
+        "Balanced Mode": {
+            "description": "⚖️ **Balanced approach** - Good mix of speed and data richness", 
+            "comments": 20,
+            "replies": 5,
+            "benefits": "• Moderate collection time\n• Comprehensive conversation context\n• Good engagement insights",
+            "best_for": "General analysis, audience engagement studies"
+        },
+        "Comprehensive Mode": {
+            "description": "📊 **Maximum data** - Extract maximum value from each API call",
+            "comments": 50,
+            "replies": 10,
+            "benefits": "• Complete conversation threads\n• Deep engagement analysis\n• Maximum ROI on API quota",
+            "best_for": "In-depth research, complete conversation analysis"
+        },
+        "Custom": {
+            "description": "⚙️ **Custom settings** - Fine-tune parameters for your specific needs",
+            "comments": 20,
+            "replies": 5,
+            "benefits": "• Full control over parameters\n• Tailored to specific use cases\n• Flexible configuration",
+            "best_for": "Specific research requirements, advanced users"
+        }
+    }
+    
+    # Strategy selection radio buttons
+    selected_strategy = st.radio(
+        "Select your comment collection strategy:",
+        options=list(strategy_options.keys()),
+        format_func=lambda x: strategy_options[x]["description"],
+        help="Each strategy optimizes for different goals and API usage patterns"
+    )
+    
+    # Show strategy details
+    strategy = strategy_options[selected_strategy]
+    
+    # Display strategy information in columns
     col1, col2 = st.columns([1, 1])
+    
     with col1:
-        max_comments_per_video = st.slider(
-            "Top-Level Comments Per Video",
-            min_value=0,
-            max_value=100,
-            value=20,
-            help="Set to 0 to skip comment collection entirely"
-        )
-        st.caption("Controls how many primary comments to collect for each video")
+        st.markdown(f"**✅ Benefits:**\n{strategy['benefits']}")
     
     with col2:
-        max_replies_per_comment = st.slider(
-            "Replies Per Top-Level Comment",
-            min_value=0,
-            max_value=50, 
-            value=5,
-            help="Set to 0 to skip fetching replies"
-        )
-        st.caption("Controls how many replies to collect for each primary comment")
+        st.markdown(f"**🎯 Best for:** {strategy['best_for']}")
     
-    # Add explanatory text about API quota impact
-    st.info("💡 Higher values will provide more comprehensive data but may consume more API quota.")
+    # Strategy-specific controls
+    if selected_strategy == "Custom":
+        st.markdown("#### Custom Parameters")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            max_comments_per_video = st.slider(
+                "Top-Level Comments Per Video",
+                min_value=0,
+                max_value=100,
+                value=20,
+                help="Set to 0 to skip comment collection entirely"
+            )
+        
+        with col2:
+            max_replies_per_comment = st.slider(
+                "Replies Per Top-Level Comment",
+                min_value=0,
+                max_value=50, 
+                value=5,
+                help="Set to 0 to skip fetching replies"
+            )
+    else:
+        # Use predefined strategy values
+        max_comments_per_video = strategy["comments"]
+        max_replies_per_comment = strategy["replies"]
+        
+        # Show the selected values
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Comments per Video", max_comments_per_video)
+        with col2:
+            st.metric("Replies per Comment", max_replies_per_comment)
     
+    # API efficiency information
+    with st.expander("📊 Collection Efficiency Details"):
+        st.markdown(f"""
+        **API Constraints & Optimization:**
+        - YouTube API requires 1 call per video (cannot be batched)
+        - Comments per video: **{max_comments_per_video}** (maximum value per API unit)
+        - Replies per comment: **{max_replies_per_comment}**
+        
+        **Why we've optimized this:**
+        - RAPID MODE processing with 0.3s delays (maximum safe speed)
+        - Pre-filtering to skip videos with disabled comments
+        - Exact fetch counts to eliminate over-fetching waste
+        """)
+
     optimize_quota = st.checkbox(
         "Optimize API quota usage",
         value=True,

@@ -27,6 +27,7 @@ class WebSocketKeepAlive:
         self._stop_keepalive = threading.Event()
         self._status_placeholder = None
         self._progress_placeholder = None
+        self._latest_message = ""
         
     def start_keepalive(self, status_message: str = "Processing..."):
         """
@@ -69,16 +70,25 @@ class WebSocketKeepAlive:
     def update_status(self, message: str, progress: Optional[float] = None):
         """
         Update the status message and optionally the progress.
+        Thread-safe method that can be called from any thread.
         
         Args:
             message: Status message to display
             progress: Progress value between 0.0 and 1.0
         """
-        if self._status_placeholder:
-            self._status_placeholder.info(f"🔄 {message}")
+        try:
+            if self._status_placeholder:
+                self._status_placeholder.info(f"🔄 {message}")
+        except Exception as e:
+            # Expected when called from worker thread - log at debug level
+            logger.debug(f"Status update from thread context (expected): {e}")
             
-        if progress is not None and self._progress_placeholder:
-            self._progress_placeholder.progress(progress)
+        try:
+            if progress is not None and self._progress_placeholder:
+                self._progress_placeholder.progress(progress)
+        except Exception as e:
+            # Expected when called from worker thread - log at debug level  
+            logger.debug(f"Progress update from thread context (expected): {e}")
             
     def _keepalive_worker(self, status_message: str):
         """
@@ -96,19 +106,21 @@ class WebSocketKeepAlive:
             time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
             message = f"{status_message} (Running for {time_str})"
             
+            # Store the latest message for potential use by main thread
+            self._latest_message = message
+            
             try:
+                # Try to update the placeholder if it exists
                 if self._status_placeholder:
-                    self._status_placeholder.info(f"🔄 {message}")
-                    
-                # Force a small UI update to maintain WebSocket connection
-                if hasattr(st, 'rerun'):
-                    # In newer Streamlit versions
-                    pass  # Don't call rerun in thread
-                else:
-                    pass  # Don't call experimental_rerun in thread
+                    try:
+                        self._status_placeholder.info(f"🔄 {message}")
+                    except Exception as e:
+                        # Expected when called from worker thread - log at debug level
+                        logger.debug(f"Thread context UI update failed (expected): {e}")
                     
             except Exception as e:
-                logger.warning(f"WebSocket keepalive update failed: {e}")
+                # Catch any other unexpected errors but don't crash
+                logger.debug(f"WebSocket keepalive update failed: {e}")
                 
             # Wait for the specified interval or until stop is signaled
             self._stop_keepalive.wait(self.update_interval)
